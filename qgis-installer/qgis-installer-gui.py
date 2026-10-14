@@ -1,13 +1,11 @@
 #!/usr/bin/env python3
 """QGIS Installer — English / ქართული.
 
-Three methods, your choice:
-  A  Official QGIS repository (Debian / Ubuntu / Mint…) — latest, LTR or nightly, with the signing key
-     verified against the published fingerprint before it is trusted.
-  B  Flatpak (Flathub) — any distribution, installed for your user only.
-  C  Your distribution's own package (apt / dnf / pacman / zypper) — older, but the simplest.
+Tell it what you want (stable and long-term / newest / next to the QGIS you have) and it recommends the best way
+for your system from the QGIS installation guide: official repository, Flatpak (branch stable or lts), Fedora,
+openSUSE, Arch, Mageia, containers... Every way can be picked by hand too.
 Every action is shown as a command preview first; nothing runs until you confirm.
-Source of method A: https://qgis.org/resources/installation-guide/#debian--ubuntu
+Guide: https://qgis.org/resources/installation-guide/#linux
 """
 import os
 import sys
@@ -33,6 +31,7 @@ from qgis_installer import (CHANNELS, KEY_FPR, KEY_URL, KEYRING, LATEST, LTR, LT
                             default_channel, detect, find_installs, installed_qgis, method_available,
                             needs_elevation_fallback, read_os_release, run_steps, sources_text, write_root_script)
 from qgis_installer import i18n as _i18n  # noqa: E402
+from qgis_installer import recipes  # noqa: E402
 
 STR = _i18n.STR
 LANG = load_lang()
@@ -54,12 +53,12 @@ def steps_text(steps):
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.geometry("760x720")
-        self.minsize(680, 620)
+        self.geometry("820x800")
+        self.minsize(780, 760)
         self.sys = detect()
         self.busy = False
-        self.method = tk.StringVar()
         self.channel_key = "ltr"
+        self.recipe_id = None
         self.v_grass, self.v_server, self.v_python = (tk.BooleanVar(value=True), tk.BooleanVar(value=False),
                                                       tk.BooleanVar(value=True))
 
@@ -80,26 +79,39 @@ class App(tk.Tk):
         self.lbl_sys = ttk.Label(self.f_sys, justify="left", wraplength=690)
         self.lbl_sys.pack(anchor="w", padx=8, pady=6)
 
-        self.f_method = ttk.LabelFrame(tab)
-        self.f_method.pack(fill="x", padx=8, pady=6)
+        self.goal = tk.StringVar(value="stable")
+        self.f_goal = ttk.LabelFrame(tab)
+        self.f_goal.pack(fill="x", padx=8, pady=6)
         self.rb = {}
-        for m in "ABC":
-            self.rb[m] = ttk.Radiobutton(self.f_method, variable=self.method, value=m, command=self.sync_state)
-            self.rb[m].pack(anchor="w", padx=8, pady=2)
+        for g in recipes.GOALS:
+            self.rb[g] = ttk.Radiobutton(self.f_goal, variable=self.goal, value=g, command=self.on_goal)
+            self.rb[g].pack(anchor="w", padx=8, pady=1)
+        self.lbl_rec = ttk.Label(self.f_goal, wraplength=670, justify="left", foreground="#1d4ed8")
+        self.lbl_rec.pack(anchor="w", padx=8, pady=(4, 6))
 
-        self.f_ver = ttk.LabelFrame(tab)
-        self.f_ver.pack(fill="x", padx=8, pady=6)
-        self.cmb = ttk.Combobox(self.f_ver, state="readonly")
-        self.cmb.pack(fill="x", padx=8, pady=8)
-        self.cmb.bind("<<ComboboxSelected>>", self.on_channel)
+        self.f_recipe = ttk.LabelFrame(tab)
+        self.f_recipe.pack(fill="x", padx=8, pady=6)
+        self.recipe_ids = []
+        self.cmb_recipe = ttk.Combobox(self.f_recipe, state="readonly")
+        self.cmb_recipe.pack(fill="x", padx=8, pady=(8, 2))
+        self.cmb_recipe.bind("<<ComboboxSelected>>", self.on_recipe)
+        self.lbl_vf = ttk.Label(self.f_recipe, wraplength=670, justify="left")
+        self.lbl_vf.pack(anchor="w", padx=8, pady=(0, 6))
 
-        self.f_pkg = ttk.LabelFrame(tab)
-        self.f_pkg.pack(fill="x", padx=8, pady=6)
-        self.cb_grass = ttk.Checkbutton(self.f_pkg, variable=self.v_grass)
-        self.cb_python = ttk.Checkbutton(self.f_pkg, variable=self.v_python)
-        self.cb_server = ttk.Checkbutton(self.f_pkg, variable=self.v_server)
-        for c in (self.cb_grass, self.cb_python, self.cb_server):
-            c.pack(anchor="w", padx=8, pady=1)
+        self.f_ropts = ttk.LabelFrame(tab)
+        self.f_ropts.pack(fill="x", padx=8, pady=6)
+        self.lbl_opt, self.cmb = {}, {}
+        for name in ("channel", "branch", "scope"):
+            self.lbl_opt[name] = ttk.Label(self.f_ropts)
+            self.cmb[name] = ttk.Combobox(self.f_ropts, state="readonly")
+        self.cmb["channel"].bind("<<ComboboxSelected>>", self.on_channel)
+        self.v_geo = tk.BooleanVar(value=False)
+        self.cb_grass = ttk.Checkbutton(self.f_ropts, variable=self.v_grass)
+        self.cb_python = ttk.Checkbutton(self.f_ropts, variable=self.v_python)
+        self.cb_server = ttk.Checkbutton(self.f_ropts, variable=self.v_server)
+        self.cb_geo = ttk.Checkbutton(self.f_ropts, variable=self.v_geo)
+        self.chan_keys = []
+        self.rec_options = {}
 
         bar = ttk.Frame(tab)
         bar.pack(fill="x", padx=8, pady=8)
@@ -141,19 +153,13 @@ class App(tk.Tk):
         self.txt = scrolledtext.ScrolledText(guide, wrap="word")
         self.txt.pack(fill="both", expand=True, padx=8, pady=8)
 
-        self.method.set("A" if self.avail("A") else "B")
         self.apply_lang()
+        self.on_goal()
         self.rescan()
 
     # ---- i18n / state
-    def avail(self, m):
-        return method_available(m, self.sys)
-
-    def allowed_channels(self):
-        return allowed_channels(self.sys)
-
-    def channel_label(self, k):
-        return t("ch_" + k, v=LATEST if k == "latest" else LTR)
+    def recipe_label(self, rid):
+        return t("rc_" + rid)
 
     def apply_lang(self):
         s = self.sys
@@ -167,42 +173,33 @@ class App(tk.Tk):
         self.cb_auto.config(text=t("rm_auto")); self.cb_next.config(text=t("rm_next"))
         self.lbl_warn.config(text=t("rm_data_warn"))
         self.render_rm()
-        for f, k in ((self.f_sys, "f_sys"), (self.f_method, "f_method"), (self.f_ver, "f_ver"), (self.f_pkg, "f_pkg")):
+        for f, k in ((self.f_sys, "f_sys"), (self.f_goal, "f_goal"), (self.f_recipe, "f_recipe"), (self.f_ropts, "f_ropts")):
             f.config(text=t(k))
-        for m in "ABC":
-            self.rb[m].config(text=t("m" + m))
+        for g in recipes.GOALS:
+            self.rb[g].config(text=t("goal_" + g))
+        self.lbl_opt["channel"].config(text=t("o_channel"))
+        self.lbl_opt["branch"].config(text=t("o_branch"))
+        self.lbl_opt["scope"].config(text=t("o_scope"))
         self.cb_grass.config(text=t("p_grass"))
         self.cb_python.config(text=t("p_python"))
         self.cb_server.config(text=t("p_server"))
+        self.cb_geo.config(text=t("o_geo"))
         self.btn_inst.config(text=t("preview"))
         self.btn_rm.config(text=t("rm_goto"))
         self.btn_copy.config(text=t("copy"))
         self.lbl_log.config(text=t("log"))
 
         lines = [t("sys_line", name=s["name"], code=s["code"] or "-", arch=s["arch"], pm=s["pm"] or "-")]
-        if not s["family"]:
-            lines.append(t("st_nodeb"))
-        elif not s["supported"]:
-            lines.append(t("st_unsup"))
-        else:
-            lines.append(t("st_ltr") if s["ltr_only"] else t("st_ok"))
-        if s["family"] and s["arch"] != "amd64":
-            lines.append(t("st_arch"))
         v = installed_qgis()
         lines.append(t("st_inst", v=v) if v else t("st_none"))
         self.lbl_sys.config(text="\n".join(lines))
-
-        keys = self.allowed_channels()
-        if self.channel_key not in keys:
-            self.channel_key = "ltr" if s["ltr_only"] else "latest"
-        self.cmb["values"] = [self.channel_label(k) for k in keys]
-        self.cmb.current(keys.index(self.channel_key))
 
         self.txt.config(state="normal")
         self.txt.delete("1.0", "end")
         self.txt.insert("end", t("guide"))
         self.txt.config(state="disabled")
-        self.sync_state()
+        self.show_recommendation()
+        self.fill_recipes()
 
     def toggle_lang(self):
         global LANG
@@ -210,18 +207,113 @@ class App(tk.Tk):
         save_lang(LANG)
         self.apply_lang()
 
-    def on_channel(self, _e=None):
-        self.channel_key = self.allowed_channels()[self.cmb.current()]
+    # ---- the "what do you want" flow
+    def show_recommendation(self):
+        rec = recipes.recommend(self.sys, self.goal.get())
+        self.rec = rec
+        if rec["recipe"] is None:
+            self.lbl_rec.config(text=t("why_nothing_fits", url=recipes.GUIDE_URL))
+        else:
+            self.lbl_rec.config(text=t("recommended", name=self.recipe_label(rec["recipe"])) + " " +
+                                t("why_" + rec["why"], url=recipes.GUIDE_URL))
 
-    def sync_state(self):
-        for m in "ABC":
-            self.rb[m].state(["!disabled"] if self.avail(m) else ["disabled"])
-        if not self.avail(self.method.get()):
-            self.method.set("B")
-        a = self.method.get() == "A"
-        self.cmb.state(["!disabled", "readonly"] if a else ["disabled"])
-        for c in (self.cb_grass, self.cb_python, self.cb_server):
-            c.state(["!disabled"] if a else ["disabled"])
+    def on_goal(self):
+        self.show_recommendation()
+        self.rec_options = dict(self.rec["options"])
+        self.fill_recipes(select=self.rec["recipe"])
+
+    def fill_recipes(self, select=None):
+        """Combobox of the recipes that fit this system; the recommended one (or the current one) is selected."""
+        ids = [a["id"] for a in recipes.available(self.sys) if a["applies"]]
+        self.recipe_ids = ids
+        self.cmb_recipe["values"] = [self.recipe_label(r) for r in ids]
+        want = select or self.recipe_id
+        if want not in ids:
+            want = ids[0] if ids else None
+        self.recipe_id = want
+        if want is not None:
+            self.cmb_recipe.current(ids.index(want))
+        else:
+            self.cmb_recipe.set("")
+        self.show_options()
+
+    def on_recipe(self, _e=None):
+        i = self.cmb_recipe.current()
+        if i >= 0:
+            self.recipe_id = self.recipe_ids[i]
+            self.rec_options = {}
+        self.show_options()
+
+    def on_channel(self, _e=None):
+        i = self.cmb["channel"].current()
+        if 0 <= i < len(self.chan_keys):
+            self.channel_key = self.chan_keys[i]
+
+    def allowed_channels(self):
+        return allowed_channels(self.sys)
+
+    def channel_label(self, k):
+        return t("ch_" + k, v=LATEST if k == "latest" else LTR)
+
+    def channel_choices(self):
+        rid = self.recipe_id
+        if rid == "apt-official":
+            return list(self.allowed_channels()), self.channel_label
+        if rid == "aur-helper":
+            return list(recipes.AUR_CHANNELS), lambda k: t("aur_" + k)
+        return ["latest", "ltr"], lambda k: t("nixch_" + k)          # nix-manual
+
+    def show_options(self):
+        """Show only the options of the chosen recipe, preset from the recommendation."""
+        for w in list(self.lbl_opt.values()) + list(self.cmb.values()) + [self.cb_grass, self.cb_python, self.cb_server, self.cb_geo]:
+            w.pack_forget()
+        rid = self.recipe_id
+        for b in (self.btn_inst, self.btn_copy):
+            b.state(["!disabled"] if rid else ["disabled"])
+        if rid is None:
+            self.lbl_vf.config(text="")
+            return
+        r = recipes.RECIPES[rid]
+        self.lbl_vf.config(text=t("vf_" + r["verified"]))
+        opts = r["options"]
+
+        def combo(name, keys, label):
+            self.lbl_opt[name].pack(anchor="w", padx=8, pady=(4, 0))
+            self.cmb[name].pack(fill="x", padx=8, pady=(0, 4))
+            self.cmb[name]["values"] = [label(k) for k in keys]
+            return keys
+
+        if "channel" in opts:
+            self.chan_keys, label = self.channel_choices()
+            combo("channel", self.chan_keys, label)
+            want = self.rec_options.get("channel") or self.channel_key
+            if want not in self.chan_keys:
+                want = "ltr" if "ltr" in self.chan_keys else self.chan_keys[0]
+            self.channel_key = want
+            self.cmb["channel"].current(self.chan_keys.index(want))
+        if "branch" in opts:
+            keys = combo("branch", list(recipes.FLATPAK_BRANCHES), lambda k: t("br_" + k))
+            self.cmb["branch"].current(keys.index(self.rec_options.get("branch", "stable")))
+        if "scope" in opts:
+            combo("scope", ["user", "system"], lambda k: t("sc_" + k))
+            self.cmb["scope"].current(0)
+        for name, cb in (("grass", self.cb_grass), ("python", self.cb_python), ("server", self.cb_server), ("geo_repo", self.cb_geo)):
+            if name in opts:
+                cb.pack(anchor="w", padx=8, pady=1)
+
+    def options(self):
+        want = recipes.RECIPES[self.recipe_id]["options"]
+        o = {}
+        if "channel" in want:
+            o["channel"] = self.channel_key
+        if "branch" in want:
+            o["branch"] = recipes.FLATPAK_BRANCHES[self.cmb["branch"].current()]
+        if "scope" in want:
+            o["scope"] = ("user", "system")[self.cmb["scope"].current()]
+        for name, var in (("grass", self.v_grass), ("python", self.v_python), ("server", self.v_server), ("geo_repo", self.v_geo)):
+            if name in want:
+                o[name] = var.get()
+        return o
 
     # ---- helpers
     def say(self, text):
@@ -230,19 +322,33 @@ class App(tk.Tk):
         self.log.see("end")
         self.log.config(state="disabled")
 
-    def steps(self):
-        m = self.method.get()
-        pk = {"grass": self.v_grass.get(), "server": self.v_server.get(), "python": self.v_python.get()}
-        return build_install(m, self.sys, self.channel_key, pk)
+    def plan(self):
+        if not self.recipe_id:
+            return None
+        return recipes.make_plan(self.recipe_id, self.sys, self.options())
+
+    def plan_text(self, result):
+        """Steps, then the manual blocks and the notes: everything the user should read before agreeing."""
+        parts = []
+        if result["steps"]:
+            parts.append(steps_text(result["steps"]))
+        for m in result["manual"]:
+            parts.append("# " + t("rcm_" + m["title"]) + "\n" + m["text"])
+        parts.extend("* " + t("rcw_" + k) for k in result["notes"])
+        return "\n\n".join(parts)
 
     def on_copy(self):
-        txt = steps_text(self.steps())
-        self.clipboard_clear()
-        self.clipboard_append(txt)
-        self.say(t("copied"))
+        result = self.plan()
+        if result:
+            self.clipboard_clear()
+            self.clipboard_append(self.plan_text(result))
+            self.say(t("copied"))
 
     def on_install(self):
-        self.confirm(self.steps(), t("title"))
+        result = self.plan()
+        if result is None:
+            return messagebox.showinfo(t("title"), t("why_nothing_fits", url=recipes.GUIDE_URL))
+        self.confirm(result["steps"], t("title"), text=self.plan_text(result))
 
     def rescan(self):
         self.rm_items = find_installs(self.sys)
@@ -272,16 +378,16 @@ class App(tk.Tk):
         if self.v_next.get():
             self.nb.select(0)
 
-    def confirm(self, steps, title, on_success=None):
-        if not steps:
+    def confirm(self, steps, title, on_success=None, text=None):
+        if not steps and not text:
             return messagebox.showinfo(title, t("no_method"))
         win = tk.Toplevel(self)
         win.title(t("confirm_title"))
         win.geometry("720x520")
-        ttk.Label(win, text=t("will_run"), font=("", 10, "bold")).pack(anchor="w", padx=10, pady=(10, 4))
+        ttk.Label(win, text=t("will_run") if steps else t("rc_manual_only"), font=("", 10, "bold")).pack(anchor="w", padx=10, pady=(10, 4))
         box = scrolledtext.ScrolledText(win, wrap="none")
         box.pack(fill="both", expand=True, padx=10)
-        box.insert("end", steps_text(steps))
+        box.insert("end", text or steps_text(steps))
         box.config(state="disabled")
         bar = ttk.Frame(win)
         bar.pack(fill="x", padx=10, pady=10)
@@ -289,7 +395,10 @@ class App(tk.Tk):
         def go():
             win.destroy()
             self.run_steps(steps, on_success)
-        ttk.Button(bar, text=t("run"), command=go).pack(side="right")
+        run = ttk.Button(bar, text=t("run"), command=go)
+        run.pack(side="right")
+        if not steps:
+            run.state(["disabled"])
         ttk.Button(bar, text=t("cancel"), command=win.destroy).pack(side="right", padx=8)
 
     def run_steps(self, steps, on_success=None):

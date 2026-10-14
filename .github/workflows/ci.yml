@@ -20,6 +20,10 @@ jobs:
         run: python3 tests/test_units.py
       - name: qgis-installer core and command line (offline)
         run: python3 tests/test_qgis_installer.py
+      - name: qgis-installer window (Tk under a virtual display)
+        run: |
+          sudo apt-get install -y -qq python3-tk xvfb
+          xvfb-run -a python3 tests/test_qgis_gui.py
       - name: install.sh into a temp prefix and back
         run: |
           p=$(mktemp -d)
