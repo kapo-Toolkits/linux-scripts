@@ -341,7 +341,7 @@ def find_installs(sysinfo):
                     ver = v
         if pk:
             origin = ""
-            rc, pol = _run(["apt-cache", "policy", "qgis"])
+            rc, pol = _run(["apt-cache", "policy", "qgis" if "qgis" in pk else sorted(pk)[0]])
             lines = pol.splitlines()
             for i, ln in enumerate(lines):
                 if "***" in ln and i + 1 < len(lines):
