@@ -41,6 +41,8 @@ STR = {
         "saving": "Saving profile…", "starting": "Starting…", "stopping": "Stopping…",
         "fail": "Failed. Run  hotspot.sh logs  for the real reason.",
         "no_wifi": "No Wi-Fi interface found.",
+        "clients": "Connected devices", "c_name": "Device", "c_ip": "IP", "c_mac": "MAC", "c_sig": "Signal",
+        "c_time": "Connected", "c_data": "↓ / ↑", "c_none": "No devices connected", "c_off": "Start the hotspot to see connected devices",
         "qr": "QR code", "qr_title": "Join the hotspot",
         "qr_hint": "Scan with the phone camera to join “{s}”.\nAnyone who sees this code can join and gets the password.",
         "qr_long": "SSID + password are too long for a QR code.",
@@ -60,6 +62,8 @@ STR = {
         "saving": "პროფილი ინახება…", "starting": "ირთვება…", "stopping": "ითიშება…",
         "fail": "ვერ მოხერხდა. რეალური მიზეზისთვის: hotspot.sh logs",
         "no_wifi": "Wi-Fi ინტერფეისი ვერ მოიძებნა.",
+        "clients": "დაკავშირებული მოწყობილობები", "c_name": "მოწყობილობა", "c_ip": "IP", "c_mac": "MAC", "c_sig": "სიგნალი",
+        "c_time": "დაკავშირებულია", "c_data": "↓ / ↑", "c_none": "მოწყობილობა არ არის დაკავშირებული", "c_off": "Hotspot-ის ჩასართავად დააჭირეთ „ჩართვა“ — მერე მოწყობილობები გამოჩნდება",
         "qr": "QR კოდი", "qr_title": "Hotspot-თან მიერთება",
         "qr_hint": "დაასკანირეთ ტელეფონის კამერით, რომ დაუკავშირდეთ „{s}“-ს.\nვინც ამ კოდს ნახავს, დაუკავშირდება და პაროლსაც მიიღებს.",
         "qr_long": "SSID და პაროლი QR კოდისთვის ზედმეტად გრძელია.",
@@ -101,11 +105,96 @@ def valid_psk(s):
     return 8 <= len(s) <= 63 and s.isascii() and s.isprintable()
 
 
+def parse_station_dump(text):
+    """`iw dev X station dump` -> [{mac, signal, connected, rx, tx}] (connected in seconds, rx/tx in bytes)."""
+    out, cur = [], None
+    for line in text.splitlines():
+        line = line.strip()
+        if line.startswith("Station "):
+            cur = {"mac": line.split()[1].lower(), "signal": None, "connected": None, "rx": 0, "tx": 0}
+            out.append(cur)
+        elif cur is not None and ":" in line:
+            k, _, v = line.partition(":")
+            v = v.split()
+            if not v:
+                continue
+            if k == "signal" and v[0].lstrip("-").isdigit():
+                cur["signal"] = int(v[0])
+            elif k == "connected time" and v[0].isdigit():
+                cur["connected"] = int(v[0])
+            elif k == "rx bytes" and v[0].isdigit():
+                cur["rx"] = int(v[0])
+            elif k == "tx bytes" and v[0].isdigit():
+                cur["tx"] = int(v[0])
+    return out
+
+
+def parse_neigh(text):
+    """`ip neigh show dev X` -> {mac: ip} (IPv4 preferred)."""
+    res = {}
+    for line in text.splitlines():
+        f = line.split()
+        if "lladdr" in f and len(f) > 2:
+            mac, ip = f[f.index("lladdr") + 1].lower(), f[0]
+            if mac not in res or ":" in res[mac]:      # keep IPv4 over IPv6
+                res[mac] = ip
+    return res
+
+
+def parse_leases(text):
+    """dnsmasq lease file lines `expiry mac ip hostname clientid` -> {mac: (ip, hostname)}."""
+    res = {}
+    for line in text.splitlines():
+        f = line.split()
+        if len(f) >= 4:
+            res[f[1].lower()] = (f[2], "" if f[3] == "*" else f[3])
+    return res
+
+
+def human_bytes(n):
+    for unit in ("B", "KB", "MB", "GB"):
+        if n < 1024 or unit == "GB":
+            return f"{n:.0f} {unit}" if unit == "B" else f"{n:.1f} {unit}"
+        n /= 1024
+
+
+def human_secs(s):
+    if s is None:
+        return "-"
+    h, rem = divmod(int(s), 3600)
+    m, sec = divmod(rem, 60)
+    return f"{h}h {m}m" if h else (f"{m}m {sec}s" if m else f"{sec}s")
+
+
+def list_clients(iface):
+    """Devices associated to the hotspot, merged with IP (ARP table) and name (dnsmasq leases if readable)."""
+    if not iface:
+        return []
+    rc, dump = run(["iw", "dev", iface, "station", "dump"], timeout=5)
+    if rc != 0:
+        return []
+    neigh = parse_neigh(run(["ip", "neigh", "show", "dev", iface], timeout=5)[1])
+    leases = {}
+    for path in (os.environ.get("HOTSPOT_LEASES") or f"/var/lib/NetworkManager/dnsmasq-{iface}.leases",
+                 "/var/lib/misc/dnsmasq.leases"):
+        try:
+            with open(path) as f:
+                leases.update(parse_leases(f.read()))
+        except OSError:
+            pass
+    res = []
+    for st in parse_station_dump(dump):
+        ip, host = leases.get(st["mac"], (neigh.get(st["mac"], ""), ""))
+        st.update({"ip": ip or neigh.get(st["mac"], ""), "name": host})
+        res.append(st)
+    return res
+
+
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.geometry("520x520")
-        self.minsize(460, 460)
+        self.geometry("560x700")
+        self.minsize(520, 620)
         self.iface = wifi_iface()
         self.busy = False
 
@@ -164,6 +253,15 @@ class App(tk.Tk):
         self.btn_qr = ttk.Button(bar, command=self.on_qr)
         self.btn_qr.pack(side="left", padx=8)
 
+        self.f_cl = ttk.LabelFrame(self)
+        self.f_cl.pack(fill="x", padx=12, pady=(10, 0))
+        self.tree = ttk.Treeview(self.f_cl, columns=("ip", "mac", "sig", "time", "data"), height=4, selectmode="none")
+        for col, w in (("#0", 120), ("ip", 95), ("mac", 130), ("sig", 70), ("time", 85), ("data", 105)):
+            self.tree.column(col, width=w, anchor="w")
+        self.tree.pack(fill="x", padx=6, pady=(6, 2))
+        self.lbl_cl = ttk.Label(self.f_cl, foreground="#888888")
+        self.lbl_cl.pack(anchor="w", padx=8, pady=(0, 6))
+
         self.lbl_log = ttk.Label(self)
         self.lbl_log.pack(anchor="w", padx=12, pady=(12, 2))
         self.log = tk.Text(self, height=8, state="disabled", wrap="word")
@@ -178,6 +276,10 @@ class App(tk.Tk):
         self.title(t("title"))
         self.lbl_title.config(text=t("title"))
         self.btn_lang.config(text=t("lang_btn"))
+        self.tree.heading("#0", text=t("c_name"))
+        for col, key in (("ip", "c_ip"), ("mac", "c_mac"), ("sig", "c_sig"), ("time", "c_time"), ("data", "c_data")):
+            self.tree.heading(col, text=t(key))
+        self.refresh_clients()
         self.lbl_iface.config(text=t("iface") + ":")
         self.lbl_state.config(text=t("state") + ":")
         self.lbl_ssid.config(text=t("ssid"))
@@ -213,10 +315,25 @@ class App(tk.Tk):
         self.val_state.config(text=t("on") if on else t("off"),
                               foreground="#1a7f37" if on else "#888888")
 
+    def refresh_clients(self):
+        self.tree.delete(*self.tree.get_children())
+        rows = list_clients(self.iface) if getattr(self, "active", False) else []
+        for c in rows:
+            sig = f"{c['signal']} dBm" if c["signal"] is not None else "-"
+            self.tree.insert("", "end", text=c["name"] or "—",
+                             values=(c["ip"] or "-", c["mac"], sig, human_secs(c["connected"]),
+                                     f"{human_bytes(c['rx'])} / {human_bytes(c['tx'])}"))
+        self.f_cl.config(text=f"{t('clients')} ({len(rows)})")
+        if not getattr(self, "active", False):
+            self.lbl_cl.config(text=t("c_off"))
+        else:
+            self.lbl_cl.config(text="" if rows else t("c_none"))
+
     def update_status(self):
         if not self.busy:
             self.active = is_active()
             self.refresh_state_label()
+            self.refresh_clients()
         self.after(3000, self.update_status)
 
     def load_profile(self):

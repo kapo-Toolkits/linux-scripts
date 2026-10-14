@@ -141,6 +141,32 @@ EOT
   echo "Enabled. Logs: journalctl -u hotspot.service -b --no-pager | tail -20"
 }
 
+step_clients() {
+  need_iface
+  iw dev "$IFACE" info 2>/dev/null | grep -q "type AP" || die "Hotspot is not running (interface not in AP mode). Run: $0 up"
+  local leases neigh
+  leases=$(cat "${HOTSPOT_LEASES:-/var/lib/NetworkManager/dnsmasq-$IFACE.leases}" /var/lib/misc/dnsmasq.leases 2>/dev/null || true)
+  neigh=$(ip neigh show dev "$IFACE" 2>/dev/null || true)
+  iw dev "$IFACE" station dump | LC_ALL=C awk -v neigh="$neigh" -v leases="$leases" '
+    function secs(s,  h, m) { h=int(s/3600); m=int((s%3600)/60); return h ? h "h " m "m" : (m ? m "m " (s%60) "s" : s "s") }
+    function mb(b) { return b >= 1048576 ? sprintf("%.1f MB", b/1048576) : sprintf("%.0f KB", b/1024) }
+    function out() { if (mac == "") return; n++
+      printf "%-17s %-15s %-16s %8s %9s %10s %10s\n", mac, (mac in ip ? ip[mac] : "-"), (mac in host ? host[mac] : "-"), (sig == "" ? "-" : sig " dBm"), secs(ct), mb(rx), mb(tx) }
+    BEGIN {
+      m = split(neigh, nl, "\n")
+      for (i = 1; i <= m; i++) { k = split(nl[i], f, " "); for (j = 2; j < k; j++) if (f[j] == "lladdr") { mc = tolower(f[j+1]); if (!(mc in ip) || index(ip[mc], ":")) ip[mc] = f[1] } }
+      m = split(leases, ll, "\n")
+      for (i = 1; i <= m; i++) { k = split(ll[i], f, " "); if (k >= 4) { mc = tolower(f[2]); ip[mc] = f[3]; if (f[4] != "*") host[mc] = f[4] } }
+      printf "%-17s %-15s %-16s %8s %9s %10s %10s\n", "MAC", "IP", "NAME", "SIGNAL", "CONNECTED", "DOWN", "UP"
+    }
+    /^Station / { out(); mac = tolower($2); sig = ""; ct = 0; rx = 0; tx = 0 }
+    /signal:/ && !/avg/ { sig = $2 }
+    /connected time:/ { ct = $3 }
+    /rx bytes:/ { rx = $3 }
+    /tx bytes:/ { tx = $3 }
+    END { out(); if (n == 0) print "(no devices connected)" }'
+}
+
 step_qr() {
   local ssid psk lsqr="" d here
   ssid=$(nmcli -e no -g 802-11-wireless.ssid con show "$CON" 2>/dev/null) || die "Profile '$CON' not found. Run: $0 create"
@@ -174,6 +200,7 @@ Hotspot steps (run in this order on a fresh install):
   docker-fix     7  persistent fix if Docker blocks forwarding
   autostart-on   9  start at boot via NetworkManager   (autostart-off to undo)
   service-on        start at boot via systemd service   (fallback)
+  clients           list devices connected to the running hotspot (IP, signal, time, traffic)
   qr                show a QR code to join the hotspot (phone camera)
   logs              last wpa_supplicant log lines (real error reasons)
 
@@ -184,7 +211,7 @@ EOT
 step="${1:-}"; shift || true
 case "$step" in
   check) step_check;; driver) step_driver;; create) step_create;; test-open) step_test_open;;
-  secure) step_secure;; qr) step_qr;; setup) step_setup;; up) step_up;; down) step_down;; status) step_status;;
+  secure) step_secure;; qr) step_qr;; clients) step_clients;; setup) step_setup;; up) step_up;; down) step_down;; status) step_status;;
   passwd) step_passwd;; ssid) step_ssid "$@";; docker-fix) step_docker_fix;;
   autostart-on) step_autostart_on;; autostart-off) step_autostart_off;;
   service-on) step_service_on;; logs) step_logs;;

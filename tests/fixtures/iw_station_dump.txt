@@ -1,0 +1,21 @@
+Station aa:bb:cc:dd:ee:01 (on wlp3s0)
+	inactive time:	1230 ms
+	rx bytes:	5242880
+	rx packets:	4034
+	tx bytes:	1048576
+	tx packets:	1034
+	tx retries:	12
+	tx failed:	0
+	signal:  	-45 [-45, -47] dBm
+	signal avg:	-46 [-46, -48] dBm
+	tx bitrate:	72.2 MBit/s MCS 7 short GI
+	authorized:	yes
+	associated:	yes
+	connected time:	3725 seconds
+Station AA:BB:CC:DD:EE:02 (on wlp3s0)
+	inactive time:	40 ms
+	rx bytes:	2048
+	tx bytes:	512
+	signal:  	-71 [-71] dBm
+	signal avg:	-70 dBm
+	connected time:	42 seconds

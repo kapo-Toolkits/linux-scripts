@@ -1,0 +1,4 @@
+10.42.0.35 lladdr aa:bb:cc:dd:ee:01 REACHABLE
+fe80::1c2d:3e4f lladdr aa:bb:cc:dd:ee:01 STALE
+10.42.0.77 lladdr aa:bb:cc:dd:ee:02 STALE
+10.42.0.99 dev wlp3s0  FAILED

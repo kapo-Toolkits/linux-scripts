@@ -69,6 +69,46 @@ class Hotspot(unittest.TestCase):
         self.assertFalse(self.m.valid_psk("პაროლი12345"))          # Latin only
 
 
+class HotspotClients(unittest.TestCase):
+    m = Hotspot.m
+    fx = os.path.join(ROOT, "tests", "fixtures")
+
+    def read(self, name):
+        with open(os.path.join(self.fx, name)) as f:
+            return f.read()
+
+    def test_parse_station_dump(self):
+        st = self.m.parse_station_dump(self.read("iw_station_dump.txt"))
+        self.assertEqual([x["mac"] for x in st], ["aa:bb:cc:dd:ee:01", "aa:bb:cc:dd:ee:02"])   # MAC lower-cased
+        self.assertEqual((st[0]["signal"], st[0]["connected"], st[0]["rx"], st[0]["tx"]), (-45, 3725, 5242880, 1048576))
+        self.assertEqual(st[1]["signal"], -71)       # "signal avg" must not override "signal"
+
+    def test_neigh_prefers_ipv4_and_leases_give_names(self):
+        self.assertEqual(self.m.parse_neigh(self.read("ip_neigh.txt"))["aa:bb:cc:dd:ee:01"], "10.42.0.35")
+        lease = self.m.parse_leases(self.read("dnsmasq.leases"))
+        self.assertEqual(lease["aa:bb:cc:dd:ee:01"], ("10.42.0.35", "Giorgis-iPhone"))
+        self.assertEqual(lease["aa:bb:cc:dd:ee:02"][1], "")          # "*" = no hostname
+
+    def test_list_clients_merges_sources(self):
+        outputs = {"iw": self.read("iw_station_dump.txt"), "ip": self.read("ip_neigh.txt")}
+        orig, env = self.m.run, os.environ.get("HOTSPOT_LEASES")
+        self.m.run = lambda cmd, timeout=None: (0, outputs[cmd[0]])
+        os.environ["HOTSPOT_LEASES"] = os.path.join(self.fx, "dnsmasq.leases")
+        try:
+            rows = self.m.list_clients("wlp3s0")
+        finally:
+            self.m.run = orig
+            os.environ.pop("HOTSPOT_LEASES", None) if env is None else os.environ.update(HOTSPOT_LEASES=env)
+        self.assertEqual([(r["ip"], r["name"]) for r in rows], [("10.42.0.35", "Giorgis-iPhone"), ("10.42.0.77", "")])
+
+    def test_humanizers(self):
+        self.assertEqual(self.m.human_secs(42), "42s")
+        self.assertEqual(self.m.human_secs(320), "5m 20s")
+        self.assertEqual(self.m.human_secs(3725), "1h 2m")
+        self.assertEqual(self.m.human_bytes(2048), "2.0 KB")
+        self.assertEqual(self.m.human_bytes(512), "512 B")
+
+
 class Qgis(unittest.TestCase):
     m = load("qgis-installer/qgis-installer-gui.py")
     mint = {"name": "x", "family": "ubuntu", "code": "noble", "pm": "apt-get", "arch": "amd64",
