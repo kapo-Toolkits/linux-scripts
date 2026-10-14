@@ -112,6 +112,25 @@ class Usb(unittest.TestCase):
         self.assertEqual(self.m.mountpoints({"mountpoint": "/x"}), ["/x"])
         self.assertEqual(self.m.mountpoints({}), [])
 
+    def test_find_blockers_sees_cwd_and_open_file(self):
+        import subprocess
+        with tempfile.TemporaryDirectory() as d:
+            f = os.path.join(d, "data.txt")
+            open(f, "w").close()
+            a = subprocess.Popen(["sleep", "30"], cwd=d)                       # holds the folder as cwd
+            b = subprocess.Popen(["sh", "-c", f"exec 3<{f}; exec sleep 30"])       # holds a file open
+            try:
+                import time
+                time.sleep(0.5)
+                rows = {r[0]: r for r in self.m.find_blockers([d])}
+                self.assertEqual(rows[a.pid][3], "cwd")
+                self.assertEqual(rows[b.pid][3], "open")
+                self.assertTrue(rows[b.pid][4].endswith("data.txt"))
+                self.assertIn("PID", self.m.describe_blockers([d]))
+            finally:
+                a.kill(); b.kill(); a.wait(); b.wait()
+            self.assertEqual(self.m.find_blockers([d]), [])                    # nobody left
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=1)

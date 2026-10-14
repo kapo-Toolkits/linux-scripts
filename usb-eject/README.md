@@ -38,3 +38,9 @@ sudo umount /dev/sdb1                 # unmount partitions, not the whole disk
 sync
 sudo udisksctl power-off -b /dev/sdb  # `eject` is for optical media, not USB HDDs
 ```
+
+## When unmount fails ("target is busy")
+
+Both the CLI and the GUI now say **which program is holding the drive** — name, PID, user and the file/folder (its working directory, an open file, or a program running from the drive) — so you can close it and retry.
+The GUI reads `/proc` (no extra tools needed); the CLI uses `lsof`, then `fuser`, then `/proc`. Without root only *your own* processes are visible; the message says so when nothing shows up.
+Typical culprits: a terminal `cd`'d into the drive, a file manager window, a media player, a backup or indexing job.

@@ -50,6 +50,9 @@ STR = {
         "err_title": "Error", "list_fail": "Could not read drives:\n{e}",
         "unmount_fail": "Could not unmount {p}:\n{m}\n\nA file or folder on it may still be open.",
         "poweroff_fail": "Power-off failed:\n{m}",
+        "busy_list": "\n\nIn use by:\n{l}\n\nClose these programs and try again.",
+        "busy_none": "\n\nNo process visible (other users' processes need administrator rights).",
+        "busy_more": "(+{n} more)",
         "ok": "The drive was safely ejected. You can unplug it now.",
     },
     "ka": {
@@ -62,6 +65,9 @@ STR = {
         "err_title": "შეცდომა", "list_fail": "დისკების წაკითხვა ვერ მოხერხდა:\n{e}",
         "unmount_fail": "{p} ვერ გამოიმაუნთა:\n{m}\n\nშესაძლოა ფაილი ან საქაღალდე ღიაა.",
         "poweroff_fail": "გამორთვა ვერ მოხერხდა:\n{m}",
+        "busy_list": "\n\nიყენებს:\n{l}\n\nდახურეთ ეს პროგრამები და სცადეთ თავიდან.",
+        "busy_none": "\n\nპროცესი არ ჩანს (სხვა მომხმარებლის პროცესებისთვის ადმინისტრატორის უფლება სჭირდება).",
+        "busy_more": "(+{n} სხვა)",
         "ok": "დისკი უსაფრთხოდ გამოირთო. კაბელის გამოძვრა შეიძლება.",
     },
 }
@@ -94,6 +100,59 @@ def list_usb_disks():
     return disks
 
 
+def find_blockers(mps):
+    """Processes with their cwd, an open file or their executable inside the given mount points.
+    Reads /proc, so no extra tools are needed; without root only your own processes are visible.
+    -> [(pid, name, user, what, path)]"""
+    import pwd
+    pre = [m.rstrip("/") for m in mps if m]
+
+    def inside(p):
+        return any(p == m or p.startswith(m + "/") for m in pre)
+    out = []
+    for pid in (d for d in os.listdir("/proc") if d.isdigit()):
+        base = f"/proc/{pid}"
+        hit = None
+        for what, link in (("cwd", base + "/cwd"), ("exe", base + "/exe")):
+            try:
+                tgt = os.readlink(link)
+            except OSError:
+                continue
+            if inside(tgt):
+                hit = (what, tgt)
+                break
+        if not hit:
+            try:
+                for fd in os.listdir(base + "/fd"):
+                    try:
+                        tgt = os.readlink(f"{base}/fd/{fd}")
+                    except OSError:
+                        continue
+                    if inside(tgt):
+                        hit = ("open", tgt)
+                        break
+            except OSError:
+                pass
+        if hit:
+            try:
+                name = open(base + "/comm").read().strip()
+                user = pwd.getpwuid(os.stat(base).st_uid).pw_name
+            except (OSError, KeyError):
+                name, user = "?", "?"
+            out.append((int(pid), name, user, hit[0], hit[1]))
+    return sorted(out)
+
+
+def describe_blockers(mps, limit=8):
+    rows = find_blockers(mps)
+    if not rows:
+        return t("busy_none")
+    lines = [f"  • {n} (PID {p}, {u}) — {w}: {path}" for p, n, u, w, path in rows[:limit]]
+    if len(rows) > limit:
+        lines.append("  " + t("busy_more", n=len(rows) - limit))
+    return t("busy_list", l="\n".join(lines))
+
+
 def eject(disk):
     """unmount all -> sync -> power-off. Returns (ok, message) in the current language."""
     for part, mps in disk["parts"]:
@@ -103,7 +162,7 @@ def eject(disk):
         if rc != 0:
             rc, msg = run(["pkexec", "umount", part])
         if rc != 0:
-            return False, t("unmount_fail", p=part, m=msg)
+            return False, t("unmount_fail", p=part, m=msg) + describe_blockers(mps)
     run(["sync"])
     rc, msg = run(["udisksctl", "power-off", "-b", disk["path"]])
     if rc != 0:
