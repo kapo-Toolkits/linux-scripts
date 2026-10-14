@@ -161,17 +161,21 @@ def model_token(model):
     return re.sub(r"[\s-]", "", m.group(0)).lower() if m else re.sub(r"\W", "", model).lower()
 
 
+def token_regex(tok):
+    """'l1250' -> matches l1250 / l-1250 / l_1250, but not hl1250 or l12500."""
+    chunks = re.findall(r"[a-z]+|\d+", tok)
+    return re.compile(r"(?<![a-z0-9])" + r"[^a-z0-9]?".join(chunks) + r"(?![0-9])")
+
+
 def search_ppds(make, model):
     """Installed PPDs matching the model (word-bounded, so 'hl1250' != 'l1250')."""
     rc, out = run(["lpinfo", "-m"], timeout=180)
-    tok = model_token(model)
-    rx = re.compile(r"(?<![a-z0-9])" + re.escape(tok) + r"(?![0-9])")
+    rx = token_regex(model_token(model))
     vendor = (make.split()[0].lower() if make else "")
     hits = []
     for line in out.splitlines():
         ppd, _, desc = line.partition(" ")
-        flat = re.sub(r"[\s-]", "", line.lower())
-        if rx.search(flat) and (not vendor or vendor in line.lower()):
+        if rx.search(line.lower()) and (not vendor or vendor in line.lower()):
             hits.append((ppd, desc.strip()))
     return hits
 
