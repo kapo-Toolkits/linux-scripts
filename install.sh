@@ -5,6 +5,7 @@ set -euo pipefail
 
 PREFIX=/usr/local
 ACTION=install
+DESKTOP_ICONS=0
 TOOLS=()
 here="$(cd "$(dirname "$0")" && pwd)"
 
@@ -28,6 +29,7 @@ usage() {
 Usage: ./install.sh [--prefix DIR] [--uninstall] TOOL...|all
 Tools: ${ALL[*]}
   --prefix DIR   install under DIR instead of /usr/local
+  --desktop      also put a clickable launcher on your Desktop
   --uninstall    remove what install put there
 Uses sudo automatically when DIR is not writable.
 U
@@ -37,6 +39,7 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --prefix) PREFIX="$2"; shift 2;;
     --uninstall) ACTION=uninstall; shift;;
+    --desktop) DESKTOP_ICONS=1; shift;;
     -h|--help) usage; exit 0;;
     all) TOOLS+=("${ALL[@]}"); shift;;
     *) [[ -n "${FILES[$1]:-}" ]] || { echo "Unknown tool: $1"; usage; exit 1; }; TOOLS+=("$1"); shift;;
@@ -44,6 +47,8 @@ while [ $# -gt 0 ]; do
 done
 [ ${#TOOLS[@]} -gt 0 ] || { usage; exit 1; }
 
+PREFIX="$(realpath -m "$PREFIX")"
+DESKDIR="$(xdg-user-dir DESKTOP 2>/dev/null || echo "$HOME/Desktop")"
 SUDO=""
 probe="$PREFIX"; while [ ! -e "$probe" ]; do probe="$(dirname "$probe")"; done
 [ -w "$probe" ] || SUDO="sudo"
@@ -57,11 +62,20 @@ for tool in "${TOOLS[@]}"; do
       $SUDO rm -f "$PREFIX/bin/$cmd"; echo "removed $PREFIX/bin/$cmd"
     fi
   done
-  d="${DESKTOP[$tool]}"
+  d="${DESKTOP[$tool]}"; dname="$(basename "$d")"
   if [ "$ACTION" = install ]; then
-    $SUDO install -D -m 644 "$here/$d" "$PREFIX/share/applications/$(basename "$d")"
+    # absolute Exec= so a menu/desktop click works even when PREFIX/bin is not in the session's PATH
+    tmp="$(mktemp)"; sed "s#^Exec=#Exec=$PREFIX/bin/#" "$here/$d" > "$tmp"
+    $SUDO install -D -m 644 "$tmp" "$PREFIX/share/applications/$dname"
+    if [ "$DESKTOP_ICONS" = 1 ] && [ -d "$DESKDIR" ]; then
+      install -m 755 "$tmp" "$DESKDIR/$dname"
+      command -v gio >/dev/null && gio set "$DESKDIR/$dname" metadata::trusted true 2>/dev/null || true
+      echo "launcher on Desktop: $DESKDIR/$dname"
+    fi
+    rm -f "$tmp"
   else
-    $SUDO rm -f "$PREFIX/share/applications/$(basename "$d")"
+    $SUDO rm -f "$PREFIX/share/applications/$dname"
+    rm -f "$DESKDIR/$dname"
   fi
 done
 
