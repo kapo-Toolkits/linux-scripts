@@ -30,8 +30,8 @@ GUI არ აკეთებს `driver` და `docker-fix` ნაბიჯე
 დასაყენებლად (მენიუში ხატულით):
 
 ```bash
-sudo install -m 755 hotspot-gui.py /usr/local/bin/hotspot-gui
-sudo install -m 644 hotspot-gui.desktop /usr/share/applications/
+# from the repository root
+./install.sh wifi-hotspot
 ```
 
 ## ყოველდღიური / Daily

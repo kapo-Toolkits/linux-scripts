@@ -17,37 +17,14 @@ import sys
 import tempfile
 import threading
 
-# ---------------------------------------------------------------- tkinter bootstrap
-TK_PKGS = [("apt-get", ["apt-get", "install", "-y"], "python3-tk"),
-           ("dnf", ["dnf", "install", "-y"], "python3-tkinter"),
-           ("pacman", ["pacman", "-S", "--noconfirm"], "tk"),
-           ("zypper", ["zypper", "--non-interactive", "install"], "python3-tk"),
-           ("apk", ["apk", "add"], "py3-tkinter")]
+_here = os.path.dirname(os.path.abspath(__file__))
+for _p in (os.path.join(_here, "..", "common"), os.path.join(_here, "..", "lib", "linux-scripts"),
+           "/usr/local/lib/linux-scripts", "/usr/lib/linux-scripts"):
+    if os.path.isdir(_p):
+        sys.path.insert(0, _p)
+from lscommon import ensure_tkinter, load_lang, run, save_lang  # noqa: E402
 
-
-def ensure_tkinter():
-    try:
-        import tkinter  # noqa: F401
-        return
-    except ImportError:
-        pass
-    for mgr, cmd, pkg in TK_PKGS:
-        if shutil.which(mgr):
-            break
-    else:
-        sys.exit("tkinter missing — install python3-tk / python3-tkinter / tk")
-    if sys.stdin.isatty() and input(f"tkinter is missing. Install {pkg}? [Y/n] ").strip().lower() not in ("", "y", "yes"):
-        sys.exit("Cancelled.")
-    elevate = ["pkexec"] if shutil.which("pkexec") and os.environ.get("DISPLAY") else ["sudo"]
-    if mgr == "apt-get":
-        subprocess.run(elevate + ["apt-get", "update"])
-    if subprocess.run(elevate + cmd + [pkg]).returncode != 0:
-        sys.exit(f"Could not install {pkg}.")
-    os.execv(sys.executable, [sys.executable] + sys.argv)
-
-
-if __name__ == "__main__":
-    ensure_tkinter()
+ensure_tkinter()
 
 import tkinter as tk  # noqa: E402
 from tkinter import ttk, messagebox, scrolledtext  # noqa: E402
@@ -70,7 +47,7 @@ SUFFIX = {"latest": "", "ltr": "-ltr", "nightly-release": "-nightly-release",
 CHANNELS = ["latest", "ltr", "nightly-release", "nightly-ltr", "nightly"]
 LTR_ONLY_CHANNELS = ["ltr", "nightly-ltr"]
 
-LANG = "en"
+LANG = load_lang()
 STR = {
 "en": {
  "title": "QGIS Installer", "lang_btn": "ქართული", "tab_inst": "Install", "tab_guide": "Guide",
@@ -617,6 +594,7 @@ class App(tk.Tk):
     def toggle_lang(self):
         global LANG
         LANG = "ka" if LANG == "en" else "en"
+        save_lang(LANG)
         self.apply_lang()
 
     def on_channel(self, _e=None):

@@ -11,53 +11,19 @@ import subprocess
 import sys
 import threading
 
-# პაკეტ-მენეჯერი -> (install ბრძანება, tkinter-ის პაკეტი)
-TK_PACKAGES = [
-    ("apt-get", ["apt-get", "install", "-y"], "python3-tk"),
-    ("dnf", ["dnf", "install", "-y"], "python3-tkinter"),
-    ("yum", ["yum", "install", "-y"], "python3-tkinter"),
-    ("pacman", ["pacman", "-S", "--noconfirm"], "tk"),
-    ("zypper", ["zypper", "--non-interactive", "install"], "python3-tk"),
-    ("apk", ["apk", "add"], "py3-tkinter"),
-    ("xbps-install", ["xbps-install", "-y"], "python3-tkinter"),
-]
+_here = os.path.dirname(os.path.abspath(__file__))
+for _p in (os.path.join(_here, "..", "common"), os.path.join(_here, "..", "lib", "linux-scripts"),
+           "/usr/local/lib/linux-scripts", "/usr/lib/linux-scripts"):
+    if os.path.isdir(_p):
+        sys.path.insert(0, _p)
+from lscommon import ensure_tkinter, load_lang, run, save_lang  # noqa: E402
 
-
-def ensure_tkinter():
-    """თუ tkinter არ არის, სთხოვს ნებართვას, აყენებს და თავს თავიდან უშვებს."""
-    try:
-        import tkinter  # noqa: F401
-        return
-    except ImportError:
-        pass
-    for mgr, cmd, pkg in TK_PACKAGES:
-        if shutil.which(mgr):
-            break
-    else:
-        sys.exit("tkinter ვერ მოიძებნა და პაკეტ-მენეჯერი ვერ ვიცანი. "
-                 "დააყენეთ ხელით: python3-tk / python3-tkinter / tk")
-    if sys.stdin.isatty():
-        if input(f"tkinter არ არის. დავაყენო ({pkg})? [Y/n] ").strip().lower() not in ("", "y", "yes"):
-            sys.exit("გაუქმდა.")
-    # გრაფიკული პაროლის ფანჯარა თუ შეიძლება (მენიუდან გაშვებისას), სხვაგან sudo
-    elevate = ["pkexec"] if shutil.which("pkexec") and os.environ.get("DISPLAY") else ["sudo"]
-    if mgr == "apt-get":
-        subprocess.run(elevate + ["apt-get", "update"])
-    if subprocess.run(elevate + cmd + [pkg]).returncode != 0:
-        sys.exit(f"{pkg}-ის დაყენება ვერ მოხერხდა.")
-    os.execv(sys.executable, [sys.executable] + sys.argv)
-
-
-if __name__ == "__main__":
-    ensure_tkinter()
+ensure_tkinter()
 
 import tkinter as tk  # noqa: E402
 from tkinter import ttk, messagebox  # noqa: E402
 
 
-def run(cmd):
-    p = subprocess.run(cmd, capture_output=True, text=True)
-    return p.returncode, (p.stdout + p.stderr).strip()
 
 
 def mountpoints(node):
@@ -71,7 +37,7 @@ def walk(node):
         yield from walk(ch)
 
 
-LANG = "en"  # ნაგულისხმევი ენა / default language
+LANG = load_lang()
 
 STR = {
     "en": {
@@ -180,6 +146,7 @@ class App(tk.Tk):
     def toggle_lang(self):
         global LANG
         LANG = "ka" if LANG == "en" else "en"
+        save_lang(LANG)
         self.apply_lang()
         self.refresh()
 

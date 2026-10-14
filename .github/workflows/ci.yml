@@ -1,0 +1,34 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 5 * * 1"   # weekly: catches upstream changes (QGIS repo layout, signing-key expiry 2027-08-08)
+
+jobs:
+  lint-and-unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: shellcheck
+        run: shellcheck -S warning install.sh usb-eject/usb-eject.sh wifi-hotspot/hotspot.sh tests/run-qgis-containers.sh
+      - name: syntax of generated/embedded shell is covered by unit tests; compile all python
+        run: python3 -m compileall -q common usb-eject wifi-hotspot printer-setup qgis-installer tests
+      - name: unit tests (offline)
+        run: python3 tests/test_units.py
+      - name: install.sh into a temp prefix and back
+        run: |
+          p=$(mktemp -d)
+          ./install.sh --prefix "$p" all
+          test -x "$p/bin/qgis-installer" && test -f "$p/lib/linux-scripts/lscommon.py"
+          ./install.sh --prefix "$p" --uninstall all
+          test ! -e "$p/lib/linux-scripts"
+
+  qgis-containers:
+    # real apt + qgis.org inside throwaway containers: key fingerprint check, repo config, uninstall
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: tests/run-qgis-containers.sh

@@ -10,3 +10,23 @@ Small, self-contained Linux utilities. Each tool lives in its own folder with it
 | [wifi-hotspot](wifi-hotspot/) | WPA2 Wi-Fi Hotspot via NetworkManager, step by step (CLI steps + EN/KA GUI, tested on Linux Mint) |
 | [printer-setup](printer-setup/) | GUI (EN/KA): detect a printer, find/inspect/install its driver, add it, print a test page |
 | [qgis-installer](qgis-installer/) | GUI (EN/KA): install QGIS via the official repo (latest/LTR/nightly), Flatpak, or the distro package |
+
+## Install / uninstall
+
+```bash
+./install.sh all                 # or: usb-eject wifi-hotspot printer-setup qgis-installer
+./install.sh --uninstall all
+./install.sh --prefix ~/.local all   # no sudo; menu entries land in ~/.local/share/applications
+```
+
+The GUIs share `common/lscommon.py` (tkinter auto-install, runner, remembered language in
+`~/.config/linux-scripts/lang`); `install.sh` puts it in `PREFIX/lib/linux-scripts`.
+
+## Tests
+
+```bash
+python3 tests/test_units.py            # offline, seconds
+tests/run-qgis-containers.sh           # needs docker; real apt + qgis.org in throwaway containers
+```
+
+CI (GitHub Actions) runs both on every push and weekly.

@@ -8,8 +8,8 @@ python3 qgis-installer-gui.py
 ```
 
 ```bash
-sudo install -m 755 qgis-installer-gui.py /usr/local/bin/qgis-installer
-sudo install -m 644 qgis-installer.desktop /usr/share/applications/
+# from the repository root
+./install.sh qgis-installer
 ```
 
 If `tkinter` is missing the script offers to install it itself (apt/dnf/pacman/zypper/apk).

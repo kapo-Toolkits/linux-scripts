@@ -12,8 +12,8 @@ python3 printer-setup-gui.py
 Install as an app:
 
 ```bash
-sudo install -m 755 printer-setup-gui.py /usr/local/bin/printer-setup
-sudo install -m 644 printer-setup.desktop /usr/share/applications/
+# from the repository root
+./install.sh printer-setup
 ```
 
 Requires `python3-tk` and CUPS (`lpinfo`, `lpadmin`, `lp`) — present on Mint/Ubuntu desktops.

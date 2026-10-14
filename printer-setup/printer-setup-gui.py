@@ -17,13 +17,19 @@ import threading
 import urllib.parse
 import webbrowser
 
-try:
-    import tkinter as tk
-    from tkinter import ttk, messagebox, filedialog, scrolledtext
-except ImportError:
-    sys.exit("tkinter is missing: sudo apt install python3-tk  (Fedora: python3-tkinter, Arch: tk)")
+_here = os.path.dirname(os.path.abspath(__file__))
+for _p in (os.path.join(_here, "..", "common"), os.path.join(_here, "..", "lib", "linux-scripts"),
+           "/usr/local/lib/linux-scripts", "/usr/lib/linux-scripts"):
+    if os.path.isdir(_p):
+        sys.path.insert(0, _p)
+from lscommon import ensure_tkinter, load_lang, run, save_lang  # noqa: E402
 
-LANG = "en"  # default / ნაგულისხმევი
+ensure_tkinter()
+
+import tkinter as tk  # noqa: E402
+from tkinter import ttk, messagebox, filedialog, scrolledtext  # noqa: E402
+
+LANG = load_lang()
 
 # vendor (lowercase, first word of the make) -> apt packages worth trying first
 APT_HINTS = {
@@ -122,12 +128,6 @@ def t(k, **kw):
     return s.format(**kw) if kw else s
 
 
-def run(cmd, timeout=120):
-    try:
-        p = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
-        return p.returncode, (p.stdout + p.stderr).strip()
-    except Exception as e:
-        return 1, str(e)
 
 
 def detect_printers():
@@ -301,6 +301,7 @@ class App(tk.Tk):
     def toggle_lang(self):
         global LANG
         LANG = "ka" if LANG == "en" else "en"
+        save_lang(LANG)
         self.apply_lang()
 
     # ---- helpers

@@ -19,9 +19,8 @@ Safely unmount and power off USB drives on Linux — as a CLI script or a small 
 ## Install
 
 ```bash
-sudo install -m 755 usb-eject.sh /usr/local/bin/usb-eject
-sudo install -m 755 usb-eject-gui.py /usr/local/bin/usb-eject-gui
-sudo install -m 644 usb-eject-gui.desktop /usr/share/applications/
+# from the repository root
+./install.sh usb-eject
 ```
 
 ## Usage
