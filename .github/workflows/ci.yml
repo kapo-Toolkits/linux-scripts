@@ -20,6 +20,8 @@ jobs:
         run: python3 tests/test_units.py
       - name: qgis-installer core and command line (offline)
         run: python3 tests/test_qgis_installer.py
+      - name: qgis-installer distribution paths (Fedora/Atomic, openSUSE, Arch/AUR, containers, Nix)
+        run: python3 tests/test_qgis_distros.py
       - name: install.sh into a temp prefix and back
         run: |
           p=$(mktemp -d)

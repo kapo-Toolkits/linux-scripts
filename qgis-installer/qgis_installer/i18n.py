@@ -10,7 +10,17 @@ STR = {
  "f_pkg": "Packages (official repository)", "log": "Log",
  "mA": "A. Official QGIS repository (Debian/Ubuntu/Mint) — recommended",
  "mB": "B. Flatpak (Flathub) — any distribution, your user only",
- "mC": "C. Distribution package — simplest, usually older",
+"mC": "C. Distribution package — simplest, usually older",
+ "mD": "D. Container (Distrobox / Toolbx) — for immutable systems, QGIS lives in its own box",
+ "mE": "E. Nix (nix-shell) — NixOS / Nix users, runs QGIS from nixpkgs",
+ "ch_latest_dist": "Stable (what the repository calls qgis)", "ch_ltr_dist": "Long-term release (qgis-ltr)",
+ "ch_nightly_dist": "Development build from git (AUR qgis-git)",
+ "st_atomic": "ℹ Fedora Atomic system: packages are layered with rpm-ostree and need a reboot. Flatpak (B) or a container (D) avoid that.",
+ "st_suse_imm": "ℹ Immutable openSUSE: the guide recommends a Distrobox container (D) instead of installing on the base system.",
+ "st_nix": "ℹ Nix detected: option E starts QGIS from nixpkgs; for NixOS add pkgs.qgis (or pkgs.qgis-ltr) to environment.systemPackages in configuration.nix.",
+ "st_aur": "ℹ Arch: the official repository has qgis; qgis-ltr and qgis-git come from the AUR through {h}.",
+ "st_noaur": "ℹ Arch: install an AUR helper (yay or paru) to get the LTR or git version; the official qgis is always available.",
+ "k_container": "Container {tool}: {name} (QGIS lives inside; removing it deletes the container's own files)",
  "ch_latest": "Latest release {v}", "ch_ltr": "Long-term release (LTR) {v} — most stable",
  "ch_nightly-release": "Nightly of the next point release", "ch_nightly-ltr": "Nightly of the next LTR point release",
  "ch_nightly": "Nightly development (master) — unstable, debug build",
@@ -47,7 +57,10 @@ STR = {
   "A  Official repository — newest QGIS, updated through apt. Debian 12/13/sid, Ubuntu 22.04–26.04 and derivatives (Linux Mint uses its Ubuntu codename).\n"
   "   Debian 12, Ubuntu 22.04 and 24.04 get only the LTR line (their libraries are too old for QGIS 4).\n"
   "B  Flatpak — works on every distribution, sandboxed, installs for your user. Slightly bigger and files access is sandboxed.\n"
-  "C  Distribution package — tiny effort, but often an old QGIS.\n\n"
+  "C  Distribution package — tiny effort, but often an old QGIS. Fedora: qgis python3-qgis qgis-grass; openSUSE: qgis (or qgis-ltr) qgis-plugin-grass; Arch: qgis, and qgis-ltr / qgis-git from the AUR.\n"
+  "D  Container — Distrobox (openSUSE image) or Toolbx (Fedora image): QGIS runs from its own box and is exported to the menu. The way for immutable systems (Fedora Atomic, openSUSE MicroOS/Aeon/Kalpa).\n"
+  "E  Nix — nix-shell -p qgis (or qgis-ltr) starts QGIS without installing it; on NixOS add the package to configuration.nix.\n"
+  "Not covered because the guide gives no commands or the distribution is gone: Slackware (SlackBuilds.org), Mandriva, Spack (long source build).\n\n"
   "CHANNELS\n\n"
   "• Latest release — newest features (new major version first months can be rough).\n"
   "• LTR (long-term) — fewer changes, best for work and teaching.\n"
@@ -77,7 +90,17 @@ STR = {
  "f_pkg": "პაკეტები (ოფიციალური რეპოზიტორია)", "log": "ლოგი",
  "mA": "ა. ოფიციალური QGIS რეპოზიტორია (Debian/Ubuntu/Mint) — რეკომენდებული",
  "mB": "ბ. Flatpak (Flathub) — ნებისმიერ დისტრიბუციაზე, მხოლოდ თქვენთვის",
- "mC": "გ. დისტრიბუციის პაკეტი — უმარტივესი, ხშირად ძველი ვერსია",
+"mC": "გ. დისტრიბუციის პაკეტი — უმარტივესი, ხშირად ძველი ვერსია",
+ "mD": "დ. კონტეინერი (Distrobox / Toolbx) — immutable სისტემებისთვის, QGIS საკუთარ კონტეინერში ცხოვრობს",
+ "mE": "ე. Nix (nix-shell) — NixOS/Nix მომხმარებლებისთვის, QGIS-ს nixpkgs-იდან უშვებს",
+ "ch_latest_dist": "სტაბილური (რეპოზიტორიის qgis)", "ch_ltr_dist": "გრძელვადიანი რელიზი (qgis-ltr)",
+ "ch_nightly_dist": "განვითარების ბილდი git-იდან (AUR qgis-git)",
+ "st_atomic": "ℹ Fedora Atomic სისტემა: პაკეტები rpm-ostree-ით ემატება და გადატვირთვა სჭირდება. Flatpak (ბ) ან კონტეინერი (დ) ამას თავიდან აგარიდებთ.",
+ "st_suse_imm": "ℹ Immutable openSUSE: სახელმძღვანელო ურჩევს Distrobox კონტეინერს (დ) და არა ძირითად სისტემაზე დაყენებას.",
+ "st_nix": "ℹ Nix ნაპოვნია: ვარიანტი ე QGIS-ს nixpkgs-იდან უშვებს; NixOS-ზე configuration.nix-ში environment.systemPackages-ს დაუმატეთ pkgs.qgis (ან pkgs.qgis-ltr).",
+ "st_aur": "ℹ Arch: ოფიციალურ რეპოზიტორიაშია qgis; qgis-ltr და qgis-git AUR-იდან მოდის {h}-ით.",
+ "st_noaur": "ℹ Arch: LTR ან git ვერსიისთვის დააყენეთ AUR helper (yay ან paru); ოფიციალური qgis ყოველთვის ხელმისაწვდომია.",
+ "k_container": "კონტეინერი {tool}: {name} (QGIS შიგნითაა; წაშლისას კონტეინერის საკუთარი ფაილებიც იკარგება)",
  "ch_latest": "უახლესი რელიზი {v}", "ch_ltr": "გრძელვადიანი რელიზი (LTR) {v} — ყველაზე სტაბილური",
  "ch_nightly-release": "შემდეგი point-რელიზის ღამის ბილდი", "ch_nightly-ltr": "შემდეგი LTR point-რელიზის ღამის ბილდი",
  "ch_nightly": "განვითარების ღამის ბილდი (master) — არასტაბილური, debug",
@@ -114,7 +137,10 @@ STR = {
   "ა  ოფიციალური რეპოზიტორია — ყველაზე ახალი QGIS, განახლება apt-ით. Debian 12/13/sid, Ubuntu 22.04–26.04 და წარმოებულები (Linux Mint-ი თავის Ubuntu-ს კოდურ სახელს იყენებს).\n"
   "   Debian 12-ს, Ubuntu 22.04-სა და 24.04-ს მხოლოდ LTR ხაზი აქვს (ბიბლიოთეკები QGIS 4-ისთვის ძველია).\n"
   "ბ  Flatpak — ნებისმიერ დისტრიბუციაზე მუშაობს, იზოლირებულია, თქვენი მომხმარებლისთვის ყენდება. ცოტა მძიმეა და ფაილებზე წვდომა შეზღუდულია.\n"
-  "გ  დისტრიბუციის პაკეტი — უმარტივესი, მაგრამ ხშირად ძველი QGIS.\n\n"
+  "გ  დისტრიბუციის პაკეტი — უმარტივესი, მაგრამ ხშირად ძველი QGIS. Fedora: qgis python3-qgis qgis-grass; openSUSE: qgis (ან qgis-ltr) qgis-plugin-grass; Arch: qgis, ხოლო qgis-ltr / qgis-git — AUR-იდან.\n"
+  "დ  კონტეინერი — Distrobox (openSUSE-ის იმიჯი) ან Toolbx (Fedora-ს იმიჯი): QGIS საკუთარი კონტეინერიდან მუშაობს და მენიუში გამოდის. immutable სისტემებისთვის (Fedora Atomic, openSUSE MicroOS/Aeon/Kalpa).\n"
+  "ე  Nix — nix-shell -p qgis (ან qgis-ltr) QGIS-ს დაყენების გარეშე უშვებს; NixOS-ზე პაკეტი configuration.nix-ში დაამატეთ.\n"
+  "არ არის მხარდაჭერილი, რადგან სახელმძღვანელოში ბრძანებები არ წერია ან დისტრიბუცია აღარ არსებობს: Slackware (SlackBuilds.org), Mandriva, Spack (გრძელი კომპილაცია).\n\n"
   "არხები\n\n"
   "• უახლესი რელიზი — ახალი შესაძლებლობები (ახალი მაჟორული ვერსიის პირველ თვეებში შეიძლება უხეში იყოს).\n"
   "• LTR (გრძელვადიანი) — ნაკლები ცვლილება, სამუშაოსა და სწავლებისთვის საუკეთესო.\n"
@@ -158,6 +184,8 @@ def label_for(it, lang="en"):
         return t("k_snap", lang, v=it["v"])
     if k == "dist":
         return t("k_dist", lang, pm=it["pm"], v=it["v"])
+    if k == "container":
+        return t("k_container", lang, tool=it["tool"], name=it["name"])
     return t("k_data", lang, p=it["path"], sz=it["sz"])
 
 
