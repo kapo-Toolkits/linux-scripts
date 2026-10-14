@@ -1,0 +1,6 @@
+PRETTY_NAME="Ubuntu 20.04.6 LTS"
+NAME="Ubuntu"
+ID=ubuntu
+ID_LIKE=debian
+VERSION_CODENAME=focal
+UBUNTU_CODENAME=focal

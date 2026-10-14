@@ -15,7 +15,7 @@ declare -A FILES=(
   [usb-eject]="usb-eject/usb-eject.sh|usb-eject usb-eject/usb-eject-gui.py|usb-eject-gui"
   [wifi-hotspot]="wifi-hotspot/hotspot.sh|hotspot wifi-hotspot/hotspot-gui.py|hotspot-gui"
   [printer-setup]="printer-setup/printer-setup-gui.py|printer-setup"
-  [qgis-installer]="qgis-installer/qgis-installer-gui.py|qgis-installer"
+  [qgis-installer]="qgis-installer/qgis-installer-gui.py|qgis-installer qgis-installer/qgis-installer-cli.py|qgis-installer-cli"
 )
 declare -A GUISCRIPT=(
   [usb-eject]=usb-eject/usb-eject-gui.py
@@ -108,9 +108,17 @@ if [ "$ACTION" = install ]; then
   for m in lscommon lsqr; do
     $SUDO install -D -m 644 "$here/common/$m.py" "$PREFIX/lib/linux-scripts/$m.py"
   done
+  # the qgis_installer package (logic shared by qgis-installer and qgis-installer-cli)
+  case " ${TOOLS[*]} " in
+    *" qgis-installer "*)
+      for f in "$here"/qgis-installer/qgis_installer/*.py; do
+        $SUDO install -D -m 644 "$f" "$PREFIX/lib/linux-scripts/qgis_installer/$(basename "$f")"
+      done;;
+  esac
 fi
 if [ "$ACTION" = uninstall ]; then
-  guis=0; for g in usb-eject-gui hotspot-gui printer-setup qgis-installer; do [ -e "$PREFIX/bin/$g" ] && guis=1; done
+  case " ${TOOLS[*]} " in *" qgis-installer "*) $SUDO rm -rf "$PREFIX/lib/linux-scripts/qgis_installer";; esac
+  guis=0; for g in usb-eject-gui hotspot-gui printer-setup qgis-installer qgis-installer-cli; do [ -e "$PREFIX/bin/$g" ] && guis=1; done
   [ "$guis" = 0 ] && $SUDO rm -rf "$PREFIX/lib/linux-scripts" && echo "removed shared helper"
 fi
 command -v update-desktop-database >/dev/null && $SUDO update-desktop-database -q "$PREFIX/share/applications" 2>/dev/null || true

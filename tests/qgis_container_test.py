@@ -69,10 +69,12 @@ check("qgis + grass + python resolvable", rc == 0 and "unmet" not in sim.lower()
 
 # 2. tampered fingerprint must abort and leave nothing behind
 sh(f"rm -f {m.SOURCES} {m.KEYRING}")
-good = m.KEY_FPR
-m.KEY_FPR = "0" * 40
+import qgis_installer.system as core_system   # the constant now lives in the core package
+
+good = core_system.KEY_FPR
+core_system.KEY_FPR = "0" * 40
 bad = m.build_install("A", s, channel, pk)[0]
-m.KEY_FPR = good
+core_system.KEY_FPR = good
 rc, out = sh(simulate(bad["sh"]))
 check("wrong fingerprint aborts", rc != 0 and "MISMATCH" in out)
 check("nothing written after abort", not os.path.exists(m.SOURCES) and not os.path.exists(m.KEYRING))
