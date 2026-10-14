@@ -17,6 +17,23 @@ Tested ✅ on **Linux Mint XFCE + Dell Precision M4700** (Intel Centrino Advance
 
 `create` + `secure` ერთად: `./hotspot.sh setup`.
 
+## GUI (English / ქართული)
+
+```bash
+python3 hotspot-gui.py
+```
+
+ნაგულისხმევად ინგლისურია, ზედა მარჯვენა ღილაკით ქართულზე გადაირთვება. ფანჯრიდან: SSID, პაროლი (ჩვენება/დამალვა), არხი, „Start at boot“, **Save profile**, **Start**, **Stop** და ლოგი. წინასწარ შექმნილი `Hotspot` პროფილის მონაცემებს თავისით ჩატვირთავს.
+**Save profile** წაშლის და თავიდან შექმნის `Hotspot` პროფილს (იგივე პარამეტრებით, რაც `hotspot.sh create` + `secure`).
+GUI არ აკეთებს `driver` და `docker-fix` ნაბიჯებს — ისინი sudo-ს საჭიროებს, გაუშვი `hotspot.sh`-ით.
+
+დასაყენებლად (მენიუში ხატულით):
+
+```bash
+sudo install -m 755 hotspot-gui.py /usr/local/bin/hotspot-gui
+sudo install -m 644 hotspot-gui.desktop /usr/share/applications/
+```
+
 ## ყოველდღიური / Daily
 
 ```bash

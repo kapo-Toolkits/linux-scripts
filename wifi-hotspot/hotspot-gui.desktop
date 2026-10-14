@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Wi-Fi Hotspot
+Comment=Start/stop a WPA2 Wi-Fi hotspot · Wi-Fi Hotspot-ის ჩართვა/გამორთვა
+Exec=hotspot-gui
+Icon=network-wireless-hotspot
+Terminal=false
+Categories=Network;Utility;
