@@ -39,7 +39,7 @@ Tools: ${ALL[*]}
   --desktop      also put a clickable launcher on your Desktop
   --folders      also put a double-click launcher inside each tool's folder here
                  (runs straight from this checkout; re-run if you move the folder)
-  --uninstall    remove what install put there
+  --uninstall    remove what install put there (add --desktop / --folders to remove those launchers too)
 Uses sudo automatically when DIR is not writable.
 U
 }
@@ -86,7 +86,7 @@ for tool in "${TOOLS[@]}"; do
     rm -f "$tmp"
   else
     $SUDO rm -f "$PREFIX/share/applications/$dname"
-    rm -f "$DESKDIR/$dname"
+    [ "$DESKTOP_ICONS" = 1 ] && rm -f "$DESKDIR/$dname"
   fi
   # double-click launcher in the tool's own folder (absolute path to this checkout)
   flaunch="$here/$(dirname "$d")/start-${dname%.desktop}.desktop"
@@ -99,7 +99,7 @@ for tool in "${TOOLS[@]}"; do
     chmod 755 "$flaunch"
     command -v gio >/dev/null && gio set "$flaunch" metadata::trusted true 2>/dev/null || true
     echo "double-click launcher: $flaunch"
-  elif [ "$ACTION" = uninstall ]; then
+  elif [ "$ACTION" = uninstall ] && [ "$FOLDER_LAUNCHERS" = 1 ]; then
     rm -f "$flaunch"
   fi
 done
