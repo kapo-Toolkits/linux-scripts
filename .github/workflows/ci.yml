@@ -50,3 +50,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: tests/run-qgis-containers.sh
+
+  qgis-recipes:
+    # every other install recipe of the installation guide, resolved (dry run) on its own distribution:
+    # Fedora dnf, openSUSE zypper, Arch pacman, Debian apt, Mageia urpmi, Flathub branches
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: tests/run-recipes-containers.sh

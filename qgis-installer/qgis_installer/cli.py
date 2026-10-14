@@ -1,8 +1,10 @@
 """Command line for qgis-installer: look, plan, install, list, uninstall - with a dry run and JSON.
 
     qgis-installer-cli info
-    qgis-installer-cli plan --method A --channel ltr [--server] [--script | --json]
-    qgis-installer-cli install --method A --channel ltr [--yes] [--dry-run]
+    qgis-installer-cli recipes                                   # every way the guide describes, and which fit here
+    qgis-installer-cli recommend --goal stable|latest|alongside  # the best one for this system, and why
+    qgis-installer-cli plan [--goal G | --recipe ID | --method A|B|C] [--channel ltr] [--branch lts] [--script | --json]
+    qgis-installer-cli install [same options] [--yes] [--dry-run]
     qgis-installer-cli list
     qgis-installer-cli uninstall [--kinds apt,repo,flatpak,snap,dist,data] [--purge] [--yes] [--dry-run]
     qgis-installer-cli requirements check [--plugin postgis_manager]
@@ -10,13 +12,14 @@
 
 Nothing runs without confirmation (``--yes`` or an interactive "y"). Exit codes: 0 ok, 1 a step
 failed, 2 not possible here / bad arguments, 3 not confirmed.
-Hidden helpers for tests and "what would this do on another system": --os-release FILE --pm PM --arch ARCH.
+Hidden helpers for tests and "what would this do on another system":
+--os-release FILE --pm PM --arch ARCH --tools flatpak,distrobox --immutable ostree|transactional|none.
 """
 import argparse
 import json
 import sys
 
-from . import i18n, plan, requirements, runner, system, uninstall
+from . import i18n, plan, recipes, requirements, runner, system, uninstall
 
 SCHEMA = 1
 KINDS = ("apt", "repo", "flatpak", "snap", "dist", "data")
@@ -70,18 +73,120 @@ def _info(args, sysinfo, lang):
     return 0
 
 
-def _install_steps(args, sysinfo):
-    method = args.method or ("A" if system.method_available("A", sysinfo) else "B")
-    if not system.method_available(method, sysinfo):
-        print("method {} is not available on this system".format(method), file=sys.stderr)
-        return None, None
-    channel = args.channel or system.default_channel(sysinfo)
-    if method == "A" and channel not in system.allowed_channels(sysinfo):
+def _opts_from_args(args):
+    opts = {"grass": not args.no_grass, "python": not args.no_python, "server": args.server}
+    for key in ("channel", "branch", "scope", "image"):
+        if getattr(args, key, None):
+            opts[key] = getattr(args, key)
+    if getattr(args, "geo_repo", False):
+        opts["geo_repo"] = True
+    return opts
+
+
+def _install_plan(args, sysinfo, lang):
+    """-> plan dict {recipe, steps, notes, manual, why?} or None after saying why not."""
+    t = lambda k, **kw: i18n.t(k, lang, **kw)  # noqa: E731
+    opts = _opts_from_args(args)
+    if args.method == "C":                      # the old 'distribution package', exactly as before
+        pkgs = {"grass": opts["grass"], "python": opts["python"], "server": opts["server"]}
+        steps = plan.build_install("C", sysinfo, opts.get("channel") or system.default_channel(sysinfo), pkgs)
+        return {"recipe": "distro", "steps": steps, "notes": [], "manual": []}
+    rid, why = args.recipe or recipes.METHOD_TO_RECIPE.get(args.method or ""), None
+    if rid is None:
+        rec = recipes.recommend(sysinfo, args.goal)
+        if rec["recipe"] is None:
+            print(t("why_nothing_fits", url=recipes.GUIDE_URL), file=sys.stderr)
+            return None
+        rid, why = rec["recipe"], rec["why"]
+        opts = dict(opts, **{k: v for k, v in rec["options"].items() if k not in opts})
+    ok, reason = recipes.applicability(rid, sysinfo)
+    if not ok:
+        if args.method and not args.recipe:
+            print("method {} is not available on this system".format(args.method), file=sys.stderr)
+        else:
+            print(t("rc_not_applicable", recipe=rid, why=t("rcn_" + reason)), file=sys.stderr)
+        return None
+    if rid == "apt-official" and opts.get("channel", system.default_channel(sysinfo)) not in system.allowed_channels(sysinfo):
         print("channel '{}' is not offered for this system (allowed: {})".format(
-            channel, ", ".join(system.allowed_channels(sysinfo))), file=sys.stderr)
-        return None, None
-    pkgs = {"grass": not args.no_grass, "python": not args.no_python, "server": args.server}
-    return method, plan.build_install(method, sysinfo, channel, pkgs)
+            opts["channel"], ", ".join(system.allowed_channels(sysinfo))), file=sys.stderr)
+        return None
+    try:
+        result = recipes.make_plan(rid, sysinfo, opts)
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return None
+    result["why"] = why
+    return result
+
+
+def _recipe_doc(rid, lang):
+    return {"id": rid, "title": i18n.t("rc_" + rid, lang), "kind": recipes.RECIPES[rid]["kind"],
+            "verified": recipes.RECIPES[rid]["verified"],
+            "verified_text": i18n.t("vf_" + recipes.RECIPES[rid]["verified"], lang)}
+
+
+def _show_plan(result, args, lang):
+    t = lambda k, **kw: i18n.t(k, lang, **kw)  # noqa: E731
+    rid = result["recipe"]
+    if rid == "distro":
+        _show(result["steps"], args, lang, "install")
+        return
+    doc = _recipe_doc(rid, lang)
+    notes = [{"key": k, "text": t("rcw_" + k)} for k in result["notes"]]
+    manual = [{"title": t("rcm_" + m["title"]), "text": m["text"]} for m in result["manual"]]
+    if args.json:
+        print(json.dumps(dict(doc, schema=SCHEMA, steps=result["steps"], notes=notes, manual=manual,
+                              why=t("why_" + result["why"], url=recipes.GUIDE_URL) if result.get("why") else None),
+                         indent=2, ensure_ascii=False))
+        return
+    if getattr(args, "script", False) and result["steps"]:
+        print(plan.steps_script(result["steps"]))
+        return
+    print("{} [{}]".format(doc["title"], doc["verified_text"]))
+    if result.get("why"):
+        print(t("why_" + result["why"], url=recipes.GUIDE_URL))
+    if result["steps"]:
+        print()
+        print(t("will_run"))
+        print(i18n.steps_text(result["steps"], lang))
+    for m in manual:
+        print("\n# " + m["title"])
+        print(m["text"])
+    for n in notes:
+        print("\n* " + n["text"])
+
+
+def _recipes_cmd(args, sysinfo, lang):
+    rows = []
+    for a in recipes.available(sysinfo):
+        rows.append(dict(_recipe_doc(a["id"], lang), applies=a["applies"], reason=a["reason"],
+                         reason_text=i18n.t("rcn_" + a["reason"], lang) if a["reason"] else ""))
+    if args.json:
+        print(json.dumps({"schema": SCHEMA, "recipes": rows}, indent=2, ensure_ascii=False))
+        return 0
+    for r in rows:
+        if r["applies"]:
+            print("[yes] {}  ({})".format(r["title"], r["verified_text"]))
+        else:
+            print("[no ] {}  - {}".format(r["title"], r["reason_text"]))
+    return 0
+
+
+def _recommend_cmd(args, sysinfo, lang):
+    rec = recipes.recommend(sysinfo, args.goal)
+    if args.json:
+        doc = dict(rec, schema=SCHEMA, goal=args.goal,
+                   why_text=i18n.t("why_" + rec["why"], lang, url=recipes.GUIDE_URL))
+        if rec["recipe"]:
+            doc["recipe_info"] = _recipe_doc(rec["recipe"], lang)
+        print(json.dumps(doc, indent=2, ensure_ascii=False))
+        return 0
+    print("{}: {}".format(i18n.t("goal_" + args.goal, lang),
+                          i18n.t("rc_" + rec["recipe"], lang) if rec["recipe"] else "-"))
+    print(i18n.t("why_" + rec["why"], lang, url=recipes.GUIDE_URL))
+    if rec["alternatives"]:
+        print("also possible: " + ", ".join(i18n.t("rc_" + r, lang) for r in rec["alternatives"]))
+    return 0 if rec["recipe"] else 2
 
 
 def _show(steps, args, lang, title):
@@ -96,6 +201,9 @@ def _show(steps, args, lang, title):
 
 def _execute(steps, args, lang):
     """Confirm, run, report. Returns the exit code."""
+    if not steps:
+        print(i18n.t("rc_manual_only", lang))
+        return 0
     if args.dry_run:
         return 0
     if not args.yes:
@@ -179,13 +287,26 @@ def build_parser():
     ap.add_argument("--os-release", help=argparse.SUPPRESS)
     ap.add_argument("--pm", help=argparse.SUPPRESS)
     ap.add_argument("--arch", help=argparse.SUPPRESS)
+    ap.add_argument("--tools", help=argparse.SUPPRESS)
+    ap.add_argument("--immutable", choices=("ostree", "transactional", "none"), help=argparse.SUPPRESS)
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     sub.add_parser("info", help="what this system is and what can be done here")
+    sub.add_parser("recipes", help="every way the installation guide describes, and which ones fit this system")
+    p = sub.add_parser("recommend", help="the best way for this system, and why")
+    p.add_argument("--goal", choices=recipes.GOALS, default="stable")
 
     def install_opts(p):
-        p.add_argument("--method", choices=list("ABC"), help="A official repository, B Flatpak, C distribution package")
-        p.add_argument("--channel", choices=system.CHANNELS, help="official repository channel")
+        p.add_argument("--goal", choices=recipes.GOALS, default="stable",
+                       help="what you want when you do not name a recipe (default: stable)")
+        p.add_argument("--recipe", choices=list(recipes.RECIPES), help="a specific way to install (see: recipes)")
+        p.add_argument("--method", choices=list("ABC"), help="old names: A official repository, B Flatpak, C distribution package")
+        p.add_argument("--channel", choices=list(system.CHANNELS) + ["testing"],
+                       help="official repository channel (AUR: ltr or testing; NixOS: ltr)")
+        p.add_argument("--branch", choices=recipes.FLATPAK_BRANCHES, help="Flatpak branch: stable (QGIS 4) or lts (QGIS 3 LTR)")
+        p.add_argument("--scope", choices=("user", "system"), help="Flatpak: for your user (default) or the whole system")
+        p.add_argument("--geo-repo", action="store_true", help="openSUSE: also add the Application:Geo repository")
+        p.add_argument("--image", help="container image for the distrobox / toolbx recipes")
         p.add_argument("--no-grass", action="store_true")
         p.add_argument("--no-python", action="store_true")
         p.add_argument("--server", action="store_true", help="also install qgis-server")
@@ -225,19 +346,26 @@ def main(argv=None):
             stream.reconfigure(errors="replace")
     args = build_parser().parse_args(argv)
     lang = _lang(args.lang)
-    sysinfo = system.detect(args.os_release, args.pm, args.arch)
+    tools = None if args.tools is None else {t.strip(): True for t in args.tools.split(",") if t.strip()}
+    immutable = args.immutable
+    sysinfo = system.detect(args.os_release, args.pm, args.arch, tools=tools, immutable=immutable)
 
     if args.cmd == "info":
         return _info(args, sysinfo, lang)
     if args.cmd == "requirements":
         return _requirements(args, sysinfo, lang)
 
+    if args.cmd == "recipes":
+        return _recipes_cmd(args, sysinfo, lang)
+    if args.cmd == "recommend":
+        return _recommend_cmd(args, sysinfo, lang)
+
     if args.cmd in ("plan", "install"):
-        method, steps = _install_steps(args, sysinfo)
-        if steps is None:
+        result = _install_plan(args, sysinfo, lang)
+        if result is None:
             return 2
-        _show(steps, args, lang, "install")
-        return 0 if args.cmd == "plan" else _execute(steps, args, lang)
+        _show_plan(result, args, lang)
+        return 0 if args.cmd == "plan" else _execute(result["steps"], args, lang)
 
     items = uninstall.find_installs(sysinfo)
     if args.cmd == "list":

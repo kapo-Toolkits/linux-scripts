@@ -14,6 +14,40 @@ python3 qgis-installer-gui.py
 
 If `tkinter` is missing the script offers to install it itself (apt/dnf/pacman/zypper/apk).
 
+## Recipes: every way the installation guide describes
+
+The guide ([Linux section](https://qgis.org/resources/installation-guide/#linux)) has more than three ways to get QGIS.
+Each is a *recipe* (`qgis-installer-cli recipes`): it knows which systems it fits, what options it has, and either runs
+shell steps (shown first, run only after you confirm) or just prints instructions.
+
+| Recipe | Fits | Notes | Checked by |
+|---|---|---|---|
+| `apt-official` | Debian 12/13/sid, Ubuntu 22.04-26.04, Mint (amd64) | latest / LTR / nightly, key fingerprint verified | real install in a container |
+| `apt-distro` | any apt system | older, simplest | apt dry run |
+| `flatpak` | everywhere | **branch `stable` (QGIS 4) or `lts` (QGIS 3 LTR)**, user or system | Flathub refs exist |
+| `dnf-fedora` / `rpm-ostree-fedora` | Fedora / Fedora Atomic | `qgis python3-qgis qgis-grass`, optional server | dnf dry run / from the guide |
+| `zypper-opensuse` | openSUSE | `qgis qgis-plugin-grass`, optional Application:Geo repository | zypper dry run |
+| `pacman-arch` / `aur-helper` | Arch and derivatives | official `qgis`; LTR/git from the AUR via `yay`/`paru` (builds from source) | pacman `--print` / from the guide |
+| `urpmi-mageia` | Mageia (Mandriva's successor) | `qgis qgis-grass` | package names exist |
+| `spack`, `distrobox`, `toolbx` | where the tool is installed | source build / separate container | from the guide |
+| `nix-manual`, `slackware-manual` | NixOS, Slackware | instructions only, nothing is changed for you | - |
+
+```bash
+qgis-installer-cli recommend --goal stable|latest|alongside     # the best one here, and why
+qgis-installer-cli plan --goal alongside                        # try QGIS 4 next to the one you have
+qgis-installer-cli plan --recipe flatpak --branch lts
+qgis-installer-cli install --recipe zypper-opensuse --geo-repo
+```
+
+Where this tool differs from the guide, on purpose (each was checked against the real repositories):
+- **Flathub has two branches** - the guide says "stable only". `stable` is built on the KDE 6.11 runtime (QGIS 4), `lts` on an
+  end-of-life KDE 5.15 runtime (QGIS 3 LTR). A non-interactive `flatpak install -y flathub org.qgis.qgis` fails with
+  "No ref chosen", so the recipe always names the branch.
+- openSUSE has **no `qgis-ltr`** and no `python3-qgis` (Python support is part of `qgis`), also not in Application:Geo.
+- Mandriva's `qgis-python` does not exist on Mageia; the packages are `qgis` and `qgis-grass`.
+- The guide's `yaourt` is dead; the AUR recipe uses `yay` or `paru` when present.
+- ubuntugis builds (Ubuntu 22.04/24.04) are not offered; `deb-src` is not added.
+
 ## Command line
 
 The same logic without a window - for scripts, SSH sessions and tests:
