@@ -19,7 +19,7 @@ import sys
 from . import i18n, plan, requirements, runner, system, uninstall
 
 SCHEMA = 1
-KINDS = ("apt", "repo", "flatpak", "snap", "dist", "data")
+KINDS = ("apt", "repo", "flatpak", "snap", "dist", "container", "data")
 
 
 def _lang(arg):
@@ -53,8 +53,10 @@ def _info(args, sysinfo, lang):
         "schema": SCHEMA,
         "system": sysinfo,
         "installed_apt_version": inst,
-        "methods": {m: system.method_available(m, sysinfo) for m in "ABC"},
+        "methods": {m: system.method_available(m, sysinfo) for m in system.METHODS},
         "channels": system.allowed_channels(sysinfo) if system.method_available("A", sysinfo) else [],
+        "method_channels": {m: system.channels_for(m, sysinfo) for m in system.METHODS
+                            if system.method_available(m, sysinfo) and system.channels_for(m, sysinfo)},
         "default_channel": system.default_channel(sysinfo),
         "latest": system.LATEST,
         "ltr": system.LTR,
@@ -75,10 +77,11 @@ def _install_steps(args, sysinfo):
     if not system.method_available(method, sysinfo):
         print("method {} is not available on this system".format(method), file=sys.stderr)
         return None, None
-    channel = args.channel or system.default_channel(sysinfo)
-    if method == "A" and channel not in system.allowed_channels(sysinfo):
-        print("channel '{}' is not offered for this system (allowed: {})".format(
-            channel, ", ".join(system.allowed_channels(sysinfo))), file=sys.stderr)
+    offered = system.channels_for(method, sysinfo)
+    channel = args.channel or (system.default_channel(sysinfo) if method == "A" else "latest")
+    if offered and channel not in offered:
+        print("channel '{}' is not offered for method {} on this system (allowed: {})".format(
+            channel, method, ", ".join(offered)), file=sys.stderr)
         return None, None
     pkgs = {"grass": not args.no_grass, "python": not args.no_python, "server": args.server}
     return method, plan.build_install(method, sysinfo, channel, pkgs)
@@ -184,8 +187,10 @@ def build_parser():
     sub.add_parser("info", help="what this system is and what can be done here")
 
     def install_opts(p):
-        p.add_argument("--method", choices=list("ABC"), help="A official repository, B Flatpak, C distribution package")
-        p.add_argument("--channel", choices=system.CHANNELS, help="official repository channel")
+        p.add_argument("--method", choices=list(system.METHODS),
+                       help="A official apt repository, B Flatpak, C distribution package, D container (Distrobox/Toolbx), E Nix")
+        p.add_argument("--channel", choices=system.CHANNELS,
+                       help="channel; see `info --json` method_channels for what each method offers")
         p.add_argument("--no-grass", action="store_true")
         p.add_argument("--no-python", action="store_true")
         p.add_argument("--server", action="store_true", help="also install qgis-server")

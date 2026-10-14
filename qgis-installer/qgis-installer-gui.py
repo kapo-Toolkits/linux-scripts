@@ -28,7 +28,7 @@ from tkinter import ttk, messagebox, scrolledtext  # noqa: E402
 # ---------------------------------------------------------------- logic lives in the qgis_installer package
 # (next to this file, or in <prefix>/lib/linux-scripts after ./install.sh); the names below are
 # re-exported so existing tests and scripts that load this file keep working.
-from qgis_installer import (CHANNELS, KEY_FPR, KEY_URL, KEYRING, LATEST, LTR, LTR_ONLY_CHANNELS, SOURCES,  # noqa: E402,F401
+from qgis_installer import (CHANNELS, METHODS, channels_for, KEY_FPR, KEY_URL, KEYRING, LATEST, LTR, LTR_ONLY_CHANNELS, SOURCES,  # noqa: E402,F401
                             SUFFIX, SUPPORT, USER_DATA, allowed_channels, build_install, build_remove_steps,
                             default_channel, detect, find_installs, installed_qgis, method_available,
                             needs_elevation_fallback, read_os_release, run_steps, sources_text, write_root_script)
@@ -83,7 +83,7 @@ class App(tk.Tk):
         self.f_method = ttk.LabelFrame(tab)
         self.f_method.pack(fill="x", padx=8, pady=6)
         self.rb = {}
-        for m in "ABC":
+        for m in METHODS:
             self.rb[m] = ttk.Radiobutton(self.f_method, variable=self.method, value=m, command=self.sync_state)
             self.rb[m].pack(anchor="w", padx=8, pady=2)
 
@@ -150,10 +150,24 @@ class App(tk.Tk):
         return method_available(m, self.sys)
 
     def allowed_channels(self):
-        return allowed_channels(self.sys)
+        return channels_for(self.method.get(), self.sys)
 
     def channel_label(self, k):
-        return t("ch_" + k, v=LATEST if k == "latest" else LTR)
+        if self.method.get() == "A":
+            return t("ch_" + k, v=LATEST if k == "latest" else LTR)
+        return t("ch_" + k + "_dist")
+
+    def fill_channels(self):
+        """The version box follows the method: official repository channels, or what the distro/AUR/Nix offers."""
+        keys = self.allowed_channels()
+        if keys:
+            if self.channel_key not in keys:
+                self.channel_key = ("ltr" if self.sys["ltr_only"] else "latest") if self.method.get() == "A" else keys[0]
+            self.cmb["values"] = [self.channel_label(k) for k in keys]
+            self.cmb.current(keys.index(self.channel_key))
+        else:
+            self.cmb["values"] = []
+            self.cmb.set("")
 
     def apply_lang(self):
         s = self.sys
@@ -169,7 +183,7 @@ class App(tk.Tk):
         self.render_rm()
         for f, k in ((self.f_sys, "f_sys"), (self.f_method, "f_method"), (self.f_ver, "f_ver"), (self.f_pkg, "f_pkg")):
             f.config(text=t(k))
-        for m in "ABC":
+        for m in METHODS:
             self.rb[m].config(text=t("m" + m))
         self.cb_grass.config(text=t("p_grass"))
         self.cb_python.config(text=t("p_python"))
@@ -188,15 +202,17 @@ class App(tk.Tk):
             lines.append(t("st_ltr") if s["ltr_only"] else t("st_ok"))
         if s["family"] and s["arch"] != "amd64":
             lines.append(t("st_arch"))
+        if s.get("atomic"):
+            lines.append(t("st_atomic"))
+        if s.get("suse_immutable"):
+            lines.append(t("st_suse_imm"))
+        if s["pm"] == "pacman":
+            lines.append(t("st_aur", h=s["aur_helper"]) if s.get("aur_helper") else t("st_noaur"))
+        if s.get("nix"):
+            lines.append(t("st_nix"))
         v = installed_qgis()
         lines.append(t("st_inst", v=v) if v else t("st_none"))
         self.lbl_sys.config(text="\n".join(lines))
-
-        keys = self.allowed_channels()
-        if self.channel_key not in keys:
-            self.channel_key = "ltr" if s["ltr_only"] else "latest"
-        self.cmb["values"] = [self.channel_label(k) for k in keys]
-        self.cmb.current(keys.index(self.channel_key))
 
         self.txt.config(state="normal")
         self.txt.delete("1.0", "end")
@@ -211,17 +227,20 @@ class App(tk.Tk):
         self.apply_lang()
 
     def on_channel(self, _e=None):
-        self.channel_key = self.allowed_channels()[self.cmb.current()]
+        keys = self.allowed_channels()
+        if keys and 0 <= self.cmb.current() < len(keys):
+            self.channel_key = keys[self.cmb.current()]
 
     def sync_state(self):
-        for m in "ABC":
+        for m in METHODS:
             self.rb[m].state(["!disabled"] if self.avail(m) else ["disabled"])
         if not self.avail(self.method.get()):
             self.method.set("B")
-        a = self.method.get() == "A"
-        self.cmb.state(["!disabled", "readonly"] if a else ["disabled"])
+        self.fill_channels()
+        self.cmb.state(["!disabled", "readonly"] if self.allowed_channels() else ["disabled"])
+        pk = self.method.get() in ("A", "C", "D")          # the package choices apply to these methods
         for c in (self.cb_grass, self.cb_python, self.cb_server):
-            c.state(["!disabled"] if a else ["disabled"])
+            c.state(["!disabled"] if pk else ["disabled"])
 
     # ---- helpers
     def say(self, text):

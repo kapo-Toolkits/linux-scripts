@@ -1,0 +1,4 @@
+PRETTY_NAME="openSUSE MicroOS"
+NAME="openSUSE MicroOS"
+ID="opensuse-microos"
+ID_LIKE="suse opensuse opensuse-tumbleweed"

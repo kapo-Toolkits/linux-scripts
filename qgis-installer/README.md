@@ -53,8 +53,31 @@ GUI remembers). To preview another system: `--os-release tests/fixtures/os-relea
 | | Method | Works on | Notes |
 |---|---|---|---|
 | A | **Official QGIS repository** | Debian / Ubuntu / Mint & derivatives, amd64 | latest (4.2.x), LTR (3.44.x) or nightly; packages `qgis`, `qgis-plugin-grass`, `python3-qgis`, optional `qgis-server` |
-| B | **Flatpak** (`org.qgis.qgis`, Flathub) | any distribution | installed `--user`, no root for QGIS itself |
-| C | **Distribution package** | apt / dnf / pacman / zypper | simplest, usually older ⚠️ dnf/pacman/zypper paths untested |
+| B | **Flatpak** (`org.qgis.qgis`, Flathub) | any distribution | installed `--user`, no root for QGIS itself; Flathub carries the stable version only |
+| C | **Distribution package** | apt / dnf / pacman / zypper (+ Fedora Atomic) | see the table below |
+| D | **Container** (Distrobox or Toolbx) | any system with `distrobox` or `toolbox` | for immutable systems; QGIS lives in the box `qgis-box` and is exported to the menu |
+| E | **Nix** (`nix-shell`) | NixOS / any Nix | starts QGIS from nixpkgs without installing it (`qgis` or `qgis-ltr`) |
+
+### Per distribution (from the [installation guide](https://qgis.org/resources/installation-guide/#linux))
+
+| System | What C does | Notes |
+|---|---|---|
+| Debian / Ubuntu / Mint | `apt-get install qgis qgis-plugin-grass python3-qgis` | prefer **A** for the newest version |
+| **Fedora** | `dnf install qgis python3-qgis qgis-grass` (+ `qgis-server`) | the version follows the Fedora release |
+| **Fedora Atomic** (Silverblue, Kinoite…) | `rpm-ostree install --idempotent …` — **reboot needed** | Flatpak (B) or a Toolbx container (D) avoid the reboot |
+| **openSUSE** | `zypper install qgis qgis-plugin-grass`; channel *LTR* → `qgis-ltr` | |
+| **openSUSE MicroOS / Aeon / Kalpa** | possible, but the guide recommends a **Distrobox** container (D) | the app says so |
+| **Arch** | `pacman -S qgis` | with an AUR helper (`yay` / `paru`) also **LTR** (`qgis-ltr`) and **git** (`qgis-git`) — built by the helper as *your user* |
+| **NixOS** | method **E**: `nix-shell -p qgis` (or `qgis-ltr`) | permanent install: add `pkgs.qgis` to `environment.systemPackages` in `configuration.nix` (shown in the app, not edited for you) |
+| any (Distrobox) | image `registry.opensuse.org/opensuse/toolbox:latest` (Fedora hosts: `fedora-toolbox:<release>`) | `distrobox-export --app qgis` puts QGIS in the menu |
+| any (Toolbx) | image `fedora-toolbox:<host release>` | start with `toolbox run --container qgis-box qgis` |
+
+**Not covered:** Slackware (the guide only points to SlackBuilds.org, no commands), Mandriva (discontinued) and Spack
+(a long source build). Commands come from the guide; `rpm-ostree`, Distrobox, Toolbx, Nix and AUR flows are
+syntax-checked and unit-tested with injected tools but **not run end-to-end** here.
+
+`uninstall` also finds AUR packages (`qgis-ltr`, `qgis-git`), `rpm-ostree` layers and the `qgis-box` container
+(removing the container deletes the files inside it — the app says so).
 
 Supported codenames for A (from the [official guide](https://qgis.org/resources/installation-guide/#debian--ubuntu)):
 Debian bookworm\*, trixie, sid · Ubuntu resolute, questing, plucky, noble\*, jammy\* — **\*LTR line only** (their libraries are not QGIS 4 ready).
