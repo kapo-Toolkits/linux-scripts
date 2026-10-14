@@ -6,6 +6,7 @@ set -euo pipefail
 PREFIX=/usr/local
 ACTION=install
 DESKTOP_ICONS=0
+FOLDER_LAUNCHERS=0
 TOOLS=()
 here="$(cd "$(dirname "$0")" && pwd)"
 
@@ -15,6 +16,12 @@ declare -A FILES=(
   [wifi-hotspot]="wifi-hotspot/hotspot.sh|hotspot wifi-hotspot/hotspot-gui.py|hotspot-gui"
   [printer-setup]="printer-setup/printer-setup-gui.py|printer-setup"
   [qgis-installer]="qgis-installer/qgis-installer-gui.py|qgis-installer"
+)
+declare -A GUISCRIPT=(
+  [usb-eject]=usb-eject/usb-eject-gui.py
+  [wifi-hotspot]=wifi-hotspot/hotspot-gui.py
+  [printer-setup]=printer-setup/printer-setup-gui.py
+  [qgis-installer]=qgis-installer/qgis-installer-gui.py
 )
 declare -A DESKTOP=(
   [usb-eject]=usb-eject/usb-eject-gui.desktop
@@ -30,6 +37,8 @@ Usage: ./install.sh [--prefix DIR] [--uninstall] TOOL...|all
 Tools: ${ALL[*]}
   --prefix DIR   install under DIR instead of /usr/local
   --desktop      also put a clickable launcher on your Desktop
+  --folders      also put a double-click launcher inside each tool's folder here
+                 (runs straight from this checkout; re-run if you move the folder)
   --uninstall    remove what install put there
 Uses sudo automatically when DIR is not writable.
 U
@@ -40,6 +49,7 @@ while [ $# -gt 0 ]; do
     --prefix) PREFIX="$2"; shift 2;;
     --uninstall) ACTION=uninstall; shift;;
     --desktop) DESKTOP_ICONS=1; shift;;
+    --folders) FOLDER_LAUNCHERS=1; shift;;
     -h|--help) usage; exit 0;;
     all) TOOLS+=("${ALL[@]}"); shift;;
     *) [[ -n "${FILES[$1]:-}" ]] || { echo "Unknown tool: $1"; usage; exit 1; }; TOOLS+=("$1"); shift;;
@@ -76,6 +86,20 @@ for tool in "${TOOLS[@]}"; do
   else
     $SUDO rm -f "$PREFIX/share/applications/$dname"
     rm -f "$DESKDIR/$dname"
+  fi
+  # double-click launcher in the tool's own folder (absolute path to this checkout)
+  flaunch="$here/$(dirname "$d")/start-${dname%.desktop}.desktop"
+  if [ "$ACTION" = install ] && [ "$FOLDER_LAUNCHERS" = 1 ]; then
+    {
+      sed -n '/^\[Desktop Entry\]/,$p' "$here/$d" | grep -v -E '^(Exec|Path)='
+      echo "Exec=python3 ${here}/${GUISCRIPT[$tool]}"
+      echo "Path=$here/$(dirname "$d")"
+    } > "$flaunch"
+    chmod 755 "$flaunch"
+    command -v gio >/dev/null && gio set "$flaunch" metadata::trusted true 2>/dev/null || true
+    echo "double-click launcher: $flaunch"
+  elif [ "$ACTION" = uninstall ]; then
+    rm -f "$flaunch"
   fi
 done
 
