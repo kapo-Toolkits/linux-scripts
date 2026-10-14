@@ -99,7 +99,17 @@ STR = {
  "elev_fail": "Could not get administrator rights automatically.\nRun this in a terminal instead:\n\n{cmd}",
  "copied": "Commands copied to the clipboard.", "running": "Running…",
  "no_method": "This method is not available on your system.",
- "rm_title": "Uninstall QGIS",
+ "rm_title": "Uninstall QGIS", "tab_rm": "Uninstall / switch version",
+ "rm_goto": "Uninstall / switch version…", "rm_scan": "Rescan", "rm_sel": "Remove selected…",
+ "rm_none": "No QGIS installation found (apt, repository files, Flatpak, Snap, distro package, user data).",
+ "rm_found": "Found — tick what to remove:", "rm_opts": "Options",
+ "rm_purge": "Also delete system configuration files (apt purge)", "rm_auto": "Remove unused dependencies afterwards (autoremove)",
+ "rm_next": "After removal, open the Install tab (to choose another version)",
+ "rm_data_warn": "⚠ User data = your QGIS profiles, settings, installed plugins. Deleted permanently, not ticked by default.",
+ "rm_nothing": "Nothing selected.",
+ "k_apt": "apt packages: {n} (qgis {v}) — source: {o}", "k_repo": "QGIS apt repository files: {f}{c}",
+ "k_flatpak": "Flatpak ({i}) org.qgis.qgis {v}", "k_snap": "Snap: qgis {v}", "k_dist": "Distribution package ({pm}): qgis {v}",
+ "k_data": "User data: {p} ({sz})", "k_unknown": "unknown",
  "guide": (
   "WHICH METHOD?\n\n"
   "A  Official repository — newest QGIS, updated through apt. Debian 12/13/sid, Ubuntu 22.04–26.04 and derivatives (Linux Mint uses its Ubuntu codename).\n"
@@ -120,7 +130,9 @@ STR = {
   "• Remove QGIS from other sources first (distribution packages, other PPAs) to avoid conflicts.\n"
   "• “NO_PUBKEY”/key errors: the signing key expires 2027-08-08 — download a newer key from qgis.org.\n"
   "• Repository 404 after a distro upgrade: use Uninstall…, then install again for the new codename.\n"
-  "• Administrator prompt does not appear: the app shows the commands to paste in a terminal."),
+  "• Administrator prompt does not appear: the app shows the commands to paste in a terminal.\n\n"
+  "SWITCHING VERSION\n\n"
+  "Use the Uninstall tab: it finds every QGIS (apt, repository files, Flatpak, Snap, distro package, user data), you tick what to remove, then choose another version in the Install tab. Going from a newer to an older line (e.g. latest → LTR) needs the old one removed first — apt will not downgrade."),
 },
 "ka": {
  "title": "QGIS-ის დაყენება", "lang_btn": "English", "tab_inst": "დაყენება", "tab_guide": "ინსტრუქცია",
@@ -149,7 +161,17 @@ STR = {
  "elev_fail": "ადმინისტრატორის უფლება ავტომატურად ვერ მივიღე.\nგაუშვით ტერმინალში:\n\n{cmd}",
  "copied": "ბრძანებები დაკოპირდა.", "running": "სრულდება…",
  "no_method": "ეს მეთოდი თქვენს სისტემაზე ხელმისაწვდომი არ არის.",
- "rm_title": "QGIS-ის წაშლა",
+ "rm_title": "QGIS-ის წაშლა", "tab_rm": "წაშლა / ვერსიის შეცვლა",
+ "rm_goto": "წაშლა / ვერსიის შეცვლა…", "rm_scan": "თავიდან ძებნა", "rm_sel": "მონიშნულის წაშლა…",
+ "rm_none": "QGIS-ის არცერთი ინსტალაცია ვერ მოიძებნა (apt, რეპოზიტორიის ფაილები, Flatpak, Snap, დისტრიბუციის პაკეტი, მომხმარებლის მონაცემები).",
+ "rm_found": "ნაპოვნია — მონიშნეთ რისი წაშლაც გინდათ:", "rm_opts": "პარამეტრები",
+ "rm_purge": "სისტემური კონფიგურაციის ფაილებიც წაიშალოს (apt purge)", "rm_auto": "შემდეგ წაიშალოს გამოუყენებელი დამოკიდებულებები (autoremove)",
+ "rm_next": "წაშლის შემდეგ გაიხსნას „დაყენება“ (სხვა ვერსიის ასარჩევად)",
+ "rm_data_warn": "⚠ მომხმარებლის მონაცემები = თქვენი QGIS პროფილები, პარამეტრები, დაყენებული დანამატები. იშლება სამუდამოდ, ნაგულისხმევად მონიშნული არ არის.",
+ "rm_nothing": "არაფერია მონიშნული.",
+ "k_apt": "apt პაკეტები: {n} (qgis {v}) — წყარო: {o}", "k_repo": "QGIS apt რეპოზიტორიის ფაილები: {f}{c}",
+ "k_flatpak": "Flatpak ({i}) org.qgis.qgis {v}", "k_snap": "Snap: qgis {v}", "k_dist": "დისტრიბუციის პაკეტი ({pm}): qgis {v}",
+ "k_data": "მომხმარებლის მონაცემები: {p} ({sz})", "k_unknown": "უცნობი",
  "guide": (
   "რომელი მეთოდი?\n\n"
   "ა  ოფიციალური რეპოზიტორია — ყველაზე ახალი QGIS, განახლება apt-ით. Debian 12/13/sid, Ubuntu 22.04–26.04 და წარმოებულები (Linux Mint-ი თავის Ubuntu-ს კოდურ სახელს იყენებს).\n"
@@ -170,7 +192,9 @@ STR = {
   "• ჯერ წაშალეთ QGIS სხვა წყაროებიდან (დისტრიბუციის პაკეტები, სხვა PPA), კონფლიქტი რომ არ მოხდეს.\n"
   "• „NO_PUBKEY“/გასაღების შეცდომა: გასაღები 2027-08-08-ს იწურება — qgis.org-დან ახალი გადმოწერეთ.\n"
   "• 404 დისტრიბუციის განახლების შემდეგ: „წაშლა…“, მერე ახალი კოდური სახელით თავიდან დააყენეთ.\n"
-  "• ადმინისტრატორის ფანჯარა არ ჩანს: აპი აჩვენებს ბრძანებებს ტერმინალში ჩასასმელად."),
+  "• ადმინისტრატორის ფანჯარა არ ჩანს: აპი აჩვენებს ბრძანებებს ტერმინალში ჩასასმელად.\n\n"
+  "ვერსიის შეცვლა\n\n"
+  "გამოიყენეთ „წაშლა“ ჩანართი: ის პოულობს ყველა QGIS-ს (apt, რეპოზიტორიის ფაილები, Flatpak, Snap, დისტრიბუციის პაკეტი, მომხმარებლის მონაცემები), მონიშნავთ რისი წაშლაც გინდათ, მერე „დაყენება“ ჩანართში სხვა ვერსიას არჩევთ. ახალი ხაზიდან ძველზე (მაგ. უახლესი → LTR) გადასვლისას ჯერ ძველი უნდა წაიშალოს — apt ვერსიას არ დააქვეითებს."),
 },
 }
 
@@ -279,18 +303,146 @@ flatpak install --user -y flathub org.qgis.qgis
     return [{"root": True, "sh": f"set -eu\n{cmd}\n"}] if cmd else []
 
 
-def build_remove(method, sysinfo):
-    if method == "A":
-        return [{"root": True, "sh": f"""set -u
-apt-get remove -y qgis qgis-plugin-grass qgis-server python3-qgis || true
-rm -f {SOURCES} {KEYRING}
-apt-get update
-"""}]
-    if method == "B":
-        return [{"root": False, "sh": "flatpak uninstall --user -y org.qgis.qgis\n"}]
-    cmd = {"apt-get": "apt-get remove -y qgis qgis-plugin-grass", "dnf": "dnf remove -y qgis",
-           "pacman": "pacman -R --noconfirm qgis", "zypper": "zypper --non-interactive remove qgis"}.get(sysinfo["pm"])
-    return [{"root": True, "sh": f"{cmd}\n"}] if cmd else []
+def _run(cmd):
+    try:
+        p = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+        return p.returncode, p.stdout
+    except Exception:
+        return 1, ""
+
+
+def _du(path):
+    rc, out = _run(["du", "-sk", path])
+    try:
+        kb = int(out.split()[0])
+    except (IndexError, ValueError):
+        return "?"
+    return f"{kb / 1024:.0f} MB" if kb >= 1024 else f"{kb} KB"
+
+
+USER_DATA = ["~/.local/share/QGIS", "~/.config/QGIS", "~/.cache/QGIS", "~/.var/app/org.qgis.qgis"]
+
+
+def find_installs(sysinfo):
+    """Everything QGIS-related on this machine -> list of item dicts."""
+    import glob
+    items = []
+    # apt / dpkg
+    if shutil.which("dpkg-query"):
+        rc, out = _run(["dpkg-query", "-W", "-f=${db:Status-Abbrev}|${Package}|${Version}\\n",
+                        "qgis*", "python3-qgis*", "libqgis*"])
+        pk, ver = [], ""
+        for line in out.splitlines():
+            st, _, rest = line.partition("|")
+            if st.strip() == "ii":
+                name, _, v = rest.partition("|")
+                pk.append(name)
+                if name == "qgis":
+                    ver = v
+        if pk:
+            origin = ""
+            rc, pol = _run(["apt-cache", "policy", "qgis"])
+            lines = pol.splitlines()
+            for i, ln in enumerate(lines):
+                if "***" in ln and i + 1 < len(lines):
+                    origin = lines[i + 1].split()[1] if len(lines[i + 1].split()) > 1 else ""
+                    break
+            items.append({"kind": "apt", "pkgs": sorted(set(pk)), "v": ver or "?", "o": origin, "root": True})
+    # repository + key files
+    files = []
+    for pat in ("/etc/apt/sources.list.d/*qgis*", "/etc/apt/keyrings/*qgis*", "/usr/share/keyrings/*qgis*",
+                "/etc/apt/trusted.gpg.d/*qgis*"):
+        files += glob.glob(pat)
+    if files:
+        chan = ""
+        for f in files:
+            if f.endswith((".sources", ".list")):
+                m = re.search(r"qgis\.org/(\S+)", open(f, errors="replace").read())
+                if m:
+                    chan = f" — {m.group(1)}"
+                    break
+        items.append({"kind": "repo", "files": sorted(files), "c": chan, "root": True})
+    # flatpak
+    if shutil.which("flatpak"):
+        rc, out = _run(["flatpak", "list", "--app", "--columns=application,version,installation"])
+        for line in out.splitlines():
+            c = [x.strip() for x in line.split("\t")]
+            if c and c[0] == "org.qgis.qgis":
+                inst = c[2] if len(c) > 2 else "user"
+                items.append({"kind": "flatpak", "i": inst, "v": c[1] if len(c) > 1 else "?",
+                              "root": inst == "system"})
+    # snap
+    if shutil.which("snap"):
+        rc, out = _run(["snap", "list", "qgis"])
+        for line in out.splitlines()[1:]:
+            c = line.split()
+            if c and c[0] == "qgis":
+                items.append({"kind": "snap", "v": c[1] if len(c) > 1 else "?", "root": True})
+    # distro packages other than apt
+    pm = sysinfo["pm"]
+    if pm == "pacman" and _run(["pacman", "-Q", "qgis"])[0] == 0:
+        items.append({"kind": "dist", "pm": pm, "v": _run(["pacman", "-Q", "qgis"])[1].split()[-1], "root": True})
+    elif pm in ("dnf", "zypper") and shutil.which("rpm"):
+        rc, out = _run(["rpm", "-q", "--qf", "%{VERSION}", "qgis"])
+        if rc == 0:
+            items.append({"kind": "dist", "pm": pm, "v": out.strip(), "root": True})
+    # user data (never ticked by default)
+    for d in USER_DATA:
+        full = os.path.expanduser(d)
+        if os.path.isdir(full):
+            items.append({"kind": "data", "path": full, "sz": _du(full), "root": False})
+    return items
+
+
+def label_for(it):
+    k = it["kind"]
+    if k == "apt":
+        return t("k_apt", n=len(it["pkgs"]), v=it["v"], o=it["o"] or t("k_unknown"))
+    if k == "repo":
+        return t("k_repo", f=", ".join(os.path.basename(f) for f in it["files"]), c=it["c"])
+    if k == "flatpak":
+        return t("k_flatpak", i=it["i"], v=it["v"])
+    if k == "snap":
+        return t("k_snap", v=it["v"])
+    if k == "dist":
+        return t("k_dist", pm=it["pm"], v=it["v"])
+    return t("k_data", p=it["path"], sz=it["sz"])
+
+
+def build_remove_steps(items, purge, autoremove, sysinfo):
+    """items = selected item dicts -> steps (one root step so the password is asked once)."""
+    import shlex
+    root, user = [], []
+    home = os.path.expanduser("~")
+    for it in items:
+        k = it["kind"]
+        if k == "apt":
+            root.append(f"apt-get {'purge' if purge else 'remove'} -y {' '.join(shlex.quote(p) for p in it['pkgs'])}")
+        elif k == "repo":
+            root.append("rm -f " + " ".join(shlex.quote(f) for f in it["files"]))
+        elif k == "flatpak":
+            (root if it["root"] else user).append(f"flatpak uninstall --{it['i']} -y org.qgis.qgis")
+        elif k == "snap":
+            root.append("snap remove qgis")
+        elif k == "dist":
+            root.append({"dnf": "dnf remove -y qgis", "zypper": "zypper --non-interactive remove qgis",
+                         "pacman": "pacman -R --noconfirm qgis"}[it["pm"]])
+        elif k == "data":
+            path = it["path"]
+            allowed = {os.path.expanduser(d) for d in USER_DATA}
+            if path in allowed and path.startswith(home + os.sep):   # exact known folders only
+                user.append(f"rm -rf -- {shlex.quote(path)}")
+    if any(i["kind"] in ("apt", "repo") for i in items):
+        if autoremove and any(i["kind"] == "apt" for i in items):
+            root.append("apt-get autoremove -y")
+        if any(i["kind"] == "repo" for i in items):
+            root.append("apt-get update")
+    steps = []
+    if root:
+        steps.append({"root": True, "sh": "set -u\n" + "\n".join(root) + "\n"})
+    if user:
+        steps.append({"root": False, "sh": "set -u\n" + "\n".join(user) + "\n"})
+    return steps
 
 
 def steps_text(steps):
@@ -322,8 +474,9 @@ class App(tk.Tk):
 
         self.nb = ttk.Notebook(self)
         self.nb.pack(fill="both", expand=True, padx=12, pady=8)
-        tab, guide = ttk.Frame(self.nb), ttk.Frame(self.nb)
+        tab, rmtab, guide = ttk.Frame(self.nb), ttk.Frame(self.nb), ttk.Frame(self.nb)
         self.nb.add(tab, text="")
+        self.nb.add(rmtab, text="")
         self.nb.add(guide, text="")
 
         self.f_sys = ttk.LabelFrame(tab)
@@ -356,7 +509,7 @@ class App(tk.Tk):
         bar.pack(fill="x", padx=8, pady=8)
         self.btn_inst = ttk.Button(bar, command=self.on_install)
         self.btn_inst.pack(side="left")
-        self.btn_rm = ttk.Button(bar, command=self.on_remove)
+        self.btn_rm = ttk.Button(bar, command=lambda: (self.nb.select(1), self.rescan()))
         self.btn_rm.pack(side="left", padx=8)
         self.btn_copy = ttk.Button(bar, command=self.on_copy)
         self.btn_copy.pack(side="left")
@@ -366,12 +519,36 @@ class App(tk.Tk):
         self.log = scrolledtext.ScrolledText(tab, height=7, state="disabled", wrap="word")
         self.log.pack(fill="both", expand=True, padx=8, pady=(0, 8))
 
+        # ---- uninstall tab
+        self.rm_items, self.rm_vars = [], []
+        top_rm = ttk.Frame(rmtab)
+        top_rm.pack(fill="x", padx=8, pady=8)
+        self.btn_scan = ttk.Button(top_rm, command=self.rescan)
+        self.btn_scan.pack(side="left")
+        self.lbl_found = ttk.Label(rmtab, font=("", 10, "bold"))
+        self.lbl_found.pack(anchor="w", padx=10)
+        self.rm_box = ttk.Frame(rmtab)
+        self.rm_box.pack(fill="x", padx=14, pady=4)
+        self.lbl_warn = ttk.Label(rmtab, wraplength=690, foreground="#b42318", justify="left")
+        self.lbl_warn.pack(anchor="w", padx=10, pady=(4, 0))
+        self.f_opts = ttk.LabelFrame(rmtab)
+        self.f_opts.pack(fill="x", padx=8, pady=8)
+        self.v_purge, self.v_auto, self.v_next = tk.BooleanVar(value=False), tk.BooleanVar(value=True), tk.BooleanVar(value=True)
+        self.cb_purge = ttk.Checkbutton(self.f_opts, variable=self.v_purge)
+        self.cb_auto = ttk.Checkbutton(self.f_opts, variable=self.v_auto)
+        self.cb_next = ttk.Checkbutton(self.f_opts, variable=self.v_next)
+        for c in (self.cb_purge, self.cb_auto, self.cb_next):
+            c.pack(anchor="w", padx=8, pady=1)
+        self.btn_rm_go = ttk.Button(rmtab, command=self.on_remove_selected)
+        self.btn_rm_go.pack(anchor="w", padx=8, pady=6)
+
         self.txt = scrolledtext.ScrolledText(guide, wrap="word")
         self.txt.pack(fill="both", expand=True, padx=8, pady=8)
 
         s = self.sys
         self.method.set("A" if self.avail("A") else "B")
         self.apply_lang()
+        self.rescan()
 
     # ---- i18n / state
     def avail(self, m):
@@ -393,7 +570,13 @@ class App(tk.Tk):
         self.title(t("title"))
         self.btn_lang.config(text=t("lang_btn"))
         self.nb.tab(0, text=t("tab_inst"))
-        self.nb.tab(1, text=t("tab_guide"))
+        self.nb.tab(1, text=t("tab_rm"))
+        self.nb.tab(2, text=t("tab_guide"))
+        self.btn_scan.config(text=t("rm_scan")); self.btn_rm_go.config(text=t("rm_sel"))
+        self.f_opts.config(text=t("rm_opts")); self.cb_purge.config(text=t("rm_purge"))
+        self.cb_auto.config(text=t("rm_auto")); self.cb_next.config(text=t("rm_next"))
+        self.lbl_warn.config(text=t("rm_data_warn"))
+        self.render_rm()
         for f, k in ((self.f_sys, "f_sys"), (self.f_method, "f_method"), (self.f_ver, "f_ver"), (self.f_pkg, "f_pkg")):
             f.config(text=t(k))
         for m in "ABC":
@@ -402,7 +585,7 @@ class App(tk.Tk):
         self.cb_python.config(text=t("p_python"))
         self.cb_server.config(text=t("p_server"))
         self.btn_inst.config(text=t("preview"))
-        self.btn_rm.config(text=t("remove"))
+        self.btn_rm.config(text=t("rm_goto"))
         self.btn_copy.config(text=t("copy"))
         self.lbl_log.config(text=t("log"))
 
@@ -456,10 +639,8 @@ class App(tk.Tk):
         self.log.see("end")
         self.log.config(state="disabled")
 
-    def steps(self, remove=False):
+    def steps(self):
         m = self.method.get()
-        if remove:
-            return build_remove(m, self.sys)
         pk = {"grass": self.v_grass.get(), "server": self.v_server.get(), "python": self.v_python.get()}
         return build_install(m, self.sys, self.channel_key, pk)
 
@@ -472,10 +653,35 @@ class App(tk.Tk):
     def on_install(self):
         self.confirm(self.steps(), t("title"))
 
-    def on_remove(self):
-        self.confirm(self.steps(remove=True), t("rm_title"))
+    def rescan(self):
+        self.rm_items = find_installs(self.sys)
+        self.rm_vars = [tk.BooleanVar(value=(it["kind"] != "data")) for it in self.rm_items]
+        self.render_rm()
 
-    def confirm(self, steps, title):
+    def render_rm(self):
+        for w in self.rm_box.winfo_children():
+            w.destroy()
+        if not self.rm_items:
+            self.lbl_found.config(text=t("rm_none"))
+            return
+        self.lbl_found.config(text=t("rm_found"))
+        for it, var in zip(self.rm_items, self.rm_vars):
+            ttk.Checkbutton(self.rm_box, text=label_for(it), variable=var).pack(anchor="w", pady=1)
+
+    def on_remove_selected(self):
+        chosen = [it for it, v in zip(self.rm_items, self.rm_vars) if v.get()]
+        steps = build_remove_steps(chosen, self.v_purge.get(), self.v_auto.get(), self.sys)
+        if not steps:
+            return messagebox.showinfo(t("rm_title"), t("rm_nothing"))
+        self.confirm(steps, t("rm_title"), on_success=self.after_remove)
+
+    def after_remove(self):
+        self.rescan()
+        self.apply_lang()
+        if self.v_next.get():
+            self.nb.select(0)
+
+    def confirm(self, steps, title, on_success=None):
         if not steps:
             return messagebox.showinfo(title, t("no_method"))
         win = tk.Toplevel(self)
@@ -491,15 +697,15 @@ class App(tk.Tk):
 
         def go():
             win.destroy()
-            self.run_steps(steps)
+            self.run_steps(steps, on_success)
         ttk.Button(bar, text=t("run"), command=go).pack(side="right")
         ttk.Button(bar, text=t("cancel"), command=win.destroy).pack(side="right", padx=8)
 
-    def run_steps(self, steps):
+    def run_steps(self, steps, on_success=None):
         if self.busy:
             return
         self.busy = True
-        for b in (self.btn_inst, self.btn_rm, self.btn_copy):
+        for b in (self.btn_inst, self.btn_rm, self.btn_copy, self.btn_rm_go, self.btn_scan):
             b.state(["disabled"])
         self.say(t("running"))
 
@@ -522,11 +728,13 @@ class App(tk.Tk):
         def done(res):
             rc, s = res
             self.busy = False
-            for b in (self.btn_inst, self.btn_rm, self.btn_copy):
+            for b in (self.btn_inst, self.btn_rm, self.btn_copy, self.btn_rm_go, self.btn_scan):
                 b.state(["!disabled"])
             if rc == 0:
                 self.say(t("done_ok"))
                 self.apply_lang()
+                if on_success:
+                    on_success()
             elif rc in (126, 127) and s and s["root"]:
                 path = os.path.join(tempfile.gettempdir(), "qgis-installer-root.sh")
                 with open(path, "w") as f:
