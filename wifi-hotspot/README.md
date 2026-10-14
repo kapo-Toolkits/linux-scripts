@@ -34,6 +34,16 @@ GUI არ აკეთებს `driver` და `docker-fix` ნაბიჯე
 ./install.sh wifi-hotspot
 ```
 
+## დაკავშირებული მოწყობილობები / Connected devices
+
+```bash
+./hotspot.sh clients
+```
+
+GUI-ში ცხრილი ფანჯრის შუაში (ყოველ 3 წამში ახლდება): სახელი, IP, MAC, სიგნალი, დაკავშირების დრო, ჩამოტვირთული/გაგზავნილი მონაცემი.
+Source: `iw dev <iface> station dump` (who is associated, signal, traffic), `ip neigh` (IP from the ARP table), and — if readable — dnsmasq's lease file for host names (`/var/lib/NetworkManager/dnsmasq-<iface>.leases`). Without that file the name shows “—”; the IP still appears.
+⚠️ Parsing was tested against realistic captured-format fixtures and in the GUI; it has not been run against a live hotspot yet.
+
 ## QR კოდი ტელეფონისთვის / QR code for the phone
 
 ```bash

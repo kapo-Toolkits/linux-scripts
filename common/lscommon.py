@@ -74,3 +74,60 @@ def ensure_tkinter():
     if subprocess.run(elevate + cmd + [pkg]).returncode != 0:
         sys.exit(f"Could not install {pkg}. / {pkg}-ის დაყენება ვერ მოხერხდა.")
     os.execv(sys.executable, [sys.executable] + sys.argv)
+
+
+# ---------------------------------------------------------------- missing-tool hints (any distribution)
+PM_ORDER = ("apt-get", "dnf", "yum", "pacman", "zypper", "apk", "xbps-install")
+
+# command -> package providing it, per package manager
+_ALL = lambda p: {pm: p for pm in PM_ORDER}   # noqa: E731
+PKG_FOR = {
+    "udisksctl": _ALL("udisks2"),
+    "lsblk": {"apt-get": "util-linux", "dnf": "util-linux", "yum": "util-linux", "pacman": "util-linux",
+              "zypper": "util-linux", "apk": "lsblk", "xbps-install": "util-linux"},
+    "nmcli": {"apt-get": "network-manager", "dnf": "NetworkManager", "yum": "NetworkManager",
+              "pacman": "networkmanager", "zypper": "NetworkManager", "apk": "networkmanager-cli",
+              "xbps-install": "NetworkManager"},
+    "iw": _ALL("iw"),
+    "ip": {"apt-get": "iproute2", "dnf": "iproute", "yum": "iproute", "pacman": "iproute2",
+           "zypper": "iproute2", "apk": "iproute2", "xbps-install": "iproute2"},
+    "lpinfo": _ALL("cups"),
+    "lpadmin": _ALL("cups"),
+    "lp": _ALL("cups"),
+}
+_INSTALL_FMT = {"apt-get": "sudo apt install {p}", "dnf": "sudo dnf install {p}", "yum": "sudo yum install {p}",
+                "pacman": "sudo pacman -S {p}", "zypper": "sudo zypper install {p}",
+                "apk": "doas apk add {p}   (or: sudo apk add {p})", "xbps-install": "sudo xbps-install {p}"}
+DEPS_TEXT = {
+    "en": "Missing programs: {names}\n\nInstall them with:\n{cmd}\n\nThe app keeps running, but these functions will not work until then.",
+    "ka": "აკლია პროგრამები: {names}\n\nდააყენეთ ბრძანებით:\n{cmd}\n\nაპი გაგრძელებს მუშაობას, მაგრამ ამ ფუნქციები დაყენებამდე არ იმუშავებს.",
+}
+
+
+def detect_pm():
+    return next((m for m in PM_ORDER if shutil.which(m)), "")
+
+
+def missing_tools(cmds, pm=None):
+    """-> [(command, package or None)] for commands not on PATH."""
+    pm = detect_pm() if pm is None else pm
+    return [(c, PKG_FOR.get(c, {}).get(pm)) for c in cmds if not shutil.which(c)]
+
+
+def install_command(missing, pm=None):
+    pm = detect_pm() if pm is None else pm
+    pkgs = sorted({p for _, p in missing if p})
+    if not pkgs or pm not in _INSTALL_FMT:
+        return ""
+    return _INSTALL_FMT[pm].format(p=" ".join(pkgs))
+
+
+def warn_missing(cmds, lang, title):
+    """Show a bilingual 'install these' hint if any command is absent. Returns True if something was missing."""
+    miss = missing_tools(cmds)
+    if not miss:
+        return False
+    from tkinter import messagebox
+    cmd = install_command(miss) or ("(see your distribution's documentation)" if lang == "en" else "(იხილეთ თქვენი დისტრიბუციის დოკუმენტაცია)")
+    messagebox.showwarning(title, DEPS_TEXT.get(lang, DEPS_TEXT["en"]).format(names=", ".join(c for c, _ in miss), cmd=cmd))
+    return True

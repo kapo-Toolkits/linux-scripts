@@ -18,11 +18,11 @@ import urllib.parse
 import webbrowser
 
 _here = os.path.dirname(os.path.abspath(__file__))
-for _p in (os.path.join(_here, "..", "common"), os.path.join(_here, "..", "lib", "linux-scripts"),
-           "/usr/local/lib/linux-scripts", "/usr/lib/linux-scripts"):
+for _p in reversed((os.path.join(_here, "..", "common"), os.path.join(_here, "..", "lib", "linux-scripts"),
+                    "/usr/local/lib/linux-scripts", "/usr/lib/linux-scripts")):   # first entry wins
     if os.path.isdir(_p):
         sys.path.insert(0, _p)
-from lscommon import ensure_tkinter, load_lang, run, save_lang  # noqa: E402
+from lscommon import ensure_tkinter, load_lang, run, save_lang, warn_missing  # noqa: E402
 
 ensure_tkinter()
 
@@ -519,5 +519,12 @@ class App(tk.Tk):
         self.bg(work, done)
 
 
+
+def main():
+    app = App()
+    app.after(400, lambda: warn_missing(["lpinfo", "lpadmin", "lp"], LANG, t("title")))
+    app.mainloop()
+
+
 if __name__ == "__main__":
-    App().mainloop()
+    main()

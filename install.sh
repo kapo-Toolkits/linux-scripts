@@ -57,7 +57,8 @@ while [ $# -gt 0 ]; do
 done
 [ ${#TOOLS[@]} -gt 0 ] || { usage; exit 1; }
 
-PREFIX="$(realpath -m "$PREFIX")"
+case "$PREFIX" in /*) ;; *) PREFIX="$PWD/$PREFIX" ;; esac   # portable (busybox realpath has no -m)
+PREFIX="${PREFIX%/}"
 DESKDIR="$(xdg-user-dir DESKTOP 2>/dev/null || echo "$HOME/Desktop")"
 SUDO=""
 probe="$PREFIX"; while [ ! -e "$probe" ]; do probe="$(dirname "$probe")"; done

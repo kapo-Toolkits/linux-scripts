@@ -26,6 +26,13 @@ jobs:
           ./install.sh --prefix "$p" --uninstall all
           test ! -e "$p/lib/linux-scripts"
 
+  distros:
+    # unit tests + install.sh + "suggested package names really exist" on Debian/Ubuntu/Fedora/Arch/openSUSE/Alpine
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: tests/run-distros.sh
+
   qr-decode:
     # the QR generator is checked with a real decoder (zbar) in a container
     runs-on: ubuntu-latest

@@ -11,6 +11,16 @@ Small, self-contained Linux utilities. Each tool lives in its own folder with it
 | [printer-setup](printer-setup/) | GUI (EN/KA): detect a printer, find/inspect/install its driver, add it, print a test page |
 | [qgis-installer](qgis-installer/) | GUI (EN/KA): install QGIS via the official repo (latest/LTR/nightly), Flatpak, or the distro package |
 
+## Works on
+
+Any Linux with Python 3.8+ and `bash`. The portability matrix (`tests/run-distros.sh`, also in CI) runs the unit tests and
+`install.sh` round-trip on **Debian 12, Ubuntu 22.04/24.04, Fedora, Arch, openSUSE Tumbleweed and Alpine**, and checks that
+the package names the GUIs suggest for missing tools exist in each distribution.
+When a tool is missing (`nmcli`, `udisksctl`, CUPS…) the GUI says so in a dialog (EN/KA) with the exact install command
+for your package manager. `tkinter` is installed automatically on first run. The QGIS installer offers the official apt
+repository only on Debian/Ubuntu-based systems and Flatpak or the distribution package everywhere else.
+Still Linux-specific by nature: Hotspot needs NetworkManager + `iw`, USB eject needs `udisks2`, printer setup needs CUPS.
+
 ## Install / uninstall
 
 ```bash

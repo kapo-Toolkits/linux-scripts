@@ -44,6 +44,26 @@ class Common(unittest.TestCase):
         self.assertEqual(lscommon.run(["echo", "hi"]), (0, "hi"))
 
 
+class MissingTools(unittest.TestCase):
+    def test_hints_per_package_manager(self):
+        import lscommon
+        miss = [("nmcli", lscommon.PKG_FOR["nmcli"]["dnf"]), ("iw", "iw")]
+        self.assertEqual(lscommon.install_command(miss, "dnf"), "sudo dnf install NetworkManager iw")
+        self.assertEqual(lscommon.install_command([("nmcli", lscommon.PKG_FOR["nmcli"]["pacman"])], "pacman"),
+                         "sudo pacman -S networkmanager")
+        self.assertEqual(lscommon.install_command([("x", None)], "apt-get"), "")
+
+    def test_missing_tools_uses_path(self):
+        import lscommon
+        self.assertEqual(lscommon.missing_tools(["sh"], "apt-get"), [])
+        self.assertEqual(lscommon.missing_tools(["no-such-tool-xyz"], "apt-get"), [("no-such-tool-xyz", None)])
+        from unittest import mock
+        with mock.patch("shutil.which", return_value=None):          # pretend nothing is installed
+            self.assertEqual(lscommon.missing_tools(["lsblk", "nmcli"], "apt-get"),
+                             [("lsblk", "util-linux"), ("nmcli", "network-manager")])
+            self.assertEqual(lscommon.missing_tools(["nmcli"], "dnf"), [("nmcli", "NetworkManager")])
+
+
 class Printer(unittest.TestCase):
     m = load("printer-setup/printer-setup-gui.py")
 
