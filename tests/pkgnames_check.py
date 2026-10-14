@@ -27,5 +27,18 @@ for cmd, per_pm in sorted(lscommon.PKG_FOR.items()):
     ok = subprocess.run(CHECK[pm](pkg), capture_output=True).returncode == 0
     bad += not ok
     print(("PASS" if ok else "FAIL"), f"{cmd:10s} -> {pkg}")
+# the requirements of the GIS GEORGIA QGIS plugins (qgis_installer.requirements)
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "qgis-installer"))
+from qgis_installer import requirements  # noqa: E402
+
+for rid, spec in sorted(requirements.REQ.items()):
+    names = requirements.packages_for([rid], pm)[0]
+    if not names:
+        print(f"MANUAL {rid}: no package for {pm}")
+        continue
+    for pkg in names:
+        ok = subprocess.run(CHECK[pm](pkg), capture_output=True).returncode == 0
+        bad += not ok
+        print(("PASS" if ok else "FAIL"), f"req:{rid:10s} -> {pkg}")
 print("install hint:", lscommon.install_command([(c, v.get(pm)) for c, v in lscommon.PKG_FOR.items()], pm))
 sys.exit(1 if bad else 0)

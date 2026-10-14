@@ -5,6 +5,8 @@
     qgis-installer-cli install --method A --channel ltr [--yes] [--dry-run]
     qgis-installer-cli list
     qgis-installer-cli uninstall [--kinds apt,repo,flatpak,snap,dist,data] [--purge] [--yes] [--dry-run]
+    qgis-installer-cli requirements check [--plugin postgis_manager]
+    qgis-installer-cli requirements install --plugin postgis_manager [--optional] [--yes] [--dry-run]
 
 Nothing runs without confirmation (``--yes`` or an interactive "y"). Exit codes: 0 ok, 1 a step
 failed, 2 not possible here / bad arguments, 3 not confirmed.
@@ -14,7 +16,7 @@ import argparse
 import json
 import sys
 
-from . import i18n, plan, runner, system, uninstall
+from . import i18n, plan, requirements, runner, system, uninstall
 
 SCHEMA = 1
 KINDS = ("apt", "repo", "flatpak", "snap", "dist", "data")
@@ -115,6 +117,61 @@ def _execute(steps, args, lang):
     return rc if rc else 1
 
 
+def _requirements(args, sysinfo, lang):
+    """requirements check / install: what the GIS GEORGIA plugins need from this system."""
+    t = lambda k, **kw: i18n.t(k, lang, **kw)  # noqa: E731
+    known = sorted(requirements.PLUGIN_REQUIREMENTS)
+    plugins = [args.plugin] if args.plugin else known
+    for p in plugins:
+        if p not in requirements.PLUGIN_REQUIREMENTS:
+            print(t("rq_unknown_plugin", plugin=p, known=", ".join(known)), file=sys.stderr)
+            return 2
+    pm = sysinfo["pm"]
+
+    if args.rq_cmd == "check":
+        doc = {"schema": SCHEMA, "package_manager": pm, "plugins": {}}
+        for p in plugins:
+            rows = []
+            for r in requirements.status(p):
+                pkgs, _ = requirements.packages_for([r["id"]], pm)
+                rows.append(dict(r, packages=pkgs))
+            doc["plugins"][p] = rows
+        if args.json:
+            print(json.dumps(doc, indent=2, ensure_ascii=False))
+            return 0
+        for p in plugins:
+            print(t("rq_head", plugin=p))
+            for r in doc["plugins"][p]:
+                flag = t("rq_present") if r["present"] else t("rq_missing")
+                opt = " (" + t("rq_optional") + ")" if r["optional"] else ""
+                how = ""
+                if not r["present"]:
+                    how = "  -> " + (" ".join(r["packages"]) if r["packages"]
+                                     else t("rq_manual", name=r["label"][lang]))
+                print("  [{}] {}{}{}".format(flag, r["label"][lang], opt, how))
+        return 0
+
+    # install
+    if not args.plugin:
+        print("--plugin is required", file=sys.stderr)
+        return 2
+    rows = requirements.status(args.plugin)
+    if not rows:
+        print(t("rq_none", plugin=args.plugin))
+        return 0
+    wanted = [r["id"] for r in rows if not r["present"] and (args.optional or not r["optional"])]
+    if not wanted:
+        print(t("rq_all_ok"))
+        return 0
+    steps, manual = requirements.install_steps(wanted, pm)
+    for rid in manual:
+        print(t("rq_manual", name=requirements.REQ[rid]["label"][lang]), file=sys.stderr)
+    if not steps:
+        return 2
+    _show(steps, args, lang, "requirements")
+    return _execute(steps, args, lang)
+
+
 def build_parser():
     ap = argparse.ArgumentParser(prog="qgis-installer-cli", description=__doc__.split("\n\n")[0])
     ap.add_argument("--lang", choices=("en", "ka"), help="language of messages (default: the one the GUI remembers, else en)")
@@ -150,6 +207,15 @@ def build_parser():
     p.add_argument("--no-autoremove", action="store_true")
     p.add_argument("--yes", action="store_true", help="do not ask")
     p.add_argument("--dry-run", action="store_true", help="only show the commands")
+    p = sub.add_parser("requirements", help="what the GIS GEORGIA QGIS plugins need from this system")
+    rq = p.add_subparsers(dest="rq_cmd", required=True)
+    q = rq.add_parser("check", help="which requirements are present (this system's Python and PATH)")
+    q.add_argument("--plugin", help="one plugin folder name (default: all)")
+    q = rq.add_parser("install", help="install the missing ones with the system package manager")
+    q.add_argument("--plugin", required=True, help="plugin folder name, e.g. postgis_manager")
+    q.add_argument("--optional", action="store_true", help="also the optional ones")
+    q.add_argument("--yes", action="store_true", help="do not ask")
+    q.add_argument("--dry-run", action="store_true", help="only show the commands")
     return ap
 
 
@@ -163,6 +229,8 @@ def main(argv=None):
 
     if args.cmd == "info":
         return _info(args, sysinfo, lang)
+    if args.cmd == "requirements":
+        return _requirements(args, sysinfo, lang)
 
     if args.cmd in ("plan", "install"):
         method, steps = _install_steps(args, sysinfo)

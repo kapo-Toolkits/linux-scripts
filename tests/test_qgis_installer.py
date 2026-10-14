@@ -23,7 +23,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "qgis-installer"))
 
 import qgis_installer as qi  # noqa: E402
-from qgis_installer import cli as qcli, i18n, plan, runner, system, uninstall  # noqa: E402
+from qgis_installer import cli as qcli, i18n, plan, requirements, runner, system, uninstall  # noqa: E402
 
 FIX = os.path.join(ROOT, "tests", "fixtures", "os-release")
 HAVE_SH = shutil.which("sh") is not None
@@ -422,6 +422,136 @@ class Cli(unittest.TestCase):
                            capture_output=True, text=True, cwd=os.path.join(ROOT, "qgis-installer"))
         self.assertEqual(p.returncode, 0, p.stderr)
         self.assertEqual(json.loads(p.stdout)["system"]["code"], "noble")
+
+
+class Requirements(unittest.TestCase):
+    def test_table_is_consistent(self):
+        for rid, spec in requirements.REQ.items():
+            self.assertIn(spec["kind"], ("module", "tool"), rid)
+            self.assertTrue(spec.get("module") if spec["kind"] == "module" else spec.get("tools"), rid)
+            self.assertTrue(spec["label"]["en"] and spec["label"]["ka"], rid)
+            self.assertTrue(set(spec["pkgs"]) <= set(requirements.INSTALL_CMD), rid)
+            for names in spec["pkgs"].values():
+                self.assertTrue(names is None or (isinstance(names, list) and all(isinstance(n, str) and n for n in names)), rid)
+        for plugin, reqs in requirements.PLUGIN_REQUIREMENTS.items():
+            for rid, optional in reqs:
+                self.assertIn(rid, requirements.REQ, plugin)
+                self.assertIsInstance(optional, bool)
+
+    def test_is_present_for_modules_and_tools(self):
+        self.assertTrue(requirements.is_present("psycopg2", find_spec=lambda m: object()))
+        self.assertFalse(requirements.is_present("psycopg2", find_spec=lambda m: None))
+        self.assertFalse(requirements.is_present("psycopg2", find_spec=mock.Mock(side_effect=ImportError)))
+        every = lambda t: "/usr/bin/" + t  # noqa: E731
+        self.assertTrue(requirements.is_present("pgclient", which=every))
+        self.assertFalse(requirements.is_present("pgclient", which=lambda t: None if t == "psql" else "/x"))   # all must exist
+
+    def test_status_for_a_plugin(self):
+        rows = requirements.status("postgis_manager", which=lambda t: None, find_spec=lambda m: None)
+        self.assertEqual([(r["id"], r["optional"], r["present"]) for r in rows],
+                         [("psycopg2", False, False), ("pgclient", False, False), ("geopandas", True, False)])
+        self.assertEqual(requirements.status("calculate_geometry"), [])
+
+    def test_packages_resolve_per_package_manager(self):
+        self.assertEqual(requirements.packages_for(["psycopg2", "pgclient"], "apt-get"),
+                         (["python3-psycopg2", "postgresql-client"], []))
+        self.assertEqual(requirements.packages_for(["psycopg2", "geopandas"], "zypper", pyver="313"),
+                         (["python313-psycopg2", "python313-geopandas"], []))
+        pk, manual = requirements.packages_for(["saga", "windninja", "grass"], "dnf")
+        self.assertEqual((pk, manual), (["grass"], ["saga", "windninja"]))
+        self.assertEqual(requirements.packages_for(["psycopg2"], "unknown-pm"), ([], ["psycopg2"]))
+        self.assertRegex(requirements.python_tag(), r"^3\d+$")
+
+    @unittest.skipUnless(HAVE_SH, "needs sh")
+    def test_install_steps(self):
+        steps, manual = requirements.install_steps(["psycopg2", "windninja", "pgclient"], "pacman")
+        self.assertEqual(manual, ["windninja"])
+        self.assertEqual([s["root"] for s in steps], [True])
+        self.assertIn("pacman -S --noconfirm python-psycopg2 postgresql", steps[0]["sh"])
+        self.assertTrue(sh_syntax_ok(steps[0]["sh"]))
+        self.assertEqual(requirements.install_steps(["windninja"], "apt-get"), ([], ["windninja"]))
+        self.assertEqual(requirements.install_steps(["psycopg2"], "emerge"), ([], ["psycopg2"]))
+        self.assertEqual(requirements.install_steps([], "apt-get"), ([], []))
+
+    def test_runtime_detection(self):
+        no = lambda p: False  # noqa: E731
+        self.assertEqual(requirements.qgis_runtime({}, no), "native")
+        self.assertEqual(requirements.qgis_runtime({"FLATPAK_ID": "org.qgis.qgis"}, no), "flatpak")
+        self.assertEqual(requirements.qgis_runtime({}, lambda p: p == "/.flatpak-info"), "flatpak")
+        self.assertEqual(requirements.qgis_runtime({"SNAP": "/snap/qgis/1"}, no), "snap")
+
+
+class RequirementsCli(unittest.TestCase):
+    NOBLE = Cli.NOBLE
+    call = Cli.call
+
+    def present(self, missing):
+        return lambda rid, **kw: rid not in missing
+
+    def test_check_json_and_text(self):
+        with mock.patch.object(requirements, "is_present", self.present({"pgclient"})):
+            rc, out, _ = self.call("--json", *self.NOBLE, "requirements", "check", "--plugin", "postgis_manager")
+            doc = json.loads(out)
+            rows = {r["id"]: r for r in doc["plugins"]["postgis_manager"]}
+            self.assertEqual(rc, 0)
+            self.assertEqual(doc["package_manager"], "apt-get")
+            self.assertFalse(rows["pgclient"]["present"])
+            self.assertEqual(rows["pgclient"]["packages"], ["postgresql-client"])
+            self.assertTrue(rows["psycopg2"]["present"])
+            rc, out, _ = self.call("--lang", "en", *self.NOBLE, "requirements", "check")
+            self.assertIn("[missing]", out)
+            self.assertIn("-> postgresql-client", out)
+            for plugin in requirements.PLUGIN_REQUIREMENTS:
+                self.assertIn(plugin, out)
+
+    def test_check_names_what_has_no_package(self):
+        with mock.patch.object(requirements, "is_present", self.present({"windninja"})):
+            rc, out, _ = self.call("--lang", "en", *self.NOBLE, "requirements", "check", "--plugin", "geoeco")
+        self.assertIn("no package for your system: install WindNinja", out)
+
+    def test_install_dry_run_and_filters(self):
+        with mock.patch.object(requirements, "is_present", self.present({"pgclient", "geopandas"})), \
+                mock.patch.object(runner, "run_steps", side_effect=AssertionError("must not run")):
+            rc, out, _ = self.call("--json", *self.NOBLE, "requirements", "install", "--plugin", "postgis_manager", "--dry-run")
+            sh = json.loads(out)["steps"][0]["sh"]
+            self.assertEqual(rc, 0)
+            self.assertIn("apt-get install -y postgresql-client", sh)
+            self.assertNotIn("geopandas", sh)                     # optional: only with --optional
+            rc, out, _ = self.call("--json", *self.NOBLE, "requirements", "install", "--plugin", "postgis_manager",
+                                   "--optional", "--dry-run")
+            self.assertIn("python3-geopandas", json.loads(out)["steps"][0]["sh"])
+            rc, _, err = self.call(*self.NOBLE, "requirements", "install", "--plugin", "postgis_manager")  # no tty, no --yes
+            self.assertEqual(rc, 3)
+
+    def test_install_when_nothing_is_missing(self):
+        with mock.patch.object(requirements, "is_present", self.present(set())), \
+                mock.patch.object(runner, "run_steps", side_effect=AssertionError("must not run")):
+            rc, out, _ = self.call("--lang", "en", *self.NOBLE, "requirements", "install", "--plugin", "postgis_manager", "--yes")
+        self.assertEqual(rc, 0)
+        self.assertIn(i18n.STR["en"]["rq_all_ok"], out)
+        rc, out, _ = self.call("--lang", "en", *self.NOBLE, "requirements", "install", "--plugin", "calculate_geometry", "--yes")
+        self.assertEqual(rc, 2)                                   # unknown to the table: say so
+        self.assertIn("Unknown plugin", self.call("--lang", "en", *self.NOBLE, "requirements", "check", "--plugin", "x")[2])
+
+    def test_install_runs_after_yes_and_manual_only_is_refused(self):
+        with mock.patch.object(requirements, "is_present", self.present({"saga", "grass", "windninja"})):
+            with mock.patch.object(runner, "run_steps", return_value=(0, None)) as run:
+                rc, out, _ = self.call("--lang", "en", *self.NOBLE, "requirements", "install", "--plugin", "geoeco", "--yes")
+            self.assertEqual(rc, 0)
+            self.assertIn("apt-get install -y saga grass", run.call_args[0][0][0]["sh"])
+            fedora = ["--os-release", os.path.join(FIX, "fedora-43"), "--pm", "dnf", "--arch", "amd64"]
+            with mock.patch.object(runner, "run_steps", return_value=(0, None)) as run:
+                rc, _, err = self.call("--lang", "en", *fedora, "requirements", "install", "--plugin", "geoeco",
+                                       "--optional", "--yes")
+            self.assertEqual(rc, 0)                               # grass has a Fedora package; saga/windninja are manual
+            self.assertEqual(run.call_args[0][0][0]["sh"], "set -eu\ndnf install -y grass\n")
+            self.assertIn("install SAGA GIS", err)
+        with mock.patch.object(requirements, "is_present", self.present({"windninja"})), \
+                mock.patch.object(runner, "run_steps", side_effect=AssertionError("must not run")):
+            rc, _, err = self.call("--lang", "en", *self.NOBLE, "requirements", "install", "--plugin", "geoeco",
+                                   "--optional", "--yes")
+        self.assertEqual(rc, 2)
+        self.assertIn("install WindNinja", err)
 
 
 if __name__ == "__main__":
