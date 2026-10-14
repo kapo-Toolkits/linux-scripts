@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=USB უსაფრთხო გამორთვა
+Name[en]=USB Safe Eject
+Comment=USB დისკის უსაფრთხო გამორთვა
+Exec=usb-eject-gui
+Icon=media-eject
+Terminal=false
+Categories=Utility;System;
