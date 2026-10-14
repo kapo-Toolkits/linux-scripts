@@ -65,6 +65,11 @@ STR = {
   "• Administrator prompt does not appear: the app shows the commands to paste in a terminal.\n\n"
   "SWITCHING VERSION\n\n"
   "Use the Uninstall tab: it finds every QGIS (apt, repository files, Flatpak, Snap, distro package, user data), you tick what to remove, then choose another version in the Install tab. Going from a newer to an older line (e.g. latest → LTR) needs the old one removed first — apt will not downgrade."),
+ "rq_head": "Requirements of {plugin}", "rq_present": "installed", "rq_missing": "missing",
+ "rq_optional": "optional", "rq_manual": "no package for your system: install {name} by hand",
+ "rq_none": "{plugin} needs nothing from the operating system.",
+ "rq_all_ok": "Everything needed is already installed.",
+ "rq_unknown_plugin": "Unknown plugin '{plugin}'. Known: {known}",
 },
 "ka": {
  "title": "QGIS-ის დაყენება", "lang_btn": "English", "tab_inst": "დაყენება", "tab_guide": "ინსტრუქცია",
@@ -127,6 +132,11 @@ STR = {
   "• ადმინისტრატორის ფანჯარა არ ჩანს: აპი აჩვენებს ბრძანებებს ტერმინალში ჩასასმელად.\n\n"
   "ვერსიის შეცვლა\n\n"
   "გამოიყენეთ „წაშლა“ ჩანართი: ის პოულობს ყველა QGIS-ს (apt, რეპოზიტორიის ფაილები, Flatpak, Snap, დისტრიბუციის პაკეტი, მომხმარებლის მონაცემები), მონიშნავთ რისი წაშლაც გინდათ, მერე „დაყენება“ ჩანართში სხვა ვერსიას არჩევთ. ახალი ხაზიდან ძველზე (მაგ. უახლესი → LTR) გადასვლისას ჯერ ძველი უნდა წაიშალოს — apt ვერსიას არ დააქვეითებს."),
+ "rq_head": "{plugin}: მოთხოვნები", "rq_present": "დაყენებულია", "rq_missing": "აკლია",
+ "rq_optional": "არასავალდებულო", "rq_manual": "თქვენი სისტემისთვის პაკეტი არ არის: {name} ხელით დააყენეთ",
+ "rq_none": "{plugin}-ს ოპერაციული სისტემიდან არაფერი სჭირდება.",
+ "rq_all_ok": "ყველაფერი საჭირო უკვე დაყენებულია.",
+ "rq_unknown_plugin": "უცნობი დანამატი „{plugin}“. ცნობილია: {known}",
 },
 }
 

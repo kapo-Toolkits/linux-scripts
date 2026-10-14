@@ -69,7 +69,7 @@ check("qgis + grass + python resolvable", rc == 0 and "unmet" not in sim.lower()
 
 # 2. tampered fingerprint must abort and leave nothing behind
 sh(f"rm -f {m.SOURCES} {m.KEYRING}")
-import qgis_installer.system as core_system   # the constant now lives in the core package
+import qgis_installer.system as core_system  # noqa: E402  (the constant now lives in the core package)
 
 good = core_system.KEY_FPR
 core_system.KEY_FPR = "0" * 40

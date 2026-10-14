@@ -26,6 +26,16 @@ qgis-installer-cli list                                  # every QGIS installati
 qgis-installer-cli uninstall [--kinds apt,repo,data] [--purge] [--dry-run]
 ```
 
+```bash
+qgis-installer-cli requirements check [--plugin postgis_manager]     # what the GIS GEORGIA QGIS plugins need
+qgis-installer-cli requirements install --plugin postgis_manager     # install what is missing (--optional, --dry-run)
+```
+
+`requirements` knows the system packages behind psycopg2, the PostgreSQL client tools, ExifTool, GeoPandas, SAGA and
+GRASS for apt / dnf / pacman / zypper / apk (names checked against each distribution's repositories by
+`tests/pkgnames_check.py`; where a distribution has no package - SAGA on Fedora/Arch/openSUSE, GRASS on Arch, WindNinja
+everywhere - it says so instead of guessing). It looks at *this* system's Python and PATH.
+
 Exit codes: `0` ok, `1`/the failing step's code, `2` not possible here or bad arguments, `3` not confirmed.
 User data is never removed unless `--kinds` names `data`. `--lang en|ka` selects the language (default: the one the
 GUI remembers). To preview another system: `--os-release tests/fixtures/os-release/debian-trixie --pm apt-get --arch amd64`.
@@ -34,7 +44,7 @@ GUI remembers). To preview another system: `--os-release tests/fixtures/os-relea
 
 | Part | What |
 |---|---|
-| `qgis_installer/` | the logic, no UI toolkit: `system` (detection, channels), `plan` (install steps), `uninstall` (finding and removing), `i18n` (EN/KA), `runner` (running steps, elevation), `cli` |
+| `qgis_installer/` | the logic, no UI toolkit: `system` (detection, channels), `plan` (install steps), `uninstall` (finding and removing), `requirements` (what the GIS GEORGIA plugins need), `i18n` (EN/KA), `runner` (running steps, elevation), `cli` |
 | `qgis-installer-gui.py` | the Tk window - a thin layer over the package |
 | `qgis-installer-cli.py` | the command line (`python3 -m qgis_installer` from this folder does the same) |
 
