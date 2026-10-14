@@ -1,0 +1,13 @@
+Index list with 2 items
+hci1:	Primary controller
+	addr 00:1A:7D:54:7D:7B version 6 manufacturer 10 class 0x000000
+	supported settings: powered connectable fast-connectable discoverable bondable link-security ssp br/edr hs le advertising secure-conn debug-keys privacy static-address phy-configuration wide-band-speech 
+	current settings: bondable ssp br/edr le secure-conn 
+	name 
+	short name 
+hci0:	Primary controller
+	addr 00:15:83:0C:BF:EB version 3 manufacturer 10 class 0x7c010c
+	supported settings: powered connectable fast-connectable discoverable bondable link-security br/edr debug-keys phy-configuration 
+	current settings: powered connectable discoverable bondable br/edr 
+	name k-M4700
+	short name 

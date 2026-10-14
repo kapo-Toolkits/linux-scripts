@@ -10,11 +10,12 @@ import unittest
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "common"))
 
-for n in ("tkinter", "tkinter.ttk", "tkinter.messagebox", "tkinter.scrolledtext", "tkinter.filedialog"):
+for n in ("tkinter", "tkinter.ttk", "tkinter.messagebox", "tkinter.scrolledtext", "tkinter.filedialog", "tkinter.simpledialog"):
     sys.modules[n] = types.ModuleType(n)
 tk = sys.modules["tkinter"]
 tk.ttk, tk.messagebox = sys.modules["tkinter.ttk"], sys.modules["tkinter.messagebox"]
 tk.scrolledtext, tk.filedialog = sys.modules["tkinter.scrolledtext"], sys.modules["tkinter.filedialog"]
+tk.simpledialog = sys.modules["tkinter.simpledialog"]
 tk.Tk = object
 
 
@@ -186,6 +187,89 @@ class Qr(unittest.TestCase):
         self.assertEqual(sizes, [21, 21, 25, 57])
         with self.assertRaises(ValueError):
             self.lsqr.make_qr("x" * 214)
+
+
+class Bluetooth(unittest.TestCase):
+    m = load("bluetooth-setup/bluetooth-setup-gui.py")
+    fx = os.path.join(ROOT, "tests", "fixtures")
+
+    def read(self, n):
+        with open(os.path.join(self.fx, n)) as f:
+            return f.read()
+
+    def test_mgmt_info_two_dongles(self):
+        c = {x["index"]: x for x in self.m.parse_mgmt_info(self.read("mgmt_info_dongles.txt"))}
+        self.assertEqual(self.m.LMP[c["hci0"]["version"]], "2.0 + EDR")
+        self.assertEqual(self.m.features_of(c["hci0"]), ["BR/EDR"])                 # classic only
+        self.assertEqual(self.m.LMP[c["hci1"]["version"]], "4.0")
+        self.assertEqual(self.m.features_of(c["hci1"]), ["BR/EDR", "LE", "SSP"])
+        self.assertEqual(c["hci0"]["addr"], "00:15:83:0C:BF:EB")
+        self.assertIn("powered", c["hci0"]["current"])
+
+    def test_kernel_hints(self):
+        h = self.m.kernel_hints(self.read("dmesg_bluetooth.txt"))
+        self.assertIn("tx timeout", h["hci1"]["failed"])
+        self.assertTrue(h["hci0"]["clone"])
+        self.assertEqual(h["hci0"]["failed"], "")
+        self.assertEqual(h["_usb_errors"], 3)
+
+    def test_device_info_and_kind(self):
+        info = self.m.parse_info(self.read("btctl_info_speaker.txt"))
+        self.assertEqual((info["Paired"], info["Connected"]), ("yes", "yes"))
+        self.assertEqual(self.m.device_kind(info), "audio")
+        self.assertEqual(self.m.device_kind({"Icon": "input-keyboard", "uuids": []}), "keyboard")
+        self.assertEqual(self.m.device_kind({"Icon": "input-mouse", "uuids": []}), "mouse")
+        self.assertEqual(self.m.device_kind({"uuids": ["Human Interface Device (00001124-...)"]}), "keyboard")
+
+    def test_parse_devices(self):
+        d = self.m.parse_devices("Device 5C:FB:7C:12:34:56 JBL Flip 5\nDevice aa:bb:cc:00:11:22 K-Snake Keyboard\n")
+        self.assertEqual(d, {"5C:FB:7C:12:34:56": "JBL Flip 5", "AA:BB:CC:00:11:22": "K-Snake Keyboard"})
+
+    def test_event_parser_on_a_pairing_transcript(self):
+        events = [e for e in map(self.m.parse_bt_line, self.read("btctl_pairing_session.txt").splitlines()) if e]
+        self.assertEqual(events[0], ("new", "5C:FB:7C:12:34:56", "JBL Flip 5"))
+        self.assertIn(("chg", "5C:FB:7C:12:34:56", "RSSI", "-60"), events)
+        self.assertIn(("chg", "AA:BB:CC:00:11:22", "RSSI", "-71"), events)
+        self.assertIn(("del", "11:22:33:44:55:66"), events)
+        self.assertIn(("show_code", "482913"), events)
+        self.assertIn(("show_code", "123456"), events)
+        self.assertIn(("confirm", "654321"), events)
+        self.assertIn(("enter_pin",), events)
+        self.assertIn(("authorize",), events)
+        self.assertIn(("chg", "AA:BB:CC:00:11:22", "Paired", "yes"), events)
+        self.assertIn(("result", "pair", True, ""), events)
+        self.assertIn(("result", "pair", False, "org.bluez.Error.AuthenticationFailed"), events)
+        self.assertIn(("result", "connect", True, ""), events)
+        self.assertEqual([e for e in events if e[0] == "result" and e[1] == "connect" and not e[2]][0][3].split()[0],
+                         "org.bluez.Error.Failed")
+        self.assertIsNone(self.m.parse_bt_line("\x1b[0;94m[bluetooth]\x1b[0m# \x01\x02"))   # prompt noise
+
+    def test_ansi_and_prompt_are_stripped(self):
+        self.assertEqual(self.m.parse_bt_line("\x1b[0;92m[NEW]\x1b[0m Device AA:BB:CC:00:11:22 Mouse"),
+                         ("new", "AA:BB:CC:00:11:22", "Mouse"))
+
+    def test_session_roundtrip_with_fake_bluetoothctl(self):
+        import stat, subprocess, tempfile, time
+        with tempfile.TemporaryDirectory() as d:
+            fake = os.path.join(d, "bluetoothctl")
+            with open(fake, "w") as f:
+                f.write("#!/bin/sh\necho '[NEW] Device 5C:FB:7C:12:34:56 JBL Flip 5'\necho '[agent] Confirm passkey 111222 (yes/no): '\n"
+                        "while read l; do echo \"GOT:$l\"; [ \"$l\" = quit ] && exit 0; done\n")
+            os.chmod(fake, os.stat(fake).st_mode | stat.S_IEXEC)
+            seen, old = [], os.environ["PATH"]
+            os.environ["PATH"] = d + os.pathsep + old
+            try:
+                s = self.m.BtSession(seen.append)
+                time.sleep(0.5)
+                s.send("yes")
+                time.sleep(0.5)
+                s.close()
+            finally:
+                os.environ["PATH"] = old
+            txt = "".join(seen)
+            self.assertIn("JBL Flip 5", txt)
+            self.assertIn("GOT:yes", txt)
+            self.assertIn(("confirm", "111222"), [self.m.parse_bt_line(x) for x in seen])
 
 
 class Usb(unittest.TestCase):

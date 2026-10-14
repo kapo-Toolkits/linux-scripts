@@ -131,3 +131,5 @@ def warn_missing(cmds, lang, title):
     cmd = install_command(miss) or ("(see your distribution's documentation)" if lang == "en" else "(იხილეთ თქვენი დისტრიბუციის დოკუმენტაცია)")
     messagebox.showwarning(title, DEPS_TEXT.get(lang, DEPS_TEXT["en"]).format(names=", ".join(c for c, _ in miss), cmd=cmd))
     return True
+PKG_FOR["bluetoothctl"] = {"apt-get": "bluez", "dnf": "bluez", "yum": "bluez", "pacman": "bluez-utils",
+                           "zypper": "bluez", "apk": "bluez", "xbps-install": "bluez"}

@@ -16,20 +16,23 @@ declare -A FILES=(
   [wifi-hotspot]="wifi-hotspot/hotspot.sh|hotspot wifi-hotspot/hotspot-gui.py|hotspot-gui"
   [printer-setup]="printer-setup/printer-setup-gui.py|printer-setup"
   [qgis-installer]="qgis-installer/qgis-installer-gui.py|qgis-installer qgis-installer/qgis-installer-cli.py|qgis-installer-cli"
+  [bluetooth-setup]="bluetooth-setup/bluetooth-setup-gui.py|bluetooth-setup"
 )
 declare -A GUISCRIPT=(
   [usb-eject]=usb-eject/usb-eject-gui.py
   [wifi-hotspot]=wifi-hotspot/hotspot-gui.py
   [printer-setup]=printer-setup/printer-setup-gui.py
   [qgis-installer]=qgis-installer/qgis-installer-gui.py
+  [bluetooth-setup]=bluetooth-setup/bluetooth-setup-gui.py
 )
 declare -A DESKTOP=(
   [usb-eject]=usb-eject/usb-eject-gui.desktop
   [wifi-hotspot]=wifi-hotspot/hotspot-gui.desktop
   [printer-setup]=printer-setup/printer-setup.desktop
   [qgis-installer]=qgis-installer/qgis-installer.desktop
+  [bluetooth-setup]=bluetooth-setup/bluetooth-setup.desktop
 )
-ALL=(usb-eject wifi-hotspot printer-setup qgis-installer)
+ALL=(usb-eject wifi-hotspot printer-setup qgis-installer bluetooth-setup)
 
 usage() {
   cat <<U
@@ -118,7 +121,7 @@ if [ "$ACTION" = install ]; then
 fi
 if [ "$ACTION" = uninstall ]; then
   case " ${TOOLS[*]} " in *" qgis-installer "*) $SUDO rm -rf "$PREFIX/lib/linux-scripts/qgis_installer";; esac
-  guis=0; for g in usb-eject-gui hotspot-gui printer-setup qgis-installer qgis-installer-cli; do [ -e "$PREFIX/bin/$g" ] && guis=1; done
+  guis=0; for g in usb-eject-gui hotspot-gui printer-setup qgis-installer qgis-installer-cli bluetooth-setup; do [ -e "$PREFIX/bin/$g" ] && guis=1; done
   [ "$guis" = 0 ] && $SUDO rm -rf "$PREFIX/lib/linux-scripts" && echo "removed shared helper"
 fi
 command -v update-desktop-database >/dev/null && $SUDO update-desktop-database -q "$PREFIX/share/applications" 2>/dev/null || true

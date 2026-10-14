@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Bluetooth Setup
+Name[ka]=Bluetooth-ის მართვა
+Comment=Check dongles, scan, pair keyboards, mice and speakers · დონგლების შემოწმება, ძებნა და დაწყვილება
+Exec=bluetooth-setup
+Icon=bluetooth
+Terminal=false
+Categories=Settings;HardwareSettings;

@@ -1,0 +1,20 @@
+Agent registered
+[CHG] Controller 00:15:83:0C:BF:EB Discovering: yes
+[NEW] Device 5C:FB:7C:12:34:56 JBL Flip 5
+[NEW] Device AA:BB:CC:00:11:22 K-Snake Keyboard
+[CHG] Device 5C:FB:7C:12:34:56 RSSI: 0xffffffc4 (-60)
+[CHG] Device AA:BB:CC:00:11:22 RSSI: -71
+[DEL] Device 11:22:33:44:55:66
+Attempting to pair with AA:BB:CC:00:11:22
+[CHG] Device AA:BB:CC:00:11:22 Connected: yes
+[agent] PIN code: 482913
+[agent] Passkey: 123456
+Request confirmation
+[agent] Confirm passkey 654321 (yes/no): 
+[agent] Enter PIN code: 
+[agent] Authorize service 0000110d-0000-1000-8000-00805f9b34fb (yes/no): 
+[CHG] Device AA:BB:CC:00:11:22 Paired: yes
+Pairing successful
+Failed to pair: org.bluez.Error.AuthenticationFailed
+Connection successful
+Failed to connect: org.bluez.Error.Failed br-connection-profile-unavailable

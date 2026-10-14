@@ -135,7 +135,8 @@ def find_blockers(mps):
                 pass
         if hit:
             try:
-                name = open(base + "/comm").read().strip()
+                with open(base + "/comm") as fh:
+                    name = fh.read().strip()
                 user = pwd.getpwuid(os.stat(base).st_uid).pw_name
             except (OSError, KeyError):
                 name, user = "?", "?"

@@ -1,0 +1,10 @@
+[121185.203401] usb 1-3: New USB device found, idVendor=0a12, idProduct=0001, bcdDevice= 1.34
+[121185.206560] Bluetooth: hci0: CSR: Setting up dongle with HCI ver=3 rev=0c5c
+[121185.206589] Bluetooth: hci0: CSR: Unbranded CSR clone detected; adding workarounds and force-suspending once...
+[121193.682883] usb 4-1.7: New USB device found, idVendor=10d7, idProduct=b012, bcdDevice=88.91
+[121193.683824] Bluetooth: hci1: HCI WRITE AUTH PAYLOAD TIMEOUT command leads to unexpected SMP errors when pairing and will not be used.
+[121195.769411] Bluetooth: hci1: Opcode 0x1004 failed: -110
+[121195.769420] Bluetooth: hci1: command 0x1004 tx timeout
+[123217.385908] usb 1-3: Device not responding to setup address.
+[123217.801869] usb 1-3: device not accepting address 14, error -71
+[123227.009487] usb 4-1.7: device not accepting address 10, error -32

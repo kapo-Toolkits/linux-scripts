@@ -1,0 +1,14 @@
+Device 5C:FB:7C:12:34:56 (public)
+	Name: JBL Flip 5
+	Alias: JBL Flip 5
+	Class: 0x00240414 (2360340)
+	Icon: audio-card
+	Paired: yes
+	Bonded: yes
+	Trusted: yes
+	Blocked: no
+	Connected: yes
+	LegacyPairing: no
+	UUID: Audio Sink                (0000110b-0000-1000-8000-00805f9b34fb)
+	UUID: Handsfree                 (0000111e-0000-1000-8000-00805f9b34fb)
+	RSSI: 0xffffffc4 (-60)
