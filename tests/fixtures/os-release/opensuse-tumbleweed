@@ -1,0 +1,4 @@
+PRETTY_NAME="openSUSE Tumbleweed"
+NAME="openSUSE Tumbleweed"
+ID="opensuse-tumbleweed"
+ID_LIKE="opensuse suse"

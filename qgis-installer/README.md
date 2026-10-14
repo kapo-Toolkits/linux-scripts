@@ -14,6 +14,30 @@ python3 qgis-installer-gui.py
 
 If `tkinter` is missing the script offers to install it itself (apt/dnf/pacman/zypper/apk).
 
+## Command line
+
+The same logic without a window - for scripts, SSH sessions and tests:
+
+```bash
+qgis-installer-cli info                                  # what this system is, what can be done (--json)
+qgis-installer-cli plan --method A --channel ltr         # the commands, nothing runs (--script, --json)
+qgis-installer-cli install --method A --channel ltr      # shows the commands, asks, then runs (--yes, --dry-run)
+qgis-installer-cli list                                  # every QGIS installation found (--json)
+qgis-installer-cli uninstall [--kinds apt,repo,data] [--purge] [--dry-run]
+```
+
+Exit codes: `0` ok, `1`/the failing step's code, `2` not possible here or bad arguments, `3` not confirmed.
+User data is never removed unless `--kinds` names `data`. `--lang en|ka` selects the language (default: the one the
+GUI remembers). To preview another system: `--os-release tests/fixtures/os-release/debian-trixie --pm apt-get --arch amd64`.
+
+## Layout
+
+| Part | What |
+|---|---|
+| `qgis_installer/` | the logic, no UI toolkit: `system` (detection, channels), `plan` (install steps), `uninstall` (finding and removing), `i18n` (EN/KA), `runner` (running steps, elevation), `cli` |
+| `qgis-installer-gui.py` | the Tk window - a thin layer over the package |
+| `qgis-installer-cli.py` | the command line (`python3 -m qgis_installer` from this folder does the same) |
+
 ## Methods
 
 | | Method | Works on | Notes |
@@ -56,4 +80,4 @@ Everything root-level runs as one step (one password prompt), after a command pr
 
 ## Status
 
-⚠️ Written from the guide; the generated shell was syntax-checked (`sh -n`) for all channels and the GUI starts. Detection was checked against a real apt install (QGIS 3.44 LTR from `qgis.org/ubuntu-ltr`); removal commands were generated and syntax-checked but **not executed**. Snap/dnf/pacman/zypper detection is untested.
+⚠️ Written from the guide; the generated shell is syntax-checked (`sh -n`) in the unit tests for every distribution fixture, method and channel, and the GUI starts. Detection was checked against a real apt install (QGIS 3.44 LTR from `qgis.org/ubuntu-ltr`); removal commands were generated and syntax-checked but **not executed**. Snap/dnf/pacman/zypper detection is untested.

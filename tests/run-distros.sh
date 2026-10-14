@@ -15,8 +15,9 @@ fi
 python3 --version
 cp -r /repo /work && cd /work
 python3 tests/test_units.py 2>&1 | tail -1 | grep -q "^OK" && echo "PASS unit tests" || { echo "FAIL unit tests"; exit 1; }
+python3 tests/test_qgis_installer.py 2>&1 | tail -1 | grep -q "^OK" && echo "PASS qgis-installer tests" || { echo "FAIL qgis-installer tests"; python3 tests/test_qgis_installer.py 2>&1 | tail -15; exit 1; }
 bash ./install.sh --prefix /tmp/pfx all >/dev/null 2>&1 || { echo "FAIL install.sh"; exit 1; }
-n=$(python3 -c "import os;print(sum(len(f) for _,_,f in os.walk(\"/tmp/pfx\")))"); [ "$n" = 12 ] && echo "PASS install.sh ($n files)" || { echo "FAIL install.sh ($n files)"; exit 1; }
+n=$(python3 -c "import os;print(sum(len(f) for _,_,f in os.walk(\"/tmp/pfx\")))"); [ "$n" = 21 ] && echo "PASS install.sh ($n files)" || { echo "FAIL install.sh ($n files)"; exit 1; }
 bash ./install.sh --prefix /tmp/pfx --uninstall all >/dev/null 2>&1
 n=$(python3 -c "import os;print(sum(len(f) for _,_,f in os.walk(\"/tmp/pfx\")))"); [ "$n" = 0 ] && echo "PASS uninstall" || { echo "FAIL uninstall ($n left)"; exit 1; }
 python3 tests/pkgnames_check.py

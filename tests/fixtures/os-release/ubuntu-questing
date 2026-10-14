@@ -1,0 +1,6 @@
+PRETTY_NAME="Ubuntu 25.10"
+NAME="Ubuntu"
+ID=ubuntu
+ID_LIKE=debian
+VERSION_CODENAME=questing
+UBUNTU_CODENAME=questing
