@@ -66,7 +66,9 @@ for tool in "${TOOLS[@]}"; do
 done
 
 if [ "$ACTION" = install ]; then
-  $SUDO install -D -m 644 "$here/common/lscommon.py" "$PREFIX/lib/linux-scripts/lscommon.py"
+  for m in lscommon lsqr; do
+    $SUDO install -D -m 644 "$here/common/$m.py" "$PREFIX/lib/linux-scripts/$m.py"
+  done
 fi
 if [ "$ACTION" = uninstall ]; then
   guis=0; for g in usb-eject-gui hotspot-gui printer-setup qgis-installer; do [ -e "$PREFIX/bin/$g" ] && guis=1; done

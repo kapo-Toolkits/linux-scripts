@@ -34,6 +34,15 @@ GUI არ აკეთებს `driver` და `docker-fix` ნაბიჯე
 ./install.sh wifi-hotspot
 ```
 
+## QR კოდი ტელეფონისთვის / QR code for the phone
+
+```bash
+./hotspot.sh qr
+```
+
+GUI-ში ღილაკი **QR code / QR კოდი**. ტელეფონის კამერით დაასკანირეთ და Wi-Fi-ს ხელით აღარ აკრეფთ (Android და iPhone). კოდში პაროლიცაა — ვინც ნახავს, შეძლებს მიერთებას.
+Generated in pure Python (`common/lsqr.py`, no packages needed), checked with a real QR decoder (zbar) for every size and for special characters / Georgian text. Terminal output is forced black-on-white so it scans on dark terminals too.
+
 ## ყოველდღიური / Daily
 
 ```bash

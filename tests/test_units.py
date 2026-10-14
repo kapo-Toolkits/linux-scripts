@@ -104,6 +104,30 @@ class Qgis(unittest.TestCase):
         self.assertNotIn("rm -rf -- /etc", txt)
 
 
+class Qr(unittest.TestCase):
+    import lsqr
+
+    def test_payload_escaping(self):
+        self.assertEqual(self.lsqr.wifi_payload("My;Net", 'pa:ss"w,\\d'), 'WIFI:T:WPA;S:My\\;Net;P:pa\\:ss\\"w\\,\\\\d;;')
+        self.assertEqual(self.lsqr.wifi_payload("Open", ""), "WIFI:T:nopass;S:Open;;")
+
+    def test_structure(self):
+        m = self.lsqr.make_qr("WIFI:T:WPA;S:MyHotspot;P:secret123;;")
+        n = len(m)
+        self.assertEqual(n, 29)                                   # version 3
+        for cx, cy in ((0, 0), (n - 7, 0), (0, n - 7)):           # three finder patterns
+            self.assertTrue(all(m[cy][cx + i] and m[cy + 6][cx + i] for i in range(7)))
+            self.assertFalse(m[cy + 1][cx + 1] or m[cy + 5][cx + 5])
+            self.assertTrue(m[cy + 3][cx + 3])
+        self.assertTrue(m[n - 8][8])                              # the fixed dark module
+
+    def test_versions_and_limit(self):
+        sizes = [len(self.lsqr.make_qr("x" * k)) for k in (1, 14, 15, 213)]
+        self.assertEqual(sizes, [21, 21, 25, 57])
+        with self.assertRaises(ValueError):
+            self.lsqr.make_qr("x" * 214)
+
+
 class Usb(unittest.TestCase):
     m = load("usb-eject/usb-eject-gui.py")
 

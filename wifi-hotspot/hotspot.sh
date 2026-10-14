@@ -141,6 +141,20 @@ EOT
   echo "Enabled. Logs: journalctl -u hotspot.service -b --no-pager | tail -20"
 }
 
+step_qr() {
+  local ssid psk lsqr="" d here
+  ssid=$(nmcli -e no -g 802-11-wireless.ssid con show "$CON" 2>/dev/null) || die "Profile '$CON' not found. Run: $0 create"
+  psk=$(nmcli -e no -s -g 802-11-wireless-security.psk con show "$CON" 2>/dev/null || true)
+  here="$(dirname "$(readlink -f "$0")")"
+  for d in "$here/../common" "$here/../lib/linux-scripts" /usr/local/lib/linux-scripts /usr/lib/linux-scripts; do
+    if [[ -f "$d/lsqr.py" ]]; then lsqr="$d/lsqr.py"; break; fi
+  done
+  [[ -n "$lsqr" ]] || die "lsqr.py not found — use the repository checkout or ./install.sh wifi-hotspot"
+  command -v python3 >/dev/null || die "python3 is required for the QR code"
+  echo "SSID: $ssid   (scan with the phone camera; anyone who sees this gets the password)"
+  python3 "$lsqr" --wifi "$ssid" "$psk"
+}
+
 step_logs() { journalctl -u wpa_supplicant -b --no-pager | tail -30; }
 
 step_setup() { step_create && step_secure; }
@@ -160,6 +174,7 @@ Hotspot steps (run in this order on a fresh install):
   docker-fix     7  persistent fix if Docker blocks forwarding
   autostart-on   9  start at boot via NetworkManager   (autostart-off to undo)
   service-on        start at boot via systemd service   (fallback)
+  qr                show a QR code to join the hotspot (phone camera)
   logs              last wpa_supplicant log lines (real error reasons)
 
 Detected: IFACE=${IFACE:-none}  SSID=$SSID  CHANNEL=$CHANNEL  CON=$CON
@@ -169,7 +184,7 @@ EOT
 step="${1:-}"; shift || true
 case "$step" in
   check) step_check;; driver) step_driver;; create) step_create;; test-open) step_test_open;;
-  secure) step_secure;; setup) step_setup;; up) step_up;; down) step_down;; status) step_status;;
+  secure) step_secure;; qr) step_qr;; setup) step_setup;; up) step_up;; down) step_down;; status) step_status;;
   passwd) step_passwd;; ssid) step_ssid "$@";; docker-fix) step_docker_fix;;
   autostart-on) step_autostart_on;; autostart-off) step_autostart_off;;
   service-on) step_service_on;; logs) step_logs;;

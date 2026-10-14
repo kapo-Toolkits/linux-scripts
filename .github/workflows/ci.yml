@@ -26,6 +26,13 @@ jobs:
           ./install.sh --prefix "$p" --uninstall all
           test ! -e "$p/lib/linux-scripts"
 
+  qr-decode:
+    # the QR generator is checked with a real decoder (zbar) in a container
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: tests/run-qr-decode.sh
+
   qgis-containers:
     # real apt + qgis.org inside throwaway containers: key fingerprint check, repo config, uninstall
     runs-on: ubuntu-latest

@@ -15,6 +15,7 @@ for _p in (os.path.join(_here, "..", "common"), os.path.join(_here, "..", "lib",
     if os.path.isdir(_p):
         sys.path.insert(0, _p)
 from lscommon import ensure_tkinter, load_lang, run, save_lang  # noqa: E402
+import lsqr  # noqa: E402
 
 ensure_tkinter()
 
@@ -40,6 +41,9 @@ STR = {
         "saving": "Saving profile…", "starting": "Starting…", "stopping": "Stopping…",
         "fail": "Failed. Run  hotspot.sh logs  for the real reason.",
         "no_wifi": "No Wi-Fi interface found.",
+        "qr": "QR code", "qr_title": "Join the hotspot",
+        "qr_hint": "Scan with the phone camera to join “{s}”.\nAnyone who sees this code can join and gets the password.",
+        "qr_long": "SSID + password are too long for a QR code.",
     },
     "ka": {
         "title": "Wi-Fi Hotspot", "lang_btn": "English",
@@ -56,12 +60,16 @@ STR = {
         "saving": "პროფილი ინახება…", "starting": "ირთვება…", "stopping": "ითიშება…",
         "fail": "ვერ მოხერხდა. რეალური მიზეზისთვის: hotspot.sh logs",
         "no_wifi": "Wi-Fi ინტერფეისი ვერ მოიძებნა.",
+        "qr": "QR კოდი", "qr_title": "Hotspot-თან მიერთება",
+        "qr_hint": "დაასკანირეთ ტელეფონის კამერით, რომ დაუკავშირდეთ „{s}“-ს.\nვინც ამ კოდს ნახავს, დაუკავშირდება და პაროლსაც მიიღებს.",
+        "qr_long": "SSID და პაროლი QR კოდისთვის ზედმეტად გრძელია.",
     },
 }
 
 
-def t(k):
-    return STR[LANG][k]
+def t(k, **kw):
+    s = STR[LANG][k]
+    return s.format(**kw) if kw else s
 
 
 
@@ -84,7 +92,7 @@ def is_active():
 
 
 def get_prop(prop, secrets=False):
-    cmd = ["nmcli"] + (["-s"] if secrets else []) + ["-g", prop, "con", "show", CON]
+    cmd = ["nmcli", "-e", "no"] + (["-s"] if secrets else []) + ["-g", prop, "con", "show", CON]
     rc, out = run(cmd)
     return out if rc == 0 else ""
 
@@ -153,6 +161,8 @@ class App(tk.Tk):
         self.btn_start.pack(side="left", padx=8)
         self.btn_stop = ttk.Button(bar, command=self.on_stop)
         self.btn_stop.pack(side="left")
+        self.btn_qr = ttk.Button(bar, command=self.on_qr)
+        self.btn_qr.pack(side="left", padx=8)
 
         self.lbl_log = ttk.Label(self)
         self.lbl_log.pack(anchor="w", padx=12, pady=(12, 2))
@@ -178,6 +188,7 @@ class App(tk.Tk):
         self.btn_save.config(text=t("save"))
         self.btn_start.config(text=t("start"))
         self.btn_stop.config(text=t("stop"))
+        self.btn_qr.config(text=t("qr"))
         self.lbl_log.config(text=t("log"))
         self.val_iface.config(text=self.iface or t("no_iface"))
         self.refresh_state_label()
@@ -293,6 +304,33 @@ class App(tk.Tk):
             rc, out = run(["nmcli", "con", "down", CON])
             return rc == 0, out
         self.bg("stopping", work)
+
+    def on_qr(self):
+        ssid, psk = self.ssid.get().strip(), self.psk.get()
+        if not ssid:
+            return messagebox.showerror(t("err"), t("bad_ssid"))
+        if not valid_psk(psk):
+            return messagebox.showerror(t("err"), t("bad_psk"))
+        try:
+            matrix = lsqr.make_qr(lsqr.wifi_payload(ssid, psk))
+        except ValueError:
+            return messagebox.showerror(t("err"), t("qr_long"))
+        self.show_qr(matrix, ssid)
+
+    def show_qr(self, matrix, ssid):
+        win = tk.Toplevel(self)
+        win.title(t("qr_title"))
+        win.resizable(False, False)
+        n, cell, quiet = len(matrix), 8, 4
+        side = (n + 2 * quiet) * cell
+        cv = tk.Canvas(win, width=side, height=side, bg="white", highlightthickness=0)
+        cv.pack(padx=16, pady=(16, 8))
+        for y, row in enumerate(matrix):
+            for x, dark in enumerate(row):
+                if dark:
+                    x0, y0 = (x + quiet) * cell, (y + quiet) * cell
+                    cv.create_rectangle(x0, y0, x0 + cell, y0 + cell, fill="black", width=0)
+        ttk.Label(win, text=t("qr_hint", s=ssid), justify="center").pack(padx=16, pady=(0, 16))
 
     def on_autostart(self):
         if profile_exists():
