@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=QGIS Installer
+Name[ka]=QGIS-ის დაყენება
+Comment=Install QGIS from the official repository, Flatpak or your distro · QGIS-ის დაყენება
+Exec=qgis-installer
+Icon=system-software-install
+Terminal=false
+Categories=System;Utility;Science;
