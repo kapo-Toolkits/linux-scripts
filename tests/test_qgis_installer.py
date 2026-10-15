@@ -2131,6 +2131,178 @@ class Packaging(unittest.TestCase):
         self.assertEqual(out.getvalue().strip(), "qgis-installer " + qi.__version__)
 
 
+# --------------------------------------------------------------------------- what the plugins import
+PS = qi.pluginscan
+
+
+def make_plugin(base, name, files, metadata=True):
+    root = os.path.join(base, name)
+    for rel, text in files.items():
+        path = os.path.join(root, *rel.split("/"))
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(text)
+    if metadata:
+        with open(os.path.join(root, "metadata.txt"), "w", encoding="utf-8") as fh:
+            fh.write("[general]\nname=" + name + "\n")
+    return root
+
+
+class PluginScan(unittest.TestCase):
+    def scan(self, files):
+        with tempfile.TemporaryDirectory() as d:
+            return PS.scan_plugin(make_plugin(d, "myplug", files))
+
+    def test_required_optional_and_what_is_not_third_party(self):
+        sc = self.scan({"__init__.py": "import os, json\nimport numpy as np\nfrom openpyxl.styles import Font\nfrom qgis.core import QgsProject\n"
+                                       "from PyQt5.QtCore import Qt\nimport processing\nfrom . import local\n",
+                        "local.py": "import requests\n"})
+        self.assertEqual((sc["required"], sc["optional"]), ({"numpy", "openpyxl", "requests"}, set()))
+
+    def test_imports_in_functions_and_guarded_by_import_error_are_optional(self):
+        sc = self.scan({"a.py": "import numpy\n"
+                                "def f():\n    import pandas\n"
+                                "class K:\n    import yaml\n"
+                                "try:\n    import lxml\nexcept ImportError:\n    lxml = None\n"
+                                "try:\n    import PIL\nexcept ModuleNotFoundError:\n    PIL = None\n"
+                                "try:\n    import jinja2\nexcept Exception:\n    jinja2 = None\n"
+                                "try:\n    import sqlalchemy\nexcept:\n    pass\n"
+                                "try:\n    import shapely\nexcept ValueError:\n    pass\n"})
+        self.assertEqual(sc["required"], {"numpy", "yaml", "shapely"})              # a class body runs at import; ValueError is no import guard
+        self.assertEqual(sc["optional"], {"pandas", "lxml", "PIL", "jinja2", "sqlalchemy"})
+
+    def test_type_checking_imports_never_run(self):
+        sc = self.scan({"a.py": "from typing import TYPE_CHECKING\nimport typing\nif TYPE_CHECKING:\n    import numpy\n"
+                                "if typing.TYPE_CHECKING:\n    import scipy\nelse:\n    import pandas\n"})
+        self.assertEqual((sc["required"], sc["optional"]), ({"pandas"}, set()))
+
+    def test_the_plugins_own_modules_and_packages_are_not_third_party_wherever_they_are(self):
+        sc = self.scan({"__init__.py": "import i18n\nimport core.thing\nimport myplug\nimport openpyxl\n", "i18n.py": "import deep_lib\n",
+                        "core/__init__.py": "", "core/thing.py": "from tools import helper\n", "gui/tools/helper.py": "import numpy\n"})
+        self.assertEqual(sc["required"], {"openpyxl", "deep_lib", "numpy"})          # i18n, core, tools and the plugin's own name are local
+
+    def test_tests_and_docs_and_pycache_are_not_read_and_unreadable_files_are_reported(self):
+        sc = self.scan({"a.py": "import numpy\n", "tests/t.py": "import pytest\n", "docs/conf.py": "import sphinx\n", "__pycache__/x.py": "import junk\n",
+                        "broken.py": "def (:\n"})
+        self.assertEqual((sc["required"], sc["unreadable"]), ({"numpy"}, ["broken.py"]))
+
+    def test_relative_imports_and_star_imports_and_dotted_names(self):
+        sc = self.scan({"a.py": "from . import b\nfrom .b import c\nfrom .. import d\nimport scipy.stats.distributions\nfrom shapely.geometry import *\n"})
+        self.assertEqual(sc["required"], {"scipy", "shapely"})
+
+    def test_a_place_that_is_not_there_is_an_error_not_nothing(self):
+        with self.assertRaises(FileNotFoundError):
+            PS.scan_plugin("/nowhere/at/all")
+
+    def test_the_scan_never_runs_the_plugin(self):
+        with tempfile.TemporaryDirectory() as d:
+            marker = os.path.join(d, "ran")
+            root = make_plugin(d, "evil", {"__init__.py": "open(%r, 'w').write('x')\nimport numpy\n" % marker})
+            PS.scan_plugin(root)
+            PS.report([d], "apt-get", find_spec=lambda m: None)
+            self.assertFalse(os.path.exists(marker))
+
+
+class PluginMissing(unittest.TestCase):
+    def test_missing_uses_the_importer_it_is_given(self):
+        sc = {"required": {"numpy", "nonsense_mod"}, "optional": {"openpyxl"}}
+        res = PS.missing(sc, find_spec=lambda m: object() if m == "numpy" else None)
+        self.assertEqual(res, {"required": ["nonsense_mod"], "optional": ["openpyxl"]})
+        boom = PS.missing({"required": {"x"}, "optional": set()}, find_spec=lambda m: (_ for _ in ()).throw(ValueError("bad")))
+        self.assertEqual(boom["required"], ["x"])                                  # a module that cannot even be looked up counts as missing
+
+    def test_packages_for_what_is_missing_and_what_has_none(self):
+        comp, manual = PS.packages(["osgeo", "openpyxl", "yaml", "PIL", "somethingrare"], "apt-get")
+        self.assertEqual(comp, {"gdal-python": ["python3-gdal"], "openpyxl": ["python3-openpyxl"], "pyyaml": ["python3-yaml"], "pillow": ["python3-pil"]})
+        self.assertEqual(manual, ["somethingrare"])
+        comp, manual = PS.packages(["rasterio", "yaml"], "pacman")
+        self.assertEqual((comp, manual), ({"pyyaml": ["python-yaml"]}, ["rasterio"]))                  # Arch has no package for rasterio
+        self.assertEqual(PS.packages(["yaml"], "zypper", "313")[0], {"pyyaml": ["python313-PyYAML"]})
+        self.assertEqual(PS.packages(["yaml"], "")[0], {})
+
+    def test_every_module_in_the_table_is_a_real_component_with_a_matching_module_name(self):
+        for module, rid in PS.MODULE_TO_COMPONENT.items():
+            self.assertIn(rid, requirements.REQ, module)
+            self.assertEqual(requirements.REQ[rid]["module"], module)
+
+    def test_report_lists_only_plugins_that_lack_something(self):
+        with tempfile.TemporaryDirectory() as d:
+            make_plugin(d, "needs_yaml", {"__init__.py": "import yaml\nimport numpy\n"})
+            make_plugin(d, "fine", {"__init__.py": "import numpy\n"})
+            make_plugin(d, "optional_only", {"__init__.py": "def f():\n    import openpyxl\n"})
+            make_plugin(d, "not_a_plugin", {"x.py": "import yaml\n"}, metadata=False)
+            res = PS.report([d], "apt-get", find_spec=lambda m: object() if m == "numpy" else None)
+        self.assertEqual(res["checked"], 3)                                         # the folder without metadata.txt is not a plugin
+        rows = {r["plugin"]: r for r in res["rows"]}
+        self.assertEqual(sorted(rows), ["needs_yaml", "optional_only"])
+        self.assertEqual((rows["needs_yaml"]["required_missing"], rows["needs_yaml"]["components"]), (["yaml"], {"pyyaml": ["python3-yaml"]}))
+        self.assertEqual((rows["optional_only"]["required_missing"], rows["optional_only"]["optional_missing"]), ([], ["openpyxl"]))
+
+
+class PluginDepsCli(unittest.TestCase):
+    call = Cli.call
+    BASE = ["--lang", "en", "--os-release", os.path.join(FIX, "ubuntu-noble"), "--pm", "apt-get", "--arch", "amd64", "--tools", ""]
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        make_plugin(self.tmp.name, "needs_yaml", {"__init__.py": "import yaml\n"})
+        make_plugin(self.tmp.name, "wants_xlsx", {"__init__.py": "def f():\n    import openpyxl\n    import rare_thing\n"})
+
+    def run_cmd(self, *argv):
+        with mock.patch.object(PS.importlib.util, "find_spec", lambda m: None):
+            return self.call(*self.BASE, "plugin-deps", "--dir", self.tmp.name, *argv)
+
+    def test_the_report_says_who_needs_what_and_how_to_get_it_and_exits_1_for_a_required_one(self):
+        rc, out, _ = self.run_cmd()
+        self.assertEqual(rc, 1)
+        self.assertIn("Plugins checked: 2.", out)
+        self.assertIn("needs_yaml: does not load without yaml", out)
+        self.assertIn("-> install with the system: python3-yaml", out)
+        self.assertIn("wants_xlsx: works without openpyxl, rare_thing but with less", out)
+        self.assertIn("-> no package for this system: rare_thing", out)
+
+    def test_optional_only_exits_0(self):
+        with open(os.path.join(self.tmp.name, "needs_yaml", "__init__.py"), "w") as fh:
+            fh.write("pass\n")
+        rc, out, _ = self.run_cmd()
+        self.assertEqual(rc, 0)
+
+    def test_install_shows_the_commands_for_what_has_a_package_and_skips_the_optional_unless_asked(self):
+        rc, out, _ = self.run_cmd("--install", "--dry-run")
+        self.assertEqual(rc, 0)
+        self.assertIn("apt-get install -y python3-yaml", out)
+        self.assertNotIn("openpyxl", out.split("These commands will run")[1])
+        rc, out, _ = self.run_cmd("--install", "--optional", "--dry-run")
+        self.assertIn("apt-get install -y python3-yaml python3-openpyxl", out)
+        self.assertNotIn("rare_thing", out.split("These commands will run")[1])           # nothing for it: never guessed
+
+    def test_json_nothing_missing_and_no_folder(self):
+        with mock.patch.object(PS.importlib.util, "find_spec", lambda m: None):
+            rc, out, _ = self.call("--json", *self.BASE, "plugin-deps", "--dir", self.tmp.name)
+        doc = json.loads(out)
+        self.assertEqual(doc["checked"], 2)
+        self.assertEqual(sorted(r["plugin"] for r in doc["rows"]), ["needs_yaml", "wants_xlsx"])
+        self.assertEqual(doc["rows"][0]["components"] or doc["rows"][1]["components"], {"pyyaml": ["python3-yaml"]} if doc["rows"][0]["plugin"] == "needs_yaml" else {"openpyxl": ["python3-openpyxl"]})
+        rc, _, err = self.call(*self.BASE, "plugin-deps", "--dir", "/nowhere/plugins")
+        self.assertEqual(rc, 2)
+        self.assertIn("No QGIS plugin folder was found", err)
+
+    def test_default_folders_cover_the_profiles_of_qgis_3_and_4_and_of_the_flatpak(self):
+        with tempfile.TemporaryDirectory() as home:
+            for rel in (".local/share/QGIS/QGIS3/profiles/default/python/plugins", ".local/share/QGIS/QGIS4/profiles/work/python/plugins",
+                        ".var/app/org.qgis.qgis/data/QGIS/QGIS3/profiles/default/python/plugins"):
+                os.makedirs(os.path.join(home, *rel.split("/")))
+            got = [os.path.relpath(p, home).replace("\\", "/") for p in qcli.default_plugin_roots(home)]
+            self.assertEqual(len(got), 3)
+            self.assertTrue(any("QGIS4/profiles/work" in g for g in got) and any(g.startswith(".var/app/org.qgis.qgis") for g in got))
+
+    def test_the_texts_exist_in_both_languages(self):
+        for key in ("pd_head", "pd_none", "pd_required", "pd_optional", "pd_install", "pd_manual", "pd_unreadable", "pd_no_plugins", "pd_nothing_to_install"):
+            for lang in ("en", "ka"):
+                self.assertIn(key, i18n.STR[lang])
+
+
 class GeorgianStyle(unittest.TestCase):
     def test_no_comma_before_the_word_da_in_any_georgian_text(self):
         """The house rule: no comma before the conjunction "da" ("and"). A word that merely starts with it (da-nart...) is not the conjunction."""

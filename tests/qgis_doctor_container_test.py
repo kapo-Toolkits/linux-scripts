@@ -9,11 +9,9 @@ cheap) the real GDAL tools and GDAL for Python being compared.
 """
 import contextlib
 import io
-import json
 import os
 import subprocess
 import sys
-import sysconfig
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "qgis-installer"))
 from qgis_installer import cli, doctor, requirements, system  # noqa: E402
@@ -63,8 +61,6 @@ if pm == "apt-get":
     check("Debian/Ubuntu: the package database was audited and is clean", "dpkg" in res["ran"] and not [f for f in res["findings"] if f[1] == "dpkg_broken"], res["ran"])
 
 # a user copy of numpy next to the system's: found
-purelib = sysconfig.get_paths()["purelib"]
-plat = sysconfig.get_paths()["platlib"]
 home = os.path.expanduser("~")
 user_dir = os.path.join(home, ".local", "lib", "python{}.{}".format(*sys.version_info[:2]), "site-packages")
 os.makedirs(os.path.join(user_dir, "numpy"), exist_ok=True)

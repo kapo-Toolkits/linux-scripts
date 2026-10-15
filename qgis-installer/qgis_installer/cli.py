@@ -15,6 +15,7 @@
     qgis-installer-cli env export [--name TEXT] [--output FILE]  # write what this machine has as an environment file
     qgis-installer-cli env check FILE                            # how far is this machine from that file? (reads only)
     qgis-installer-cli env apply FILE [--yes] [--dry-run]        # install what is missing (commands shown, simulated, confirmed)
+    qgis-installer-cli plugin-deps [--dir D] [--install] [--optional]   # what the installed plugins import that is missing (reads the code, never runs it)
     qgis-installer-cli doctor                                    # look for what is known to break QGIS (reads only; exit 1 = a problem)
     qgis-installer-cli update [--yes] [--dry-run]                # newest build of the QGIS installations found here
     qgis-installer-cli uninstall [--kinds apt,repo,flatpak,snap,dist,data] [--purge] [--yes] [--dry-run]
@@ -30,9 +31,10 @@ Hidden helpers for tests and "what would this do on another system":
 """
 import argparse
 import json
+import os
 import sys
 
-from . import __version__, doctor, envspec, i18n, instances, plan, recipes, requirements, runner, simulate, system, uninstall, update, versions
+from . import __version__, doctor, envspec, i18n, instances, pluginscan, plan, recipes, requirements, runner, simulate, system, uninstall, update, versions
 
 SCHEMA = 1
 KINDS = ("apt", "repo", "flatpak", "snap", "dist", "data")
@@ -271,6 +273,37 @@ def _versions_cmd(args, items, lang):
     result["manual"] = []
     _show_plan(dict(result, why=None), args, lang)
     return _execute(result["steps"], args, lang)
+
+
+def default_plugin_roots(home=None):
+    import glob
+    home = home or os.path.expanduser("~")
+    patterns = ("~/.local/share/QGIS/QGIS*/profiles/*/python/plugins", "~/.var/app/org.qgis.qgis/data/QGIS/QGIS*/profiles/*/python/plugins")
+    return sorted(p for pat in patterns for p in glob.glob(pat.replace("~", home)))
+
+
+def _plugin_deps_cmd(args, sysinfo, lang):
+    t = lambda k, **kw: i18n.t(k, lang, **kw)  # noqa: E731
+    roots = args.dir or default_plugin_roots()
+    if not roots or not any(os.path.isdir(r) for r in roots):
+        print(t("pd_no_plugins"), file=sys.stderr)
+        return 2
+    res = pluginscan.report(roots, sysinfo["pm"])
+    if args.json:
+        print(json.dumps(dict(res, schema=SCHEMA), indent=2, ensure_ascii=False))
+    else:
+        print("\n".join(pluginscan.lines(res, lang)))
+    wanted = pluginscan.wanted_components(res, args.optional)
+    if args.install:
+        if not wanted:
+            print(t("pd_nothing_to_install"))
+            return 0
+        steps, _manual = requirements.install_steps(wanted, sysinfo["pm"])
+        if not steps:
+            return 2
+        _show(steps, args, lang, "plugin-deps")
+        return _execute(steps, args, lang)
+    return 1 if any(r["required_missing"] for r in res["rows"]) else 0
 
 
 def _doctor_cmd(args, sysinfo, items, lang):
@@ -585,6 +618,12 @@ def build_parser():
     q.add_argument("file")
     q.add_argument("--yes", action="store_true", help="do not ask")
     q.add_argument("--dry-run", action="store_true", help="only show the commands")
+    p = sub.add_parser("plugin-deps", help="Python libraries that the installed QGIS plugins import and this Python lacks (reads the code, never runs it)")
+    p.add_argument("--dir", action="append", help="a folder with plugins (repeatable); default: the profiles of QGIS 3 and 4 and of the Flatpak")
+    p.add_argument("--install", action="store_true", help="install what is missing and has a package (commands shown, simulated, confirmed)")
+    p.add_argument("--optional", action="store_true", help="with --install: also what plugins only use optionally")
+    p.add_argument("--yes", action="store_true", help="do not ask")
+    p.add_argument("--dry-run", action="store_true", help="only show the commands")
     sub.add_parser("doctor", help="look for what is known to break QGIS here (reads only)")
     p = sub.add_parser("update", help="update the QGIS installations found here (shows the commands first; close QGIS first)")
     p.add_argument("--yes", action="store_true", help="do not ask")
@@ -664,6 +703,8 @@ def main(argv=None):
         return _env_cmd(args, sysinfo, items, lang)
     if args.cmd == "doctor":
         return _doctor_cmd(args, sysinfo, items, lang)
+    if args.cmd == "plugin-deps":
+        return _plugin_deps_cmd(args, sysinfo, lang)
     if args.cmd in ("instances", "check-updates", "launch"):
         return _instances_cmd(args, items, lang)
     if args.cmd in ("versions", "install-version", "hold", "unhold"):

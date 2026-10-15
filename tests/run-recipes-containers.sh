@@ -49,7 +49,13 @@ pipi() {   # image: pip install into a clean virtual environment and run from th
 }
 
 if [ "${1:-}" = "doctor" ]; then shift; docd "$@"; exit $?; fi
+pdeps() {   # image: a plugin that needs a library the system lacks - found, installed, clean
+  echo "=================== $1  plugin-deps (real)"
+  docker run --rm -v "$root":/repo:ro "$1" sh -c "$PREP; python3 -u /repo/tests/qgis_plugindeps_container_test.py"
+}
+
 if [ "${1:-}" = "pip" ]; then shift; pipi "$@"; exit $?; fi
+if [ "${1:-}" = "plugindeps" ]; then shift; pdeps "$@"; exit $?; fi
 if [ "${1:-}" = "components" ]; then shift; comp "$@"; exit $?; fi
 if [ $# -ge 2 ]; then run "$@"; exit $?; fi
 rc=0
@@ -82,4 +88,8 @@ pipi ubuntu:22.04                                       || rc=1
 pipi debian:trixie                                      || rc=1
 pipi fedora:latest                                      || rc=1
 pipi archlinux:latest                                   || rc=1
+pdeps debian:trixie                                     || rc=1
+pdeps fedora:latest                                     || rc=1
+pdeps opensuse/tumbleweed                               || rc=1
+pdeps archlinux:latest                                  || rc=1
 exit $rc
