@@ -1936,6 +1936,373 @@ class EnvValidate(unittest.TestCase):
         self.assertEqual(v["qgis"]["recipe"], None)
 
 
+# --------------------------------------------------------------------------- the doctor
+D = qi.doctor
+
+
+class DoctorShadowing(unittest.TestCase):
+    def test_a_user_copy_that_hides_a_system_copy_is_found(self):
+        with tempfile.TemporaryDirectory() as d:
+            user, system = os.path.join(d, "user"), os.path.join(d, "system")
+            for base, names in ((user, ("numpy", "osgeo", "mylib")), (system, ("numpy", "pandas", "mylib"))):
+                for n in names:
+                    os.makedirs(os.path.join(base, n))
+            found = D.check_shadowing([user], [system])
+            self.assertEqual([(lvl, key, p["name"]) for lvl, key, p in found], [("warn", "shadowing", "numpy")])
+            self.assertEqual((found[0][2]["user"], found[0][2]["system"]), (os.path.join(user, "numpy"), os.path.join(system, "numpy")))
+
+    def test_no_finding_without_both_copies_or_for_libraries_that_are_not_watched(self):
+        with tempfile.TemporaryDirectory() as d:
+            os.makedirs(os.path.join(d, "user", "numpy"))
+            os.makedirs(os.path.join(d, "system", "mylib"))
+            os.makedirs(os.path.join(d, "user", "mylib"))
+            self.assertEqual(D.check_shadowing([os.path.join(d, "user")], [os.path.join(d, "system")]), [])     # numpy only in user; mylib not watched
+            self.assertEqual(D.check_shadowing([], [os.path.join(d, "system")]), [])
+
+    def test_the_users_folders_are_found_for_every_python_version(self):
+        with tempfile.TemporaryDirectory() as d:
+            for v in ("python3.11", "python3.13"):
+                os.makedirs(os.path.join(d, ".local", "lib", v, "site-packages"))
+            os.makedirs(os.path.join(d, ".local", "lib", "python2.7", "site-packages"))
+            got = D.user_site_dirs(d)
+            self.assertEqual([os.path.basename(os.path.dirname(x)) for x in got], ["python3.11", "python3.13"])
+
+
+class DoctorChecks(unittest.TestCase):
+    def test_gdal_versions_are_compared_by_major_and_minor(self):
+        self.assertEqual(D.check_gdal("GDAL 3.10.3, released 2025/04/01", "3.8.4"),
+                         [("warn", "gdal_mismatch", {"cli": "3.10", "py": "3.8"})])
+        self.assertEqual(D.check_gdal("GDAL 3.8.4, released 2024/02/08", "3.8.1"), [])        # another patch level is fine
+        self.assertEqual(D.check_gdal("", "3.8.4"), [])
+        self.assertEqual(D.check_gdal("GDAL 3.8.4", None), [])                                  # not known: no claim
+
+    def test_python_gdal_version_asks_the_interpreter(self):
+        run = answers([(["python3", "-c"], (0, "3.8.4\n"))])
+        self.assertEqual(D.python_gdal_version(run=run), "3.8.4")
+        self.assertIsNone(D.python_gdal_version(run=answers([])))
+
+    def test_proj_folder_that_is_missing_or_has_no_database(self):
+        with tempfile.TemporaryDirectory() as d:
+            good, nodb = os.path.join(d, "good"), os.path.join(d, "nodb")
+            os.makedirs(good)
+            os.makedirs(nodb)
+            open(os.path.join(good, "proj.db"), "wb").close()
+            self.assertEqual(D.check_proj({"PROJ_LIB": good}), [])
+            self.assertEqual(D.check_proj({}), [])
+            self.assertEqual([(l, k) for l, k, _ in D.check_proj({"PROJ_LIB": os.path.join(d, "gone")})], [("problem", "proj_missing")])
+            self.assertEqual([(l, k) for l, k, _ in D.check_proj({"PROJ_DATA": nodb})], [("problem", "proj_nodb")])
+            both = D.check_proj({"PROJ_DATA": good + os.pathsep + nodb, "PROJ_LIB": os.path.join(d, "gone")})
+            self.assertEqual(sorted(k for _l, k, _ in both), ["proj_missing", "proj_nodb"])
+
+    def test_repository_file_of_another_release(self):
+        text = "Types: deb\nURIs: https://qgis.org/ubuntu-ltr\nSuites: jammy\nComponents: main\n"
+        self.assertEqual(D.check_repo(text, "noble"), [("problem", "repo_old", {"suite": "jammy", "codename": "noble"})])
+        self.assertEqual(D.check_repo(text, "jammy"), [])
+        self.assertEqual(D.check_repo("Types: deb\n", "noble"), [])                              # no Suites line: no claim
+        self.assertEqual(D.check_repo(text, ""), [])
+
+    def test_dpkg_audit(self):
+        self.assertEqual(D.check_dpkg(""), [])
+        self.assertEqual(D.check_dpkg("\n"), [])
+        f = D.check_dpkg("The following packages are only half configured:\n qgis\n")
+        self.assertEqual((f[0][0], f[0][1]), ("problem", "dpkg_broken"))
+        self.assertIn("half configured", f[0][2]["first"])
+
+    def test_disk_space(self):
+        usage = lambda path: type("U", (), {"free": {"/home/u": 200 * 1024 ** 2, "/var": 50 * 1024 ** 3}[path]})()  # noqa: E731
+        f = D.check_disk([("profile", "/home/u"), ("packages", "/var")], usage=usage, exists=lambda p: True)
+        self.assertEqual([(l, k, p["where"], p["free"]) for l, k, p in f], [("warn", "disk_low", "/home/u", "200 MB")])
+        self.assertEqual(D.check_disk([("profile", "/nowhere")], usage=usage, exists=lambda p: False), [])
+
+    def test_installations_that_share_a_profile(self):
+        self.assertEqual(D.check_sources([APT, BOX]), [("info", "shared_profile", {"n": 2})])
+        self.assertEqual(D.check_sources([APT, FP_STABLE, FP_LTS, SNAP]), [])                   # Flatpak and Snap keep their own
+        self.assertEqual(D.check_sources([APT]), [])
+
+
+class DoctorRun(unittest.TestCase):
+    def run_all(self, items=(), sysinfo=None, table=(), python_gdal=None, **kw):
+        sysinfo = sysinfo or {"apt": True, "code": "noble"}
+        kw.setdefault("home", "/nonexistent-home")
+        kw.setdefault("user_dirs", [])
+        kw.setdefault("system_dirs", [])
+        kw.setdefault("usage", lambda p: type("U", (), {"free": 50 * 1024 ** 3})())
+        kw.setdefault("exists", lambda p: True)
+        return D.run_all(list(items), sysinfo, env=kw.pop("env", {}), run=answers(list(table)), python_gdal=python_gdal, **kw)
+
+    def test_everything_that_was_looked_at_is_listed_and_a_clean_system_has_no_findings(self):
+        res = self.run_all(table=[(["gdalinfo"], (0, "GDAL 3.8.4, released 2024")), (["dpkg", "--audit"], (0, ""))], python_gdal="3.8.4",
+                           read=lambda path: "Suites: noble\n")
+        self.assertEqual(res["findings"], [])
+        self.assertEqual(res["ran"], ["shadowing", "gdal", "proj", "repo", "dpkg", "disk", "sources"])
+        self.assertEqual(res["skipped"], [])
+
+    def test_what_could_not_be_looked_at_is_said_not_passed_over(self):
+        res = self.run_all(table=[(["dpkg", "--audit"], (1, ""))], python_gdal=None)                     # no gdalinfo, dpkg unusable, no repo file
+        self.assertEqual(res["skipped"], ["gdal", "repo", "dpkg"])
+        self.assertNotIn("gdal", res["ran"])
+
+    def test_non_apt_systems_skip_the_apt_checks(self):
+        res = self.run_all(sysinfo={"apt": False, "code": ""}, python_gdal="3.8.4", table=[(["gdalinfo"], (0, "GDAL 3.8.4"))])
+        self.assertEqual(res["ran"], ["shadowing", "gdal", "proj", "disk", "sources"])
+
+    def test_findings_come_worst_first(self):
+        with tempfile.TemporaryDirectory() as d:
+            for base in ("u", "s"):
+                os.makedirs(os.path.join(d, base, "numpy"))
+            res = self.run_all(items=[APT, BOX], table=[(["gdalinfo"], (0, "GDAL 3.10.3")), (["dpkg", "--audit"], (0, "half configured\n"))],
+                               python_gdal="3.8.4", env={"PROJ_LIB": "/nowhere"}, user_dirs=[os.path.join(d, "u")], system_dirs=[os.path.join(d, "s")],
+                               exists=lambda p: p != "/nowhere" and os.path.exists(p) or p == d, read=lambda p: "Suites: jammy\n")
+        levels = [lvl for lvl, _k, _p in res["findings"]]
+        self.assertEqual(levels, sorted(levels, key=["problem", "warn", "info"].index))
+        keys = {k for _l, k, _p in res["findings"]}
+        self.assertEqual(keys, {"shadowing", "gdal_mismatch", "proj_missing", "repo_old", "dpkg_broken", "shared_profile"})
+
+
+class DoctorCli(unittest.TestCase):
+    call = Cli.call
+    BASE = ["--lang", "en", "--os-release", os.path.join(FIX, "ubuntu-noble"), "--pm", "apt-get", "--arch", "amd64", "--tools", ""]
+
+    def run_doctor(self, findings, ran=("shadowing", "proj"), skipped=(), *argv):
+        res = {"findings": findings, "ran": list(ran), "skipped": list(skipped)}
+        with mock.patch.object(uninstall, "find_installs", lambda s: []), mock.patch.object(D, "run_all", lambda items, sysinfo, **kw: res):
+            return self.call(*self.BASE, *argv, "doctor")
+
+    def test_a_clean_result_exits_0_and_says_what_was_looked_at(self):
+        rc, out, _ = self.run_doctor([], skipped=("gdal",))
+        self.assertEqual(rc, 0)
+        self.assertIn("What the doctor looked at: Python libraries hidden by your own copies, PROJ data folder.", out)
+        self.assertIn("No problem found in what was looked at.", out)
+        self.assertIn("Not looked at (not available here): GDAL tools against GDAL for Python.", out)
+
+    def test_a_problem_exits_1_a_warning_does_not(self):
+        rc, out, _ = self.run_doctor([("problem", "proj_missing", {"var": "PROJ_LIB", "path": "/x"})])
+        self.assertEqual(rc, 1)
+        self.assertIn("[PROBLEM] PROJ_LIB points to /x, which does not exist", out)
+        rc, out, _ = self.run_doctor([("warn", "disk_low", {"where": "/home/u", "free": "200 MB"})])
+        self.assertEqual(rc, 0)
+        self.assertIn("[warning] Only 200 MB free in /home/u", out)
+
+    def test_json_and_georgian(self):
+        rc, out, _ = self.run_doctor([("info", "shared_profile", {"n": 2})], ("sources",), (), "--json")
+        doc = json.loads(out)
+        self.assertEqual((rc, doc["findings"][0][1], doc["ran"]), (0, "shared_profile", ["sources"]))
+        res = {"findings": [("problem", "repo_old", {"suite": "jammy", "codename": "noble"})], "ran": ["repo"], "skipped": []}
+        with mock.patch.object(uninstall, "find_installs", lambda s: []), mock.patch.object(D, "run_all", lambda items, sysinfo, **kw: res):
+            rc, out, _ = self.call("--lang", "ka", *self.BASE[2:], "doctor")
+        self.assertEqual(rc, 1)
+        self.assertIn("[პრობლემა]", out)
+        self.assertIn("„jammy“-ისთვისაა", out)
+
+    def test_every_finding_and_check_has_a_text_in_both_languages(self):
+        keys = ["shadowing", "gdal_mismatch", "proj_missing", "proj_nodb", "repo_old", "dpkg_broken", "disk_low", "shared_profile"]
+        for lang in ("en", "ka"):
+            for k in keys:
+                self.assertIn("doc_" + k, i18n.STR[lang])
+            for c in ("shadowing", "gdal", "proj", "repo", "dpkg", "disk", "sources"):
+                self.assertIn("doc_chk_" + c, i18n.STR[lang])
+            for lvl in ("problem", "warn", "info"):
+                self.assertIn("doc_level_" + lvl, i18n.STR[lang])
+
+
+class Packaging(unittest.TestCase):
+    def test_the_version_is_the_same_in_the_package_and_in_pyproject(self):
+        try:
+            import tomllib
+        except ImportError:                                                     # Python before 3.11 has no TOML reader
+            self.skipTest("no tomllib")
+        with open(os.path.join(ROOT, "qgis-installer", "pyproject.toml"), "rb") as fh:
+            meta = tomllib.load(fh)
+        self.assertEqual(meta["project"]["version"], qi.__version__)
+        self.assertEqual(meta["project"]["scripts"], {"qgis-installer-cli": "qgis_installer.cli:main"})
+        self.assertEqual(meta["tool"]["setuptools"]["packages"], ["qgis_installer"])
+        self.assertEqual(meta["project"]["dependencies"], [])                    # standard library only
+
+    def test_every_module_of_the_package_is_packaged(self):
+        folder = os.path.join(ROOT, "qgis-installer", "qgis_installer")
+        self.assertEqual(sorted(f for f in os.listdir(folder) if f.endswith(".py"))[:2], ["__init__.py", "__main__.py"])
+        for f in os.listdir(folder):
+            self.assertFalse(os.path.isdir(os.path.join(folder, f)) and f != "__pycache__", f)    # a sub-package would need listing in pyproject
+
+    def test_version_flag(self):
+        with self.assertRaises(SystemExit) as cm, contextlib.redirect_stdout(io.StringIO()) as out:
+            qcli.main(["--version"])
+        self.assertEqual(cm.exception.code, 0)
+        self.assertEqual(out.getvalue().strip(), "qgis-installer " + qi.__version__)
+
+
+# --------------------------------------------------------------------------- what the plugins import
+PS = qi.pluginscan
+
+
+def make_plugin(base, name, files, metadata=True):
+    root = os.path.join(base, name)
+    for rel, text in files.items():
+        path = os.path.join(root, *rel.split("/"))
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(text)
+    if metadata:
+        with open(os.path.join(root, "metadata.txt"), "w", encoding="utf-8") as fh:
+            fh.write("[general]\nname=" + name + "\n")
+    return root
+
+
+class PluginScan(unittest.TestCase):
+    def scan(self, files):
+        with tempfile.TemporaryDirectory() as d:
+            return PS.scan_plugin(make_plugin(d, "myplug", files))
+
+    def test_required_optional_and_what_is_not_third_party(self):
+        sc = self.scan({"__init__.py": "import os, json\nimport numpy as np\nfrom openpyxl.styles import Font\nfrom qgis.core import QgsProject\n"
+                                       "from PyQt5.QtCore import Qt\nimport processing\nfrom . import local\n",
+                        "local.py": "import requests\n"})
+        self.assertEqual((sc["required"], sc["optional"]), ({"numpy", "openpyxl", "requests"}, set()))
+
+    def test_imports_in_functions_and_guarded_by_import_error_are_optional(self):
+        sc = self.scan({"a.py": "import numpy\n"
+                                "def f():\n    import pandas\n"
+                                "class K:\n    import yaml\n"
+                                "try:\n    import lxml\nexcept ImportError:\n    lxml = None\n"
+                                "try:\n    import PIL\nexcept ModuleNotFoundError:\n    PIL = None\n"
+                                "try:\n    import jinja2\nexcept Exception:\n    jinja2 = None\n"
+                                "try:\n    import sqlalchemy\nexcept:\n    pass\n"
+                                "try:\n    import shapely\nexcept ValueError:\n    pass\n"})
+        self.assertEqual(sc["required"], {"numpy", "yaml", "shapely"})              # a class body runs at import; ValueError is no import guard
+        self.assertEqual(sc["optional"], {"pandas", "lxml", "PIL", "jinja2", "sqlalchemy"})
+
+    def test_type_checking_imports_never_run(self):
+        sc = self.scan({"a.py": "from typing import TYPE_CHECKING\nimport typing\nif TYPE_CHECKING:\n    import numpy\n"
+                                "if typing.TYPE_CHECKING:\n    import scipy\nelse:\n    import pandas\n"})
+        self.assertEqual((sc["required"], sc["optional"]), ({"pandas"}, set()))
+
+    def test_the_plugins_own_modules_and_packages_are_not_third_party_wherever_they_are(self):
+        sc = self.scan({"__init__.py": "import i18n\nimport core.thing\nimport myplug\nimport openpyxl\n", "i18n.py": "import deep_lib\n",
+                        "core/__init__.py": "", "core/thing.py": "from tools import helper\n", "gui/tools/helper.py": "import numpy\n"})
+        self.assertEqual(sc["required"], {"openpyxl", "deep_lib", "numpy"})          # i18n, core, tools and the plugin's own name are local
+
+    def test_tests_and_docs_and_pycache_are_not_read_and_unreadable_files_are_reported(self):
+        sc = self.scan({"a.py": "import numpy\n", "tests/t.py": "import pytest\n", "docs/conf.py": "import sphinx\n", "__pycache__/x.py": "import junk\n",
+                        "broken.py": "def (:\n"})
+        self.assertEqual((sc["required"], sc["unreadable"]), ({"numpy"}, ["broken.py"]))
+
+    def test_relative_imports_and_star_imports_and_dotted_names(self):
+        sc = self.scan({"a.py": "from . import b\nfrom .b import c\nfrom .. import d\nimport scipy.stats.distributions\nfrom shapely.geometry import *\n"})
+        self.assertEqual(sc["required"], {"scipy", "shapely"})
+
+    def test_a_place_that_is_not_there_is_an_error_not_nothing(self):
+        with self.assertRaises(FileNotFoundError):
+            PS.scan_plugin("/nowhere/at/all")
+
+    def test_the_scan_never_runs_the_plugin(self):
+        with tempfile.TemporaryDirectory() as d:
+            marker = os.path.join(d, "ran")
+            root = make_plugin(d, "evil", {"__init__.py": "open(%r, 'w').write('x')\nimport numpy\n" % marker})
+            PS.scan_plugin(root)
+            PS.report([d], "apt-get", find_spec=lambda m: None)
+            self.assertFalse(os.path.exists(marker))
+
+
+class PluginMissing(unittest.TestCase):
+    def test_missing_uses_the_importer_it_is_given(self):
+        sc = {"required": {"numpy", "nonsense_mod"}, "optional": {"openpyxl"}}
+        res = PS.missing(sc, find_spec=lambda m: object() if m == "numpy" else None)
+        self.assertEqual(res, {"required": ["nonsense_mod"], "optional": ["openpyxl"]})
+        boom = PS.missing({"required": {"x"}, "optional": set()}, find_spec=lambda m: (_ for _ in ()).throw(ValueError("bad")))
+        self.assertEqual(boom["required"], ["x"])                                  # a module that cannot even be looked up counts as missing
+
+    def test_packages_for_what_is_missing_and_what_has_none(self):
+        comp, manual = PS.packages(["osgeo", "openpyxl", "yaml", "PIL", "somethingrare"], "apt-get")
+        self.assertEqual(comp, {"gdal-python": ["python3-gdal"], "openpyxl": ["python3-openpyxl"], "pyyaml": ["python3-yaml"], "pillow": ["python3-pil"]})
+        self.assertEqual(manual, ["somethingrare"])
+        comp, manual = PS.packages(["rasterio", "yaml"], "pacman")
+        self.assertEqual((comp, manual), ({"pyyaml": ["python-yaml"]}, ["rasterio"]))                  # Arch has no package for rasterio
+        self.assertEqual(PS.packages(["yaml"], "zypper", "313")[0], {"pyyaml": ["python313-PyYAML"]})
+        self.assertEqual(PS.packages(["yaml"], "")[0], {})
+
+    def test_every_module_in_the_table_is_a_real_component_with_a_matching_module_name(self):
+        for module, rid in PS.MODULE_TO_COMPONENT.items():
+            self.assertIn(rid, requirements.REQ, module)
+            self.assertEqual(requirements.REQ[rid]["module"], module)
+
+    def test_report_lists_only_plugins_that_lack_something(self):
+        with tempfile.TemporaryDirectory() as d:
+            make_plugin(d, "needs_yaml", {"__init__.py": "import yaml\nimport numpy\n"})
+            make_plugin(d, "fine", {"__init__.py": "import numpy\n"})
+            make_plugin(d, "optional_only", {"__init__.py": "def f():\n    import openpyxl\n"})
+            make_plugin(d, "not_a_plugin", {"x.py": "import yaml\n"}, metadata=False)
+            res = PS.report([d], "apt-get", find_spec=lambda m: object() if m == "numpy" else None)
+        self.assertEqual(res["checked"], 3)                                         # the folder without metadata.txt is not a plugin
+        rows = {r["plugin"]: r for r in res["rows"]}
+        self.assertEqual(sorted(rows), ["needs_yaml", "optional_only"])
+        self.assertEqual((rows["needs_yaml"]["required_missing"], rows["needs_yaml"]["components"]), (["yaml"], {"pyyaml": ["python3-yaml"]}))
+        self.assertEqual((rows["optional_only"]["required_missing"], rows["optional_only"]["optional_missing"]), ([], ["openpyxl"]))
+
+
+class PluginDepsCli(unittest.TestCase):
+    call = Cli.call
+    BASE = ["--lang", "en", "--os-release", os.path.join(FIX, "ubuntu-noble"), "--pm", "apt-get", "--arch", "amd64", "--tools", ""]
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        make_plugin(self.tmp.name, "needs_yaml", {"__init__.py": "import yaml\n"})
+        make_plugin(self.tmp.name, "wants_xlsx", {"__init__.py": "def f():\n    import openpyxl\n    import rare_thing\n"})
+
+    def run_cmd(self, *argv):
+        with mock.patch.object(PS.importlib.util, "find_spec", lambda m: None):
+            return self.call(*self.BASE, "plugin-deps", "--dir", self.tmp.name, *argv)
+
+    def test_the_report_says_who_needs_what_and_how_to_get_it_and_exits_1_for_a_required_one(self):
+        rc, out, _ = self.run_cmd()
+        self.assertEqual(rc, 1)
+        self.assertIn("Plugins checked: 2.", out)
+        self.assertIn("needs_yaml: does not load without yaml", out)
+        self.assertIn("-> install with the system: python3-yaml", out)
+        self.assertIn("wants_xlsx: works without openpyxl, rare_thing but with less", out)
+        self.assertIn("-> no package for this system: rare_thing", out)
+
+    def test_optional_only_exits_0(self):
+        with open(os.path.join(self.tmp.name, "needs_yaml", "__init__.py"), "w") as fh:
+            fh.write("pass\n")
+        rc, out, _ = self.run_cmd()
+        self.assertEqual(rc, 0)
+
+    def test_install_shows_the_commands_for_what_has_a_package_and_skips_the_optional_unless_asked(self):
+        rc, out, _ = self.run_cmd("--install", "--dry-run")
+        self.assertEqual(rc, 0)
+        self.assertIn("apt-get install -y python3-yaml", out)
+        self.assertNotIn("openpyxl", out.split("These commands will run")[1])
+        rc, out, _ = self.run_cmd("--install", "--optional", "--dry-run")
+        self.assertIn("apt-get install -y python3-yaml python3-openpyxl", out)
+        self.assertNotIn("rare_thing", out.split("These commands will run")[1])           # nothing for it: never guessed
+
+    def test_json_nothing_missing_and_no_folder(self):
+        with mock.patch.object(PS.importlib.util, "find_spec", lambda m: None):
+            rc, out, _ = self.call("--json", *self.BASE, "plugin-deps", "--dir", self.tmp.name)
+        doc = json.loads(out)
+        self.assertEqual(doc["checked"], 2)
+        self.assertEqual(sorted(r["plugin"] for r in doc["rows"]), ["needs_yaml", "wants_xlsx"])
+        self.assertEqual(doc["rows"][0]["components"] or doc["rows"][1]["components"], {"pyyaml": ["python3-yaml"]} if doc["rows"][0]["plugin"] == "needs_yaml" else {"openpyxl": ["python3-openpyxl"]})
+        rc, _, err = self.call(*self.BASE, "plugin-deps", "--dir", "/nowhere/plugins")
+        self.assertEqual(rc, 2)
+        self.assertIn("No QGIS plugin folder was found", err)
+
+    def test_default_folders_cover_the_profiles_of_qgis_3_and_4_and_of_the_flatpak(self):
+        with tempfile.TemporaryDirectory() as home:
+            for rel in (".local/share/QGIS/QGIS3/profiles/default/python/plugins", ".local/share/QGIS/QGIS4/profiles/work/python/plugins",
+                        ".var/app/org.qgis.qgis/data/QGIS/QGIS3/profiles/default/python/plugins"):
+                os.makedirs(os.path.join(home, *rel.split("/")))
+            got = [os.path.relpath(p, home).replace("\\", "/") for p in qcli.default_plugin_roots(home)]
+            self.assertEqual(len(got), 3)
+            self.assertTrue(any("QGIS4/profiles/work" in g for g in got) and any(g.startswith(".var/app/org.qgis.qgis") for g in got))
+
+    def test_the_texts_exist_in_both_languages(self):
+        for key in ("pd_head", "pd_none", "pd_required", "pd_optional", "pd_install", "pd_manual", "pd_unreadable", "pd_no_plugins", "pd_nothing_to_install"):
+            for lang in ("en", "ka"):
+                self.assertIn(key, i18n.STR[lang])
+
+
 class GeorgianStyle(unittest.TestCase):
     def test_no_comma_before_the_word_da_in_any_georgian_text(self):
         """The house rule: no comma before the conjunction "da" ("and"). A word that merely starts with it (da-nart...) is not the conjunction."""
