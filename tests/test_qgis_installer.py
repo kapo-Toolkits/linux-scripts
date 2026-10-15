@@ -1053,6 +1053,14 @@ class Components(unittest.TestCase):
             for c in requirements.CATEGORIES:
                 self.assertIn("cat_" + c, i18n.STR[lang])
 
+    def test_a_tool_in_a_perl_directory_that_a_plain_path_lacks_still_counts_as_installed(self):
+        real = shutil.which
+        with mock.patch.object(requirements.shutil, "which", lambda t: None),                 mock.patch.object(requirements.os, "access", lambda p, m: p == "/usr/bin/vendor_perl/exiftool"),                 mock.patch.object(requirements.os.path, "isfile", lambda p: p == "/usr/bin/vendor_perl/exiftool"):
+            self.assertTrue(requirements.is_present("exiftool", which=requirements.shutil.which))
+            self.assertFalse(requirements.is_present("saga", which=requirements.shutil.which))      # saga_cmd is nowhere
+        self.assertFalse(requirements.is_present("exiftool", which=lambda t: None))                  # an injected `which` decides alone
+        del real
+
     def test_present_follows_the_tools_and_modules_found(self):
         rows = {r["id"]: r for r in self.rows("apt-get", present=("gdalinfo", "ogr2ogr", "numpy"))}
         self.assertTrue(rows["gdal"]["present"] and rows["numpy"]["present"])
