@@ -915,5 +915,123 @@ class RecipeCli(unittest.TestCase):
         self.assertIn(i18n.STR["ka"]["why_rolling_latest"], out)
 
 
+# --------------------------------------------------------------------------- update
+class UpdatePlans(unittest.TestCase):
+    D = fxt("ubuntu-noble", "apt-get")
+
+    def plan(self, *items, d=None):
+        return qi.update.plan(list(items), d or self.D)
+
+    def sh(self, result):
+        return "\n".join(s["sh"] for s in result["steps"])
+
+    def test_apt_upgrades_exactly_the_installed_packages_and_asks_to_close_qgis(self):
+        r = self.plan({"kind": "apt", "pkgs": ["python3-qgis", "qgis", "qgis-plugin-grass"], "v": "3.44", "o": "", "root": True})
+        self.assertEqual(len(r["steps"]), 1)
+        self.assertTrue(r["steps"][0]["root"])
+        self.assertIn("apt-get update\napt-get install -y --only-upgrade python3-qgis qgis qgis-plugin-grass\n", self.sh(r))
+        self.assertEqual(r["notes"][0], "upd_close_qgis")
+
+    def test_flatpak_user_needs_no_root_and_system_does(self):
+        u = self.plan({"kind": "flatpak", "i": "user", "v": "4.2", "root": False})
+        self.assertEqual((u["steps"][0]["root"], "flatpak update --user -y org.qgis.qgis" in self.sh(u)), (False, True))
+        sy = self.plan({"kind": "flatpak", "i": "system", "v": "4.2", "root": True})
+        self.assertEqual((sy["steps"][0]["root"], "flatpak update --system -y org.qgis.qgis" in self.sh(sy)), (True, True))
+
+    def test_distribution_packages(self):
+        dnf = self.plan({"kind": "dist", "pm": "dnf", "pkgs": ["qgis"], "v": "3.44", "root": True})
+        self.assertIn("dnf upgrade -y qgis\n", self.sh(dnf))
+        zy = self.plan({"kind": "dist", "pm": "zypper", "pkgs": ["qgis"], "v": "3.44", "root": True})
+        self.assertIn("zypper --non-interactive update qgis\n", self.sh(zy))
+        ot = self.plan({"kind": "dist", "pm": "rpm-ostree", "pkgs": ["qgis"], "v": "3.44", "root": True})
+        self.assertIn("rpm-ostree upgrade\n", self.sh(ot))
+        self.assertIn("upd_ostree", ot["notes"])
+        self.assertIn("snap refresh qgis\n", self.sh(self.plan({"kind": "snap", "v": "3.44", "root": True})))
+
+    def test_arch_is_never_a_partial_upgrade(self):
+        r = self.plan({"kind": "dist", "pm": "pacman", "pkgs": ["qgis", "qgis-ltr"], "v": "3.44", "root": True})
+        self.assertEqual(r["steps"], [])                                   # nothing runs: the user decides when to update the system
+        self.assertEqual([m["text"].split()[0:2] for m in r["manual"]], [["sudo", "pacman"], ["yay", "-S"]])
+        self.assertIn("pacman -Syu", r["manual"][0]["text"])
+        self.assertNotIn("pacman -S ", self.sh(r) + " ".join(m["text"] for m in r["manual"]).replace("-Syu", ""))
+        self.assertIn("upd_arch_full", r["notes"])
+
+    def test_container_repository_files_and_user_data_are_not_updated(self):
+        r = self.plan({"kind": "container", "tool": "distrobox", "name": "qgis-box", "root": False},
+                      {"kind": "repo", "files": ["/etc/apt/sources.list.d/qgis.sources"], "root": True},
+                      {"kind": "data", "path": "/home/x/.local/share/QGIS", "sz": "1 MB", "root": False})
+        self.assertEqual((r["steps"], r["manual"]), ([], []))
+        self.assertEqual(r["notes"], ["upd_container"])                      # told how, without running anything
+
+    def test_nothing_found_says_so(self):
+        r = self.plan()
+        self.assertEqual((r["steps"], r["notes"]), ([], ["upd_none"]))
+
+    def test_every_update_script_parses_and_every_note_has_text(self):
+        items = [{"kind": "apt", "pkgs": ["qgis"], "root": True}, {"kind": "flatpak", "i": "user", "root": False},
+                 {"kind": "snap", "root": True}, {"kind": "dist", "pm": "dnf", "pkgs": ["qgis"], "root": True},
+                 {"kind": "dist", "pm": "zypper", "pkgs": ["qgis-ltr"], "root": True},
+                 {"kind": "dist", "pm": "rpm-ostree", "pkgs": ["qgis"], "root": True},
+                 {"kind": "dist", "pm": "pacman", "pkgs": ["qgis-git"], "root": True},
+                 {"kind": "dist", "pm": "urpmi", "pkgs": ["qgis"], "root": True},
+                 {"kind": "container", "tool": "toolbox", "name": "qgis-box", "root": False}]
+        r = self.plan(*items)
+        self.assertGreaterEqual(len(r["steps"]), 6)
+        for st in r["steps"]:
+            self.assertTrue(sh_syntax_ok(st["sh"]), st["sh"])
+        for lang in ("en", "ka"):
+            for n in r["notes"]:
+                self.assertIn("rcw_" + n, i18n.STR[lang])
+            for m in r["manual"]:
+                self.assertIn("rcm_" + m["title"], i18n.STR[lang])
+        self.assertIn("upd_unknown", r["notes"])                              # a package manager we have no command for
+
+
+class SideBySide(unittest.TestCase):
+    def test_only_the_recipes_that_live_apart_from_the_system_qgis_are_marked(self):
+        self.assertEqual({r for r, v in recipes.RECIPES.items() if v["side_by_side"]},
+                         {"flatpak", "distrobox", "toolbx", "spack", "nix-manual"})
+        rows = {a["id"]: a for a in recipes.available(fxt("fedora-43", "dnf", ("flatpak",)))}
+        self.assertTrue(rows["flatpak"]["side_by_side"])
+        self.assertFalse(rows["dnf-fedora"]["side_by_side"])
+
+    def test_the_alongside_goal_only_ever_recommends_a_side_by_side_recipe(self):
+        for name, pm, tools in (("ubuntu-noble", "apt-get", ()), ("fedora-43", "dnf", ()), ("arch", "pacman", ()),
+                                ("opensuse-tumbleweed", "zypper", ("distrobox",)), ("fedora-43", "dnf", ("toolbox",))):
+            rec = recipes.recommend(fxt(name, pm, tools), "alongside")
+            self.assertTrue(recipes.RECIPES[rec["recipe"]]["side_by_side"], (name, rec))
+
+
+class UpdateCli(unittest.TestCase):
+    call = Cli.call
+
+    def test_update_shows_the_commands_and_dry_run_runs_nothing(self):
+        items = [{"kind": "flatpak", "i": "user", "v": "4.2", "root": False}]
+        with mock.patch.object(uninstall, "find_installs", lambda s: items), mock.patch.object(runner, "run_steps") as run:
+            rc, out, _ = self.call("--lang", "en", "--os-release", os.path.join(FIX, "fedora-43"), "--pm", "dnf", "--arch", "amd64",
+                                   "--tools", "", "update", "--dry-run")
+        self.assertEqual(rc, 0)
+        self.assertIn("flatpak update --user -y org.qgis.qgis", out)
+        self.assertIn("Close QGIS before updating", out)
+        run.assert_not_called()
+
+    def test_update_json_and_georgian(self):
+        items = [{"kind": "dist", "pm": "pacman", "pkgs": ["qgis"], "v": "3.44", "root": True}]
+        with mock.patch.object(uninstall, "find_installs", lambda s: items):
+            rc, out, _ = self.call("--lang", "ka", "--json", "--os-release", os.path.join(FIX, "arch"), "--pm", "pacman", "--arch", "amd64",
+                                   "--tools", "", "update")
+        doc = json.loads(out)
+        self.assertEqual((rc, doc["steps"]), (0, []))
+        self.assertIn("pacman -Syu", doc["manual"][0]["text"])
+        self.assertIn("დახურეთ QGIS", doc["notes"][0]["text"])
+
+    def test_nothing_to_update(self):
+        with mock.patch.object(uninstall, "find_installs", lambda s: []):
+            rc, out, _ = self.call("--lang", "en", "--os-release", os.path.join(FIX, "fedora-43"), "--pm", "dnf", "--arch", "amd64",
+                                   "--tools", "", "update")
+        self.assertEqual(rc, 0)
+        self.assertIn("Nothing to update", out)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=1)

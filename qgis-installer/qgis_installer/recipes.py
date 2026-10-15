@@ -12,6 +12,8 @@ and warnings) and ``why_<reason>`` (why recommended).
   guide     - the steps are taken from the installation guide; not run by the author
   names     - the package names exist in the distribution's repositories; the install was not run
   manual    - instructions only, nothing is run
+``side_by_side`` is True where the result lives apart from the system's QGIS (Flatpak, containers, Spack, Nix), so it can be
+installed while QGIS is running and does not replace the QGIS you have; False means the system's own QGIS is changed in place.
 Guide: https://qgis.org/resources/installation-guide/#linux
 """
 import shlex
@@ -243,29 +245,29 @@ def _plan_slackware(s, o):
 
 # id -> recipe. Order = the order the user sees.
 RECIPES = {
-    "apt-official": {"kind": "run", "verified": "real", "applies": _apt_official, "plan": _plan_apt_official,
+    "apt-official": {"side_by_side": False, "kind": "run", "verified": "real", "applies": _apt_official, "plan": _plan_apt_official,
                      "options": ["channel", "grass", "python", "server"]},
-    "apt-distro": {"kind": "run", "verified": "container", "applies": _apt_distro, "plan": _plan_apt_distro,
+    "apt-distro": {"side_by_side": False, "kind": "run", "verified": "container", "applies": _apt_distro, "plan": _plan_apt_distro,
                    "options": ["grass", "python", "server"]},
-    "flatpak": {"kind": "run", "verified": "flathub", "applies": _flatpak, "plan": _plan_flatpak,
+    "flatpak": {"side_by_side": True, "kind": "run", "verified": "flathub", "applies": _flatpak, "plan": _plan_flatpak,
                 "options": ["branch", "scope"]},
-    "dnf-fedora": {"kind": "run", "verified": "container", "applies": _dnf_fedora, "plan": _plan_dnf,
+    "dnf-fedora": {"side_by_side": False, "kind": "run", "verified": "container", "applies": _dnf_fedora, "plan": _plan_dnf,
                    "options": ["grass", "python", "server"]},
-    "rpm-ostree-fedora": {"kind": "run", "verified": "guide", "applies": _rpm_ostree, "plan": _plan_rpm_ostree,
+    "rpm-ostree-fedora": {"side_by_side": False, "kind": "run", "verified": "guide", "applies": _rpm_ostree, "plan": _plan_rpm_ostree,
                           "options": ["grass", "python", "server"]},
-    "zypper-opensuse": {"kind": "run", "verified": "container", "applies": _zypper, "plan": _plan_zypper,
+    "zypper-opensuse": {"side_by_side": False, "kind": "run", "verified": "container", "applies": _zypper, "plan": _plan_zypper,
                         "options": ["grass", "geo_repo"]},
-    "pacman-arch": {"kind": "run", "verified": "container", "applies": _pacman, "plan": _plan_pacman, "options": []},
-    "aur-helper": {"kind": "run", "verified": "guide", "applies": _aur, "plan": _plan_aur, "options": ["channel"]},
-    "urpmi-mageia": {"kind": "run", "verified": "names", "applies": _urpmi, "plan": _plan_urpmi, "options": ["grass"]},
-    "spack": {"kind": "run", "verified": "guide", "applies": _tool("spack"), "plan": _plan_spack, "options": []},
-    "distrobox": {"kind": "run", "verified": "guide", "applies": _tool("distrobox"), "plan": _plan_distrobox,
+    "pacman-arch": {"side_by_side": False, "kind": "run", "verified": "container", "applies": _pacman, "plan": _plan_pacman, "options": []},
+    "aur-helper": {"side_by_side": False, "kind": "run", "verified": "guide", "applies": _aur, "plan": _plan_aur, "options": ["channel"]},
+    "urpmi-mageia": {"side_by_side": False, "kind": "run", "verified": "names", "applies": _urpmi, "plan": _plan_urpmi, "options": ["grass"]},
+    "spack": {"side_by_side": True, "kind": "run", "verified": "guide", "applies": _tool("spack"), "plan": _plan_spack, "options": []},
+    "distrobox": {"side_by_side": True, "kind": "run", "verified": "guide", "applies": _tool("distrobox"), "plan": _plan_distrobox,
                   "options": ["image"]},
-    "toolbx": {"kind": "run", "verified": "guide", "applies": _tool("toolbox"), "plan": _plan_toolbx,
+    "toolbx": {"side_by_side": True, "kind": "run", "verified": "guide", "applies": _tool("toolbox"), "plan": _plan_toolbx,
                "options": ["image"]},
-    "nix-manual": {"kind": "manual", "verified": "manual", "applies": _distro("nixos"), "plan": _plan_nix,
+    "nix-manual": {"side_by_side": True, "kind": "manual", "verified": "manual", "applies": _distro("nixos"), "plan": _plan_nix,
                    "options": ["channel"]},
-    "slackware-manual": {"kind": "manual", "verified": "manual", "applies": _distro("slackware"),
+    "slackware-manual": {"side_by_side": False, "kind": "manual", "verified": "manual", "applies": _distro("slackware"),
                          "plan": _plan_slackware, "options": []},
 }
 
@@ -290,7 +292,8 @@ def available(sysinfo):
     out = []
     for rid, r in RECIPES.items():
         ok, why = r["applies"](sysinfo)
-        out.append({"id": rid, "kind": r["kind"], "verified": r["verified"], "applies": ok, "reason": why})
+        out.append({"id": rid, "kind": r["kind"], "verified": r["verified"], "applies": ok, "reason": why,
+                    "side_by_side": r["side_by_side"]})
     return out
 
 

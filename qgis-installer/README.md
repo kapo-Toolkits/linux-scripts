@@ -82,6 +82,21 @@ GUI remembers). To preview another system: `--os-release tests/fixtures/os-relea
 | `qgis-installer-gui.py` | the Tk window - a thin layer over the package |
 | `qgis-installer-cli.py` | the command line (`python3 -m qgis_installer` from this folder does the same) |
 
+## Updating what is installed
+
+```bash
+qgis-installer-cli update --dry-run     # shows the commands for every QGIS found here, runs nothing
+qgis-installer-cli update               # asks first; close QGIS before running it
+```
+
+It upgrades the installed packages of each installation found (apt `--only-upgrade`, Flatpak, Snap, dnf, zypper, `rpm-ostree upgrade`)
+and keeps the channel: latest to LTR needs *Uninstall* and a new install, because apt will not downgrade. Arch is never updated
+package by package (a partial upgrade can break the system): the program prints `sudo pacman -Syu` and the AUR line for you to run.
+Containers (`qgis-box`) are updated inside with their own package manager; the program says how. User data is never touched.
+
+Recipes that live apart from the system's QGIS (Flatpak, containers, Spack, Nix) are marked `side_by_side` in `recipes`: they can be
+installed while QGIS is running and do not replace the QGIS you have. The other recipes change the system's QGIS in place.
+
 ## Ways to install
 
 See **Recipes** above: every way the guide describes is a recipe, `recommend` picks one for your goal and system, and the
