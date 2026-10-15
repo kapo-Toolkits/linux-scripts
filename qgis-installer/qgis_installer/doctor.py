@@ -19,6 +19,8 @@ import re
 import shutil
 import subprocess
 
+from . import i18n
+
 # top-level module folder names whose user copy hides the system one
 WATCHED = ("numpy", "osgeo", "pyproj", "shapely", "pandas", "scipy", "matplotlib", "rasterio", "fiona", "psycopg2", "geopandas", "PyQt5", "sip")
 LOW_DISK = 1024 ** 3                         # 1 GiB
@@ -189,3 +191,20 @@ def run_all(items, sysinfo, env=None, run=None, home=None, read=None, exists=os.
     order = {"problem": 0, "warn": 1, "info": 2}
     findings.sort(key=lambda f: order[f[0]])
     return {"findings": findings, "ran": ran, "skipped": skipped}
+
+
+def lines(result, lang="en"):
+    """A result as lines of text: what was looked at, each finding with its level, what could not be looked at."""
+    t = lambda k, **kw: i18n.t(k, lang, **kw)  # noqa: E731
+    out = [t("doc_head", ran=", ".join(t("doc_chk_" + c) for c in result["ran"]))]
+    for level, key, params in result["findings"]:
+        out.append("[{}] {}".format(t("doc_level_" + level), t("doc_" + key, **params)))
+    if not result["findings"]:
+        out.append(t("doc_none"))
+    if result["skipped"]:
+        out.append(t("doc_skipped", skipped=", ".join(t("doc_chk_" + c) for c in result["skipped"])))
+    return out
+
+
+def has_problem(result):
+    return any(level == "problem" for level, _k, _p in result["findings"])

@@ -273,26 +273,13 @@ def _versions_cmd(args, items, lang):
     return _execute(result["steps"], args, lang)
 
 
-def doctor_lines(result, lang):
-    """The doctor's result as lines of text (also what the plugin shows)."""
-    t = lambda k, **kw: i18n.t(k, lang, **kw)  # noqa: E731
-    lines = [t("doc_head", ran=", ".join(t("doc_chk_" + c) for c in result["ran"]))]
-    for level, key, params in result["findings"]:
-        lines.append("[{}] {}".format(t("doc_level_" + level), t("doc_" + key, **params)))
-    if not result["findings"]:
-        lines.append(t("doc_none"))
-    if result["skipped"]:
-        lines.append(t("doc_skipped", skipped=", ".join(t("doc_chk_" + c) for c in result["skipped"])))
-    return lines
-
-
 def _doctor_cmd(args, sysinfo, items, lang):
     result = doctor.run_all(items, sysinfo)
     if args.json:
         print(json.dumps(dict(result, schema=SCHEMA), indent=2, ensure_ascii=False))
     else:
-        print("\n".join(doctor_lines(result, lang)))
-    return 1 if any(level == "problem" for level, _k, _p in result["findings"]) else 0
+        print("\n".join(doctor.lines(result, lang)))
+    return 1 if doctor.has_problem(result) else 0
 
 
 def _read_spec(path, lang):
