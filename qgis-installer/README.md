@@ -82,6 +82,25 @@ GUI remembers). To preview another system: `--os-release tests/fixtures/os-relea
 | `qgis-installer-gui.py` | the Tk window - a thin layer over the package |
 | `qgis-installer-cli.py` | the command line (`python3 -m qgis_installer` from this folder does the same) |
 
+## Components (the OSGeo4W chooser, in a small Linux form)
+
+OSGeo4W lets you pick QGIS and the programs around it from one list. On Linux the system's package manager is the chooser;
+this lists the useful pieces in one place and installs them with it:
+
+```bash
+qgis-installer-cli components                          # what is there and what can be added, grouped
+qgis-installer-cli components --category python        # cli | engine | python | db
+qgis-installer-cli components install gdal numpy --dry-run
+```
+
+Groups: command line tools (GDAL, PROJ, ExifTool), GIS engines (GRASS, SAGA, WindNinja), Python libraries (GDAL/OGR, NumPy, pandas,
+SciPy, Matplotlib, Shapely, pyproj, rasterio, Fiona, GeoPandas, psycopg2) and database clients (PostgreSQL). Where a distribution has
+no package (for example SAGA on Fedora, rasterio on Arch) the program says so instead of guessing. The package names are checked
+against the repositories of all seven distributions by `tests/run-distros.sh`, and installing and re-listing runs for real on
+Debian, Fedora, openSUSE and Arch (`tests/run-recipes-containers.sh`). Nothing here **removes** packages: a library such as NumPy can
+be a dependency of QGIS itself, and removing it would take QGIS along. Python libraries installed this way are visible to a QGIS that
+uses the system's Python; a Flatpak or Snap QGIS has its own sandbox.
+
 ## Updating what is installed
 
 ```bash

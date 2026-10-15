@@ -8,6 +8,8 @@
     qgis-installer-cli list
     qgis-installer-cli update [--yes] [--dry-run]                # newest build of the QGIS installations found here
     qgis-installer-cli uninstall [--kinds apt,repo,flatpak,snap,dist,data] [--purge] [--yes] [--dry-run]
+    qgis-installer-cli components [list] [--category cli|engine|python|db]   # what can be added next to QGIS, and what is there
+    qgis-installer-cli components install ID [ID...] [--yes] [--dry-run]
     qgis-installer-cli requirements check [--plugin postgis_manager]
     qgis-installer-cli requirements install --plugin postgis_manager [--optional] [--yes] [--dry-run]
 
@@ -290,6 +292,52 @@ def _requirements(args, sysinfo, lang):
     return _execute(steps, args, lang)
 
 
+def _components(args, sysinfo, lang):
+    """components list / install: GDAL, PROJ, GRASS, SAGA, Python libraries, database clients - with the system's package manager."""
+    t = lambda k, **kw: i18n.t(k, lang, **kw)  # noqa: E731
+    pm = sysinfo["pm"]
+    rows = requirements.components(pm)
+    if getattr(args, "comp_cmd", None) == "install":
+        ids = []
+        for rid in args.ids:
+            if rid not in requirements.REQ or "cat" not in requirements.REQ[rid]:
+                print(t("cp_unknown", id=rid, known=", ".join(r["id"] for r in rows)), file=sys.stderr)
+                return 2
+            ids.append(rid)
+        todo = [r["id"] for r in rows if r["id"] in ids and not r["present"]]
+        for r in rows:
+            if r["id"] in ids and r["present"]:
+                print(t("cp_have", name=r["label"][lang]))
+        if not todo:
+            return 0
+        if not pm:
+            print(t("cp_no_pm"), file=sys.stderr)
+            return 2
+        steps, manual = requirements.install_steps(todo, pm)
+        for rid in manual:
+            print(t("rq_manual", name=requirements.REQ[rid]["label"][lang]), file=sys.stderr)
+        if not steps:
+            return 2
+        _show(steps, args, lang, "components")
+        return _execute(steps, args, lang)
+    if args.category:
+        rows = [r for r in rows if r["cat"] == args.category]
+    if args.json:
+        print(json.dumps({"schema": SCHEMA, "package_manager": pm, "components": rows}, indent=2, ensure_ascii=False))
+        return 0
+    for cat in requirements.CATEGORIES:
+        part = [r for r in rows if r["cat"] == cat]
+        if not part:
+            continue
+        print(t("cat_" + cat))
+        for r in part:
+            how = ""
+            if not r["present"]:
+                how = "  -> " + (" ".join(r["packages"]) if r["packages"] else t("rq_manual", name=r["label"][lang]))
+            print("  [{}] {:12s} {}{}".format("x" if r["present"] else " ", r["id"], r["label"][lang], how))
+    return 0
+
+
 def build_parser():
     ap = argparse.ArgumentParser(prog="qgis-installer-cli", description=__doc__.split("\n\n")[0])
     ap.add_argument("--lang", choices=("en", "ka"), help="language of messages (default: the one the GUI remembers, else en)")
@@ -342,6 +390,16 @@ def build_parser():
     p.add_argument("--no-autoremove", action="store_true")
     p.add_argument("--yes", action="store_true", help="do not ask")
     p.add_argument("--dry-run", action="store_true", help="only show the commands")
+    p = sub.add_parser("components", help="GDAL, PROJ, GRASS, SAGA, Python libraries and database clients: what is there, what can be added")
+    p.set_defaults(comp_cmd="list")
+    p.add_argument("--category", choices=requirements.CATEGORIES, help="only this group")
+    cs = p.add_subparsers(dest="comp_cmd")
+    q = cs.add_parser("list", help="the components and whether each is present (default)")
+    q.add_argument("--category", choices=requirements.CATEGORIES, help="only this group")
+    q = cs.add_parser("install", help="install components with the system package manager (shows the commands first)")
+    q.add_argument("ids", nargs="+", help="component ids, e.g. gdal numpy")
+    q.add_argument("--yes", action="store_true", help="do not ask")
+    q.add_argument("--dry-run", action="store_true", help="only show the commands")
     p = sub.add_parser("requirements", help="what the GIS GEORGIA QGIS plugins need from this system")
     rq = p.add_subparsers(dest="rq_cmd", required=True)
     q = rq.add_parser("check", help="which requirements are present (this system's Python and PATH)")
@@ -366,6 +424,8 @@ def main(argv=None):
 
     if args.cmd == "info":
         return _info(args, sysinfo, lang)
+    if args.cmd == "components":
+        return _components(args, sysinfo, lang)
     if args.cmd == "requirements":
         return _requirements(args, sysinfo, lang)
 
