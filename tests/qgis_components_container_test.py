@@ -52,5 +52,16 @@ check("the JSON list agrees", rc == 0 and all(doc[i]["present"] for i in WANT))
 rc, out, _ = run("components", "install", *WANT, "--yes")
 check("installing again installs nothing and says so", rc == 0 and out.count("already installed") == 2, out)
 
+# "is a newer build waiting?" asked of the real package manager about what was just installed: it must answer yes or no, not "could not tell"
+from qgis_installer import instances  # noqa: E402
+pkg = rows["proj"]["packages"][0]
+item = ({"kind": "apt", "pkgs": [pkg], "v": "x", "root": True} if pm == "apt-get"
+        else {"kind": "dist", "pm": pm, "pkgs": [pkg], "v": "x", "root": True})
+res = instances.check_updates([item])[0]
+check("the package manager answers whether a newer build is waiting (not 'could not tell')", res["update"] in (True, False), res)
+check("a package that was just installed from the current index has no update waiting", res["update"] is False, res)
+rows_i = instances.list_instances([item], which=lambda c: None)
+check("instances lists it with an id and no start command (it is a library, not QGIS)", len(rows_i) == 1 and rows_i[0]["launch"] is None, rows_i)
+
 print("\nRESULT:", "ALL PASS" if not fails else f"{len(fails)} FAILED: {fails}")
 sys.exit(1 if fails else 0)

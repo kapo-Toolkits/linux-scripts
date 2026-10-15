@@ -1141,5 +1141,220 @@ class ComponentsCli(unittest.TestCase):
         self.assertIn("Python-ის ბიბლიოთეკები", out)
 
 
+# --------------------------------------------------------------------------- instances: start any installed QGIS, is a newer build waiting
+APT = {"kind": "apt", "pkgs": ["python3-qgis", "qgis"], "v": "3.44.5", "o": "qgis.org", "root": True}
+FP_STABLE = {"kind": "flatpak", "i": "user", "v": "4.2.2", "br": "stable", "root": False}
+FP_LTS = {"kind": "flatpak", "i": "system", "v": "3.44.5", "br": "lts", "root": True}
+SNAP = {"kind": "snap", "v": "3.44", "root": True}
+DIST_AUR = {"kind": "dist", "pm": "pacman", "pkgs": ["qgis-ltr"], "v": "3.44.1", "root": True}
+BOX = {"kind": "container", "tool": "distrobox", "name": "qgis-box", "root": False}
+
+
+def have(*names):
+    return lambda c: "/usr/bin/" + c if c in names else None
+
+
+class Instances(unittest.TestCase):
+    def test_every_kind_has_its_own_start_command(self):
+        rows = {r["id"]: r for r in qi.instances.list_instances(
+            [APT, FP_STABLE, FP_LTS, SNAP, DIST_AUR, BOX, {"kind": "repo", "files": [], "c": ""}, {"kind": "data", "path": "/x", "sz": "1"}],
+            which=have("qgis", "flatpak", "snap", "qgis-ltr", "distrobox"))}
+        self.assertEqual(sorted(rows), ["apt", "container-distrobox", "dist-pacman-qgis-ltr", "flatpak-system-lts", "flatpak-user-stable", "snap"])
+        self.assertEqual(rows["apt"]["launch"], ["qgis"])
+        self.assertEqual(rows["flatpak-user-stable"]["launch"], ["flatpak", "run", "--branch=stable", "org.qgis.qgis"])
+        self.assertEqual(rows["flatpak-system-lts"]["launch"], ["flatpak", "run", "--branch=lts", "org.qgis.qgis"])
+        self.assertEqual(rows["snap"]["launch"], ["snap", "run", "qgis"])
+        self.assertEqual(rows["dist-pacman-qgis-ltr"]["launch"], ["qgis-ltr"])          # the package's own binary when it exists
+        self.assertEqual(rows["container-distrobox"]["launch"], ["distrobox", "enter", "qgis-box", "--", "qgis"])
+        self.assertEqual(rows["flatpak-system-lts"]["version"], "3.44.5")
+
+    def test_toolbox_and_the_fallback_binary_name(self):
+        r = qi.instances.list_instances([dict(BOX, tool="toolbox")], which=have("toolbox"))[0]
+        self.assertEqual(r["launch"], ["toolbox", "run", "--container", "qgis-box", "qgis"])
+        r = qi.instances.list_instances([DIST_AUR], which=have("qgis"))[0]
+        self.assertEqual(r["launch"], ["qgis"])                                         # no qgis-ltr binary: the plain one
+
+    def test_what_cannot_be_started_is_listed_but_not_launchable(self):
+        rows = qi.instances.list_instances([APT, FP_STABLE, BOX], which=have())
+        self.assertEqual([r["launchable"] for r in rows], [False, False, False])
+        self.assertTrue(all(r["launch"] is None for r in rows))
+        with self.assertRaises(ValueError):
+            qi.instances.launch(rows[0])
+
+    def test_only_the_programs_that_share_the_profile_are_flagged(self):
+        rows = {r["kind"]: r["shared_profile"] for r in qi.instances.list_instances([APT, FP_STABLE, SNAP, BOX, DIST_AUR], which=have())}
+        self.assertEqual(rows, {"apt": True, "flatpak": False, "snap": False, "container": True, "dist": True})
+
+    def test_launch_is_detached_and_silent(self):
+        calls = []
+
+        class P:
+            pid = 4242
+
+        def popen(argv, **kw):
+            calls.append((argv, kw))
+            return P()
+        row = qi.instances.list_instances([FP_LTS], which=have("flatpak"))[0]
+        self.assertEqual(qi.instances.launch(row, popen=popen), 4242)
+        argv, kw = calls[0]
+        self.assertEqual(argv[:3], ["flatpak", "run", "--branch=lts"])
+        self.assertTrue(kw["start_new_session"])
+        self.assertEqual((kw["stdout"], kw["stderr"], kw["stdin"]), (subprocess.DEVNULL,) * 3)
+
+    def test_find(self):
+        rows = qi.instances.list_instances([APT, SNAP], which=have())
+        self.assertEqual(qi.instances.find(rows, "snap")["kind"], "snap")
+        self.assertIsNone(qi.instances.find(rows, "nope"))
+
+
+class CheckUpdates(unittest.TestCase):
+    def fake(self, table):
+        calls = []
+
+        def run(cmd, timeout=120):
+            calls.append(cmd)
+            for prefix, answer in table:
+                if cmd[:len(prefix)] == prefix:
+                    return answer
+            return 1, ""
+        run.calls = calls
+        return run
+
+    def one(self, item, table):
+        rows = qi.instances.check_updates([item], run=self.fake(table))
+        self.assertEqual(len(rows), 1)
+        return rows[0]
+
+    def test_apt_compares_installed_with_the_candidate_and_says_it_is_cached(self):
+        pol = "qgis:\n  Installed: 3.44.5+24noble\n  Candidate: 3.44.6+24noble\n  Version table:\n"
+        r = self.one(APT, [(["apt-cache", "policy", "qgis"], (0, pol))])
+        self.assertEqual((r["update"], r["candidate"], r["source"]), (True, "3.44.6+24noble", "cached"))
+        same = pol.replace("3.44.6", "3.44.5")
+        self.assertIs(self.one(APT, [(["apt-cache", "policy", "qgis"], (0, same))])["update"], False)
+        none = "qgis:\n  Installed: 3.44.5\n  Candidate: (none)\n"
+        self.assertIsNone(self.one(APT, [(["apt-cache", "policy", "qgis"], (0, none))])["update"])      # not "up to date"
+
+    def test_flatpak_looks_for_its_own_branch_only(self):
+        listing = "org.qgis.qgis\tlts\norg.gnome.Platform\t48\n"
+        t = [(["flatpak", "remote-ls", "--updates", "--system"], (0, listing))]
+        self.assertIs(self.one(FP_LTS, t)["update"], True)
+        t = [(["flatpak", "remote-ls", "--updates", "--user"], (0, listing))]
+        self.assertIs(self.one(FP_STABLE, t)["update"], False)                    # the lts update is not the stable one
+        self.assertEqual(self.one(FP_STABLE, t)["source"], "network")
+
+    def test_no_network_is_unknown_never_up_to_date(self):
+        for item in (FP_STABLE, SNAP, dict(DIST_AUR, pm="dnf", pkgs=["qgis"])):
+            self.assertIsNone(self.one(item, [])["update"], item["kind"])           # every command failed
+
+    def test_snap_and_dnf_and_zypper_and_pacman(self):
+        self.assertIs(self.one(SNAP, [(["snap", "refresh", "--list"], (0, "Name  Version\nqgis  3.44.6  1234  latest/stable\n"))])["update"], True)
+        self.assertIs(self.one(SNAP, [(["snap", "refresh", "--list"], (0, ""))])["update"], False)
+        dnf = dict(DIST_AUR, pm="dnf", pkgs=["qgis"])
+        self.assertIs(self.one(dnf, [(["dnf", "-q", "check-update"], (100, "qgis.x86_64 3.44.6\n"))])["update"], True)
+        self.assertIs(self.one(dnf, [(["dnf", "-q", "check-update"], (0, ""))])["update"], False)
+        self.assertIsNone(self.one(dnf, [(["dnf", "-q", "check-update"], (1, ""))])["update"])
+        zy = dict(DIST_AUR, pm="zypper", pkgs=["qgis"])
+        out = "S | Repository | Name | Current | Available\nv | repo-oss | qgis | 3.44.1 | 3.44.2\n"
+        self.assertIs(self.one(zy, [(["zypper", "--non-interactive", "list-updates"], (0, out))])["update"], True)
+        self.assertIs(self.one(zy, [(["zypper", "--non-interactive", "list-updates"], (0, "No updates found.\n"))])["update"], False)
+        pac = dict(DIST_AUR, pm="pacman", pkgs=["qgis"])
+        self.assertIs(self.one(pac, [(["pacman", "-Qu", "qgis"], (0, "qgis 3.44.1-1 -> 3.44.2-1\n"))])["update"], True)
+        self.assertIs(self.one(pac, [(["pacman", "-Qu", "qgis"], (1, ""))])["update"], False)
+
+    def test_it_only_reads(self):
+        run = self.fake([])
+        qi.instances.check_updates([APT, FP_STABLE, SNAP, DIST_AUR, dict(DIST_AUR, pm="dnf"), dict(DIST_AUR, pm="zypper"), BOX], run=run)
+        self.assertGreaterEqual(len(run.calls), 6)
+        for c in run.calls:
+            self.assertFalse({"install", "upgrade", "remove", "uninstall", "-S", "-Syu"} & set(c), c)
+            if c[0] == "snap":
+                self.assertEqual(c, ["snap", "refresh", "--list"])                 # the only snap command, and it just lists
+
+
+class FlatpakBranches(unittest.TestCase):
+    def test_removal_names_the_branch_so_both_can_live_together(self):
+        d = fx("fedora-43", "dnf")
+        steps = uninstall.build_remove_steps([FP_STABLE, FP_LTS], False, False, d)
+        text = "\n".join(st["sh"] for st in steps)
+        self.assertIn("flatpak uninstall --user -y org.qgis.qgis//stable", text)
+        self.assertIn("flatpak uninstall --system -y org.qgis.qgis//lts", text)
+        old = uninstall.build_remove_steps([{"kind": "flatpak", "i": "user", "v": "4", "root": False}], False, False, d)
+        self.assertIn("flatpak uninstall --user -y org.qgis.qgis\n", old[0]["sh"])          # no branch known: as before
+        evil = uninstall.build_remove_steps([dict(FP_STABLE, br="x; rm -rf ~")], False, False, d)
+        self.assertNotIn("rm -rf", evil[0]["sh"])
+
+    def test_find_installs_reads_the_branch_column(self):
+        def fake_run(cmd):
+            if cmd[:2] == ["flatpak", "list"]:
+                self.assertIn("--columns=application,version,installation,branch", cmd)
+                return 0, "org.qgis.qgis\t4.2.2\tuser\tstable\norg.qgis.qgis\t3.44.5\tsystem\tlts\norg.other\t1\tuser\tstable\n"
+            return 1, ""
+        with mock.patch.object(uninstall, "_run", fake_run), mock.patch.object(uninstall.shutil, "which", lambda c: "/usr/bin/" + c if c == "flatpak" else None), \
+                mock.patch.object(uninstall.os.path, "isdir", return_value=False):
+            items = uninstall.find_installs(fx("fedora-43", "dnf"))
+        fp = [i for i in items if i["kind"] == "flatpak"]
+        self.assertEqual([(i["i"], i["br"], i["v"]) for i in fp], [("user", "stable", "4.2.2"), ("system", "lts", "3.44.5")])
+        self.assertIn("user, stable", i18n.label_for(fp[0], "en"))
+        self.assertIn("system, lts", i18n.label_for(fp[1], "ka"))
+
+
+class InstancesCli(unittest.TestCase):
+    call = Cli.call
+    BASE = ["--lang", "en", "--os-release", os.path.join(FIX, "fedora-43"), "--pm", "dnf", "--arch", "amd64", "--tools", ""]
+
+    def run_cmd(self, items, *argv, which=("flatpak",)):
+        with mock.patch.object(uninstall, "find_installs", lambda s: items), \
+                mock.patch.object(qi.instances.shutil, "which", have(*which)):
+            return self.call(*self.BASE, *argv)
+
+    def test_instances_lists_how_to_start_each(self):
+        rc, out, _ = self.run_cmd([FP_STABLE, FP_LTS], "instances")
+        self.assertEqual(rc, 0)
+        self.assertIn("[flatpak-user-stable]", out)
+        self.assertIn("flatpak run --branch=lts org.qgis.qgis", out)
+        rc, out, _ = self.run_cmd([FP_STABLE], "--json", "instances")
+        doc = json.loads(out)["instances"]
+        self.assertEqual((doc[0]["id"], doc[0]["launch"][0], doc[0]["shared_profile"]), ("flatpak-user-stable", "flatpak", False))
+        rc, out, _ = self.run_cmd([], "instances")
+        self.assertIn("No QGIS installation that can be started", out)
+
+    def test_launch_asks_unless_yes_and_warns_about_a_shared_profile(self):
+        started = []
+        with mock.patch.object(qi.instances, "launch", lambda row, popen=None: started.append(row["id"]) or 77):
+            rc, out, err = self.run_cmd([APT], "launch", "apt", "--yes", which=("qgis",))
+            self.assertEqual((rc, started), (0, ["apt"]))
+            self.assertIn("share your profile folder", out)
+            self.assertIn("Started (process 77).", out)
+            started.clear()
+            rc, out, err = self.run_cmd([FP_STABLE], "launch", "flatpak-user-stable", "--yes")
+            self.assertEqual((rc, started), (0, ["flatpak-user-stable"]))
+            self.assertNotIn("share your profile", out)                              # Flatpak has its own profile
+            started.clear()
+            rc, _, err = self.run_cmd([APT], "launch", "apt", which=("qgis",))                 # not a terminal, no --yes
+            self.assertEqual((rc, started), (3, []))
+            self.assertIn("pass --yes", err)
+
+    def test_launch_unknown_and_unlaunchable(self):
+        rc, _, err = self.run_cmd([APT], "launch", "nope", which=("qgis",))
+        self.assertEqual(rc, 2)
+        self.assertIn("Unknown installation 'nope'. Known: apt", err)
+        rc, _, err = self.run_cmd([APT], "launch", "apt", "--yes", which=())
+        self.assertEqual(rc, 2)
+        self.assertIn("No way to start this one is known", err)
+
+    def test_check_updates_text_and_json(self):
+        pol = "qgis:\n  Installed: 3.44.5\n  Candidate: 3.44.6\n"
+        run = lambda cmd, timeout=120: (0, pol) if cmd[:2] == ["apt-cache", "policy"] else (1, "")  # noqa: E731
+        with mock.patch.object(qi.instances, "_run", run):
+            rc, out, _ = self.run_cmd([APT, FP_STABLE], "check-updates", which=("qgis",))
+            rc2, out2, _ = self.run_cmd([APT, FP_STABLE], "--json", "check-updates", which=("qgis",))
+        self.assertEqual(rc, 0)
+        self.assertIn("newer build available (3.44.6) - as of the last refresh of the package index", out)
+        self.assertIn("could not tell - asked online", out)                          # flatpak failed: unknown, not "up to date"
+        rows = {r["id"]: r for r in json.loads(out2)["instances"]}
+        self.assertIs(rows["apt"]["updates"]["update"], True)
+        self.assertIsNone(rows["flatpak-user-stable"]["updates"]["update"])
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=1)
