@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=PrintHub
+GenericName=Print Manager
+Comment=Print PDFs, images and Office documents with full settings
+Exec=printhub %F
+Icon=io.printhub.PrintHub
+Terminal=false
+Categories=Utility;Printing;Office;
+MimeType=application/pdf;image/png;image/jpeg;image/bmp;image/tiff;image/webp;application/msword;application/vnd.openxmlformats-officedocument.wordprocessingml.document;application/vnd.oasis.opendocument.text;application/vnd.ms-excel;application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;application/vnd.oasis.opendocument.spreadsheet;
+Keywords=print;printer;pdf;image;document;

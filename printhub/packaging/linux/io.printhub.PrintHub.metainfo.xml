@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.printhub.PrintHub</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <name>PrintHub</name>
+  <summary>Universal cross-platform print front-end</summary>
+  <description>
+    <p>
+      PrintHub opens PDFs, images and Office documents, previews them, and
+      prints them through your system's own print dialog with full settings:
+      page range, copies, N-up, two-sided, and image scaling. Multiple files
+      can be queued and printed as a single job.
+    </p>
+  </description>
+  <launchable type="desktop-id">io.printhub.PrintHub.desktop</launchable>
+  <categories>
+    <category>Utility</category>
+    <category>Printing</category>
+  </categories>
+  <url type="homepage">https://github.com/printhub/printhub</url>
+  <url type="bugtracker">https://github.com/printhub/printhub/issues</url>
+  <provides>
+    <binary>printhub</binary>
+  </provides>
+  <releases>
+    <release version="0.2.1" date="2026-08-31">
+      <description><p>Packaging fix: cross-platform PyInstaller builds (Linux/macOS).</p></description>
+    </release>
+    <release version="0.2.0" date="2026-08-31">
+      <description><p>Print settings panel: paper size, orientation, color/grayscale and collate.</p></description>
+    </release>
+    <release version="0.1.0" date="2026-08-31">
+      <description><p>Prototype: page range, copies, N-up, duplex, image scaling, batch queue.</p></description>
+    </release>
+  </releases>
+  <content_rating type="oars-1.1"/>
+</component>

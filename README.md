@@ -41,3 +41,5 @@ tests/run-qgis-containers.sh           # needs docker; real apt + qgis.org in th
 
 CI (GitHub Actions) runs both on every push and weekly.
 | [bluetooth-setup](bluetooth-setup/) | GUI (EN/KA): which Bluetooth dongle works and what it supports (Classic/LE/SSP), scan, pair, connect, audio output |
+| [printhub](printhub/) | Print front-end (Qt): PDF, images and Office files with preview and full print settings; EN/KA; `./install.sh printhub` |
+

@@ -49,6 +49,8 @@ STR = {
  "s3": "3. Driver missing?", "web": "Open vendor download page", "deb": "Install downloaded .deb…",
  "s4": "4. Add", "add": "Add printer", "driverless": "Add driverless (network)",
  "s5": "5. Test", "queue": "Queue:", "test": "Print test page", "log": "Log",
+ "hub": "Open PrintHub (print files)",
+ "hub_missing": "PrintHub is not installed.\n\nIt prints PDFs, images and Office files with a preview and full settings.\nInstall it from the toolkit folder:\n\n./install.sh printhub",
  "pick": "Select a printer in the list first.", "err": "Error", "info": "Printer Setup",
  "searching": "Searching installed drivers (can take a few seconds)…",
  "found": "{n} matching driver(s) found.", "notfound": "No installed driver matches “{m}”. Use step 3.",
@@ -88,6 +90,8 @@ STR = {
  "s3": "3. დრაივერი არ არის?", "web": "მწარმოებლის გვერდის გახსნა", "deb": "ჩამოტვირთული .deb-ის დაყენება…",
  "s4": "4. დამატება", "add": "პრინტერის დამატება", "driverless": "დრაივერის გარეშე (ქსელი)",
  "s5": "5. შემოწმება", "queue": "რიგი:", "test": "სატესტო გვერდი", "log": "ლოგი",
+ "hub": "PrintHub-ის გახსნა (ფაილების ბეჭდვა)",
+ "hub_missing": "PrintHub დაყენებული არ არის.\n\nის PDF-ს, სურათებსა და Office ფაილებს ბეჭდავს წინასწარი ნახვითა და სრული პარამეტრებით.\nდააყენეთ ხელსაწყოების საქაღალდიდან:\n\n./install.sh printhub",
  "pick": "ჯერ სიაში აირჩიეთ პრინტერი.", "err": "შეცდომა", "info": "პრინტერის დაყენება",
  "searching": "ინსტალირებულ დრაივერებში ვეძებ (რამდენიმე წამი)…",
  "found": "ნაპოვნია {n} შესაბამისი დრაივერი.", "notfound": "„{m}“-ისთვის დაყენებული დრაივერი არ არის. გადადით მე-3 ნაბიჯზე.",
@@ -264,6 +268,8 @@ class App(tk.Tk):
         self.cmb_q.pack(side="left", padx=6)
         self.btn_test = ttk.Button(row, command=self.on_test)
         self.btn_test.pack(side="left")
+        self.btn_hub = ttk.Button(row, command=self.on_hub)
+        self.btn_hub.pack(side="left", padx=(12, 0))
 
         self.lbl_log = ttk.Label(s)
         self.lbl_log.pack(anchor="w", padx=10)
@@ -274,7 +280,7 @@ class App(tk.Tk):
         self.txt_guide.pack(fill="both", expand=True, padx=8, pady=8)
 
         self.buttons = [self.btn_detect, self.btn_find, self.btn_apt, self.btn_web, self.btn_deb,
-                        self.btn_add, self.btn_dl, self.btn_test]
+                        self.btn_add, self.btn_dl, self.btn_test, self.btn_hub]
         self.apply_lang()
         self.on_detect()
 
@@ -290,7 +296,7 @@ class App(tk.Tk):
         self.btn_apt.config(text=t("apt")); self.lbl_ppd.config(text=t("ppd"))
         self.btn_web.config(text=t("web")); self.btn_deb.config(text=t("deb"))
         self.btn_add.config(text=t("add")); self.btn_dl.config(text=t("driverless"))
-        self.lbl_q.config(text=t("queue")); self.btn_test.config(text=t("test"))
+        self.lbl_q.config(text=t("queue")); self.btn_test.config(text=t("test")); self.btn_hub.config(text=t("hub"))
         self.lbl_log.config(text=t("log"))
         self.txt_guide.config(state="normal")
         self.txt_guide.delete("1.0", "end")
@@ -495,6 +501,13 @@ class App(tk.Tk):
         self.cmb_q["values"] = qs
         if qs and not self.q_var.get():
             self.q_var.set(qs[0])
+
+    def on_hub(self):
+        """PrintHub (same toolkit) prints files with preview and settings; printer-setup only installs printers."""
+        exe = shutil.which("printhub")
+        if not exe:
+            return messagebox.showinfo(t("info"), t("hub_missing"))
+        subprocess.Popen([exe], start_new_session=True)
 
     def on_test(self):
         self.load_queues()
