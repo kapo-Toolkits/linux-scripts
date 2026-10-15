@@ -6,6 +6,7 @@
     qgis-installer-cli plan [--goal G | --recipe ID | --method A|B|C] [--channel ltr] [--branch lts] [--script | --json]
     qgis-installer-cli install [same options] [--yes] [--dry-run]
     qgis-installer-cli list
+    qgis-installer-cli update [--yes] [--dry-run]                # newest build of the QGIS installations found here
     qgis-installer-cli uninstall [--kinds apt,repo,flatpak,snap,dist,data] [--purge] [--yes] [--dry-run]
     qgis-installer-cli requirements check [--plugin postgis_manager]
     qgis-installer-cli requirements install --plugin postgis_manager [--optional] [--yes] [--dry-run]
@@ -19,7 +20,7 @@ import argparse
 import json
 import sys
 
-from . import i18n, plan, recipes, requirements, runner, system, uninstall
+from . import i18n, plan, recipes, requirements, runner, system, uninstall, update
 
 SCHEMA = 1
 KINDS = ("apt", "repo", "flatpak", "snap", "dist", "data")
@@ -131,7 +132,9 @@ def _show_plan(result, args, lang):
     if rid == "distro":
         _show(result["steps"], args, lang, "install")
         return
-    doc = _recipe_doc(rid, lang)
+    doc = _recipe_doc(rid, lang) if rid != "update" else {
+        "id": "update", "title": i18n.t("upd_title", lang), "kind": "run", "verified": "guide",
+        "verified_text": i18n.t("vf_guide", lang)}
     notes = [{"key": k, "text": t("rcw_" + k)} for k in result["notes"]]
     manual = [{"title": t("rcm_" + m["title"]), "text": m["text"]} for m in result["manual"]]
     if args.json:
@@ -154,6 +157,13 @@ def _show_plan(result, args, lang):
         print(m["text"])
     for n in notes:
         print("\n* " + n["text"])
+
+
+def _update_cmd(args, sysinfo, items, lang):
+    result = update.plan(items, sysinfo)
+    result["recipe"] = "update"
+    _show_plan(result, args, lang)
+    return _execute(result["steps"], args, lang) if result["steps"] else 0
 
 
 def _recipes_cmd(args, sysinfo, lang):
@@ -322,6 +332,10 @@ def build_parser():
 
     sub.add_parser("list", help="every QGIS installation found on this machine")
 
+    p = sub.add_parser("update", help="update the QGIS installations found here (shows the commands first; close QGIS first)")
+    p.add_argument("--yes", action="store_true", help="do not ask")
+    p.add_argument("--dry-run", action="store_true", help="only show the commands")
+
     p = sub.add_parser("uninstall", help="remove QGIS installations (user data only when asked for)")
     p.add_argument("--kinds", help="comma separated: " + ",".join(KINDS) + " (default: all except data)")
     p.add_argument("--purge", action="store_true", help="also delete system configuration (apt purge)")
@@ -377,6 +391,9 @@ def main(argv=None):
             for it in items:
                 print("- " + i18n.label_for(it, lang))
         return 0
+
+    if args.cmd == "update":
+        return _update_cmd(args, sysinfo, items, lang)
 
     # uninstall
     if args.kinds:

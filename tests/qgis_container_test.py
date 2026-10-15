@@ -89,6 +89,12 @@ check("find_installs sees apt + repo", kinds == ["apt", "repo"], str(kinds))
 apt = next((i for i in items if i["kind"] == "apt"), {})
 check("apt item lists qgis-common and its origin", "qgis-common" in apt.get("pkgs", []) and "qgis.org" in apt.get("o", ""),
       apt.get("o", ""))
+# the update step the app builds for what it just found really runs (nothing newer exists: apt says it is already the newest)
+from qgis_installer import update as upd  # noqa: E402
+up = upd.plan(items, s)
+check("update plan: one root step for the apt packages", len(up["steps"]) == 1 and up["steps"][0]["root"], str(up["notes"]))
+rc, out = sh(up["steps"][0]["sh"]) if up["steps"] else (1, "")
+check("update step runs against the real repository", rc == 0 and "qgis-common" in out, out.strip().splitlines()[-1][:100] if out.strip() else "")
 steps = m.build_remove_steps(items, True, True, s)
 print(m.steps_text(steps))
 for st in steps:
