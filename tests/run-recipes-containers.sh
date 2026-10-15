@@ -21,6 +21,12 @@ run() {   # image recipe [extra args]
   docker run --rm -v "$root":/repo:ro "$img" sh -c "$PREP; python3 /repo/tests/qgis_recipes_container_test.py $*"
 }
 
+comp() {   # image: install two components for real with the command line and check the system sees them
+  echo "=================== $1  components (real install)"
+  docker run --rm -v "$root":/repo:ro "$1" sh -c "$PREP; python3 /repo/tests/qgis_components_container_test.py"
+}
+
+if [ "${1:-}" = "components" ]; then shift; comp "$@"; exit $?; fi
 if [ $# -ge 2 ]; then run "$@"; exit $?; fi
 rc=0
 run fedora:latest dnf-fedora                            || rc=1
@@ -30,4 +36,8 @@ run debian:trixie apt-distro                            || rc=1
 run debian:trixie flatpak                               || rc=1
 run debian:trixie flatpak --opt branch=lts              || rc=1
 run mageia:latest urpmi-mageia                          || rc=1
+comp debian:trixie                                      || rc=1
+comp fedora:latest                                      || rc=1
+comp opensuse/tumbleweed                                || rc=1
+comp archlinux:latest                                   || rc=1
 exit $rc

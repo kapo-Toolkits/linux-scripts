@@ -1033,5 +1033,113 @@ class UpdateCli(unittest.TestCase):
         self.assertIn("Nothing to update", out)
 
 
+# --------------------------------------------------------------------------- components (the OSGeo4W-like chooser, Linux form)
+class Components(unittest.TestCase):
+    def rows(self, pm, present=()):
+        return requirements.components(pm, which=lambda t: "/x/" + t if t in present else None,
+                                       find_spec=lambda m: object() if m in present else None)
+
+    def test_every_component_is_listed_once_in_its_category_in_order(self):
+        rows = self.rows("apt-get")
+        ids = [r["id"] for r in rows]
+        self.assertEqual(len(ids), len(set(ids)))
+        self.assertEqual(set(ids), set(requirements.REQ))                   # nothing in the table is hidden
+        cats = [r["cat"] for r in rows]
+        self.assertEqual(cats, sorted(cats, key=requirements.CATEGORIES.index))
+        self.assertEqual(set(cats), set(requirements.CATEGORIES))
+        for lang in ("en", "ka"):
+            for c in requirements.CATEGORIES:
+                self.assertIn("cat_" + c, i18n.STR[lang])
+
+    def test_present_follows_the_tools_and_modules_found(self):
+        rows = {r["id"]: r for r in self.rows("apt-get", present=("gdalinfo", "ogr2ogr", "numpy"))}
+        self.assertTrue(rows["gdal"]["present"] and rows["numpy"]["present"])
+        self.assertFalse(rows["proj"]["present"])
+        half = {r["id"]: r for r in self.rows("apt-get", present=("gdalinfo",))}
+        self.assertFalse(half["gdal"]["present"])                              # all of its tools are needed
+
+    def test_package_names_per_package_manager_and_the_python_tag_of_opensuse(self):
+        apt = {r["id"]: r for r in self.rows("apt-get")}
+        self.assertEqual((apt["gdal"]["packages"], apt["numpy"]["packages"]), (["gdal-bin"], ["python3-numpy"]))
+        arch = {r["id"]: r for r in self.rows("pacman")}
+        self.assertEqual(arch["numpy"]["packages"], ["python-numpy"])
+        self.assertTrue(arch["rasterio"]["manual"] and arch["rasterio"]["packages"] == [])
+        suse = {r["id"]: r for r in requirements.components("zypper", pyver="312")}
+        self.assertEqual(suse["numpy"]["packages"], ["python312-numpy"])
+        self.assertEqual(suse["gdal-python"]["packages"], ["python312-GDAL"])
+        self.assertEqual(self.rows("")[0]["packages"], [])                      # no package manager: nothing to install, nothing raised
+
+    def test_install_steps_are_one_root_step_and_parse(self):
+        for pm in ("apt-get", "dnf", "pacman", "zypper", "apk"):
+            ids = [r["id"] for r in self.rows(pm) if r["packages"]]
+            steps, manual = requirements.install_steps(ids, pm)
+            self.assertEqual(len(steps), 1)
+            self.assertTrue(steps[0]["root"] and sh_syntax_ok(steps[0]["sh"]))
+
+
+class ComponentsCli(unittest.TestCase):
+    call = Cli.call
+
+    def args(self, name="ubuntu-noble", pm="apt-get"):
+        return ["--lang", "en", "--os-release", os.path.join(FIX, name), "--pm", pm, "--arch", "amd64"]
+
+    def present(self, *ids):
+        real = requirements.is_present
+        return mock.patch.object(requirements, "is_present", lambda rid, **kw: rid in ids), real
+
+    def test_list_groups_by_category_and_marks_what_is_present(self):
+        patch, _ = self.present("gdal")
+        with patch:
+            rc, out, _ = self.call(*self.args(), "components")
+        self.assertEqual(rc, 0)
+        self.assertLess(out.index("Command line tools"), out.index("GIS engines"))
+        self.assertLess(out.index("GIS engines"), out.index("Python libraries"))
+        self.assertRegex(out, r"\[x\] gdal +GDAL command line tools")
+        self.assertRegex(out, r"\[ \] numpy +NumPy +-> python3-numpy")
+        with patch:
+            rc, out, _ = self.call(*self.args(), "components", "list", "--category", "db")
+        self.assertIn("Database clients", out)
+        self.assertNotIn("numpy", out)
+
+    def test_list_json(self):
+        patch, _ = self.present("numpy")
+        with patch:
+            rc, out, _ = self.call("--json", *self.args(), "components")
+        doc = json.loads(out)
+        self.assertEqual((rc, doc["package_manager"]), (0, "apt-get"))
+        rows = {r["id"]: r for r in doc["components"]}
+        self.assertTrue(rows["numpy"]["present"] and not rows["scipy"]["present"])
+        self.assertEqual(rows["scipy"]["packages"], ["python3-scipy"])
+
+    def test_install_shows_the_commands_and_skips_what_is_there(self):
+        patch, _ = self.present("numpy")
+        with patch, mock.patch.object(runner, "run_steps") as run:
+            rc, out, _ = self.call(*self.args(), "components", "install", "numpy", "scipy", "gdal", "--dry-run")
+        self.assertEqual(rc, 0)
+        self.assertIn("NumPy: already installed.", out)
+        self.assertIn("apt-get install -y gdal-bin python3-scipy", out)
+        self.assertNotIn("python3-numpy", out)
+        run.assert_not_called()
+
+    def test_install_of_nothing_new_unknown_ids_and_no_package(self):
+        patch, _ = self.present("numpy")
+        with patch:
+            rc, out, _ = self.call(*self.args(), "components", "install", "numpy")
+            self.assertEqual((rc, out.strip()), (0, "NumPy: already installed."))
+            rc, _, err = self.call(*self.args(), "components", "install", "nonsense")
+            self.assertEqual(rc, 2)
+            self.assertIn("Unknown component 'nonsense'. Known: ", err)
+            rc, _, err = self.call(*self.args("arch", "pacman"), "components", "install", "rasterio")
+        self.assertEqual(rc, 2)                                                   # Arch has no package for it: said, not guessed
+        self.assertIn("no package for your system", err)
+
+    def test_georgian(self):
+        patch, _ = self.present()
+        with patch:
+            rc, out, _ = self.call("--lang", "ka", "--os-release", os.path.join(FIX, "ubuntu-noble"), "--pm", "apt-get",
+                                   "--arch", "amd64", "components", "--category", "python")
+        self.assertIn("Python-ის ბიბლიოთეკები", out)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=1)
