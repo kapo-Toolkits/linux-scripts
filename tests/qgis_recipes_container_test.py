@@ -83,6 +83,10 @@ elif rid == "flatpak":
     rc, out = sh(remote)
     check("the Flathub remote can be added", rc == 0, out.strip()[-80:])
     branch = opts.get("branch", "stable")
+    from qgis_installer import simulate
+    sim = simulate.simulate_line(last.splitlines()[-1], run=lambda cmd, timeout=180: sh(" ".join(cmd)))
+    check("the simulation reads the size of the Flatpak from the real remote-info", sim is not None and sim["download"] and sim["disk"], sim)
+    print("   flatpak size:", sim and (sim["download"], sim["disk"]))
     rc, out = sh(f"flatpak remote-info flathub org.qgis.qgis//{branch}")
     check(f"org.qgis.qgis//{branch} exists on Flathub", rc == 0 and re.search(r"Ref:\s+app/org\.qgis\.qgis/\S+/" + branch, out) is not None,
           out.strip()[:80])

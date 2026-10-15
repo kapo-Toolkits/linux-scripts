@@ -34,11 +34,23 @@ def run(*argv):
 s = system.detect()
 pm = s["pm"]
 print("system:", s["name"], "| pm:", pm)
-WANT = ["proj", "numpy"]                      # small, and present in every distribution we support
+WANT = ["exiftool", "numpy"]                  # small everywhere (PROJ is not: on Fedora it brings 779 MiB of datum grids)
 rows = {r["id"]: r for r in requirements.components(pm)}
 check("both components have a package for this package manager", all(rows[i]["packages"] for i in WANT),
       {i: rows[i]["packages"] for i in WANT})
 check("both are missing before", not any(rows[i]["present"] for i in WANT), [i for i in WANT if rows[i]["present"]])
+
+# before installing: ask the real package manager what it would do (simulation), as the preview does
+from qgis_installer import simulate  # noqa: E402
+steps, _ = requirements.install_steps(WANT, pm)
+sim = simulate.explain(steps)
+print(simulate.format_text(sim, "en"))
+check("the simulation understood the real package manager's answer", len(sim["items"]) == 1 and sim["unsimulated"] == 0, sim)
+if sim["items"]:
+    it = sim["items"][0]
+    check("it says how many packages would be installed", it["installs"] > 0, it)
+    check("it says how much would be downloaded or used (or the tool does not tell)", bool(it.get("download") or it.get("disk")) or pm == "apk", it)
+    check("installing two small components removes nothing", sim["warnings"] == [] and it["remove_count"] == 0, sim["warnings"])
 
 rc, out, err = run("components", "install", *WANT, "--yes")
 print(out[-600:])
@@ -52,16 +64,24 @@ check("the JSON list agrees", rc == 0 and all(doc[i]["present"] for i in WANT))
 rc, out, _ = run("components", "install", *WANT, "--yes")
 check("installing again installs nothing and says so", rc == 0 and out.count("already installed") == 2, out)
 
+# a removal that drags dependents along is reported (apt: numpy <- scipy, installed here only for this check)
+if pm == "apt-get":
+    import subprocess
+    subprocess.run(["apt-get", "install", "-y", "-qq", "python3-scipy"], capture_output=True)
+    rm = simulate.explain([{"root": True, "sh": "apt-get remove -y python3-numpy\n"}])
+    keys = [k for k, _ in rm["warnings"]]
+    check("removing numpy is reported to take scipy with it", keys == ["sim_removes_dependents"] and "python3-scipy" in rm["warnings"][0][1]["names"], rm)
+
 # "is a newer build waiting?" asked of the real package manager about what was just installed: it must answer yes or no, not "could not tell"
 from qgis_installer import instances  # noqa: E402
-pkg = rows["proj"]["packages"][0]
+pkg = rows[WANT[0]]["packages"][0]
 item = ({"kind": "apt", "pkgs": [pkg], "v": "x", "root": True} if pm == "apt-get"
         else {"kind": "dist", "pm": pm, "pkgs": [pkg], "v": "x", "root": True})
 res = instances.check_updates([item])[0]
 check("the package manager answers whether a newer build is waiting (not 'could not tell')", res["update"] in (True, False), res)
 check("a package that was just installed from the current index has no update waiting", res["update"] is False, res)
 rows_i = instances.list_instances([item], which=lambda c: None)
-check("instances lists it with an id and no start command (it is a library, not QGIS)", len(rows_i) == 1 and rows_i[0]["launch"] is None, rows_i)
+check("instances lists it with an id and no start command (it is not QGIS)", len(rows_i) == 1 and rows_i[0]["launch"] is None, rows_i)
 
 print("\nRESULT:", "ALL PASS" if not fails else f"{len(fails)} FAILED: {fails}")
 sys.exit(1 if fails else 0)
