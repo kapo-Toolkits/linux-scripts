@@ -1,0 +1,4 @@
+PRETTY_NAME="Mageia 9"
+NAME="Mageia"
+ID=mageia
+ID_LIKE="mandriva fedora"

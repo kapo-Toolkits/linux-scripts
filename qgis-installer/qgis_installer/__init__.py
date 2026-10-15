@@ -5,19 +5,19 @@ later, the QGIS plugin. Everything here is plain Python 3 and importable on any 
 functions that look at the machine (detect, find_installs) return empty/neutral data off Linux.
 """
 from .i18n import STR, label_for, steps_text, t
-from . import requirements  # noqa: F401
+from . import recipes, requirements  # noqa: F401
 from .plan import build_install, sources_text, steps_script
 from .runner import default_elevator, needs_elevation_fallback, run_steps, write_root_script
-from .system import (CHANNELS, METHODS, KEY_FPR, KEY_URL, KEYRING, LATEST, LTR, LTR_ONLY_CHANNELS, SOURCES,
-                     SUFFIX, SUPPORT, allowed_channels, channels_for, default_channel, detect, installed_qgis,
+from .system import (CHANNELS, KEY_FPR, KEY_URL, KEYRING, LATEST, LTR, LTR_ONLY_CHANNELS, SOURCES,
+                     SUFFIX, SUPPORT, allowed_channels, default_channel, detect, installed_qgis,
                      method_available, read_os_release)
 from .uninstall import USER_DATA, build_remove_steps, default_selection, find_installs
 
 __all__ = [
     "STR", "label_for", "steps_text", "t", "build_install", "sources_text", "steps_script",
     "default_elevator", "needs_elevation_fallback", "run_steps", "write_root_script",
-    "CHANNELS", "METHODS", "KEY_FPR", "KEY_URL", "KEYRING", "LATEST", "LTR", "LTR_ONLY_CHANNELS", "SOURCES",
-    "SUFFIX", "SUPPORT", "allowed_channels", "channels_for", "default_channel", "detect", "installed_qgis",
+    "CHANNELS", "KEY_FPR", "KEY_URL", "KEYRING", "LATEST", "LTR", "LTR_ONLY_CHANNELS", "SOURCES",
+    "SUFFIX", "SUPPORT", "allowed_channels", "default_channel", "detect", "installed_qgis",
     "method_available", "read_os_release", "USER_DATA", "build_remove_steps", "default_selection",
-    "find_installs", "requirements",
+    "find_installs", "requirements", "recipes",
 ]

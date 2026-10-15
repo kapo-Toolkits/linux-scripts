@@ -5,6 +5,10 @@ from . import system
 from .system import SUFFIX
 
 
+FLATPAK_INSTALL = {"apt-get": "apt-get install -y flatpak", "dnf": "dnf install -y flatpak",
+                   "pacman": "pacman -S --noconfirm flatpak", "zypper": "zypper --non-interactive install flatpak"}
+
+
 def sources_text(sysinfo, channel):
     uri = f"https://qgis.org/{sysinfo['family']}{SUFFIX[channel]}"
     return (f"Types: deb\nURIs: {uri}\nSuites: {sysinfo['code']}\nArchitectures: amd64\n"
@@ -39,77 +43,22 @@ apt-get install -y {' '.join(names)}
     if method == "B":
         steps = []
         if not shutil.which("flatpak"):
-            pm = sysinfo["pm"]
-            inst = {"apt-get": "apt-get install -y flatpak", "dnf": "dnf install -y flatpak",
-                    "pacman": "pacman -S --noconfirm flatpak", "zypper": "zypper --non-interactive install flatpak"}.get(pm)
+            inst = FLATPAK_INSTALL.get(sysinfo["pm"])
             if inst:
                 steps.append({"root": True, "sh": "set -eu\n" + inst + "\n"})
-        steps.append({"root": False, "sh": """set -eu
-flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
-flatpak install --user -y flathub org.qgis.qgis
+        # Flathub has two branches (stable = QGIS 4 / Qt 6, lts = QGIS 3 LTR / Qt 5): without one,
+        # a non-interactive install fails with "No ref chosen"
+        branch = pkgs.get("branch", "stable")
+        scope = pkgs.get("scope", "user")
+        steps.append({"root": scope == "system", "sh": f"""set -eu
+flatpak remote-add --{scope} --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+flatpak install --{scope} -y flathub org.qgis.qgis//{branch}
 """})
         return steps
-    if method == "D":
-        return _container_steps(sysinfo, channel, pkgs)
-    if method == "E":
-        pkg = "qgis-ltr" if channel == "ltr" else "qgis"
-        return [{"root": False, "sh": f"set -eu\nnix-shell -p {pkg} --command qgis\n"}]
-    return _distribution_steps(sysinfo, channel, pkgs)
-
-
-def _dist_names(pm, channel, pkgs):
-    """Package names of the distribution's own QGIS, following the installation guide:
-    Fedora ``qgis python3-qgis qgis-grass qgis-server``, openSUSE ``qgis qgis-plugin-grass`` (+ ``qgis-ltr``)."""
-    if pm == "dnf":
-        return ["qgis"] + (["python3-qgis"] if pkgs["python"] else []) + (["qgis-grass"] if pkgs["grass"] else []) \
-            + (["qgis-server"] if pkgs["server"] else [])
-    if pm == "zypper":
-        return ["qgis-ltr" if channel == "ltr" else "qgis"] + (["qgis-plugin-grass"] if pkgs["grass"] else [])
-    if pm == "apt-get":
-        return ["qgis"] + (["qgis-plugin-grass"] if pkgs["grass"] else []) + (["python3-qgis"] if pkgs["python"] else []) \
-            + (["qgis-server"] if pkgs["server"] else [])
-    return ["qgis"]
-
-
-def _distribution_steps(sysinfo, channel, pkgs):
     pm = sysinfo["pm"]
-    names = _dist_names(pm, channel, pkgs)
-    if sysinfo.get("atomic"):       # Fedora Atomic Desktops: layer the packages (needs a reboot)
-        return [{"root": True, "sh": "set -eu\nrpm-ostree install --idempotent " + " ".join(names)
-                 + "\necho 'Reboot to use the layered packages (systemctl reboot).'\n"}]
-    if pm == "pacman":
-        helper = sysinfo.get("aur_helper")
-        aur = {"ltr": "qgis-ltr", "nightly": "qgis-git"}.get(channel)
-        if aur and helper:          # not in the official repository: AUR, built by the user's helper
-            return [{"root": False, "sh": f"set -eu\n{helper} -S --needed {aur}\n"}]
-        return [{"root": True, "sh": "set -eu\npacman -S --noconfirm qgis\n"}]
-    cmd = {"apt-get": "apt-get install -y ", "dnf": "dnf install -y ",
-           "zypper": "zypper --non-interactive install "}.get(pm)
-    return [{"root": True, "sh": f"set -eu\n{cmd}{' '.join(names)}\n"}] if cmd else []
-
-
-def _container_steps(sysinfo, channel, pkgs):
-    """Distrobox / Toolbx container with QGIS inside (for immutable systems). Guide: the openSUSE image for
-    Distrobox, the Fedora toolbox image for Toolbx; the Fedora image is pinned to the host's release."""
-    tool, box = sysinfo.get("container_tool"), system.CONTAINER_BOX
-    fedora_host = sysinfo.get("id") == "fedora"
-    fimg = system.FEDORA_IMAGE + ":" + (sysinfo.get("version_id") or "latest")
-    use_suse = tool == "distrobox" and not fedora_host
-    image = system.OPENSUSE_IMAGE if use_suse else fimg
-    pm = "zypper" if use_suse else "dnf"
-    inst = {"zypper": "sudo zypper --non-interactive install ", "dnf": "sudo dnf install -y "}[pm] \
-        + " ".join(_dist_names(pm, channel, pkgs))
-    if tool == "distrobox":
-        sh = (f"set -eu\ndistrobox list | grep -q '{box}' || distrobox create --yes --name {box} --image {image}\n"
-              f"distrobox enter --name {box} -- {inst}\n"
-              f"distrobox enter --name {box} -- distrobox-export --app qgis\n")
-    elif tool == "toolbox":
-        sh = (f"set -eu\ntoolbox list --containers | grep -q '{box}' || toolbox create --container {box} --image {image}\n"
-              f"toolbox run --container {box} {inst}\n"
-              f"echo 'Start QGIS with: toolbox run --container {box} qgis'\n")
-    else:
-        return []
-    return [{"root": False, "sh": sh}]
+    cmd = {"apt-get": "apt-get install -y qgis qgis-plugin-grass", "dnf": "dnf install -y qgis python3-qgis qgis-grass",
+           "pacman": "pacman -S --noconfirm qgis", "zypper": "zypper --non-interactive install qgis qgis-plugin-grass"}.get(pm)
+    return [{"root": True, "sh": f"set -eu\n{cmd}\n"}] if cmd else []
 
 
 def steps_script(steps):

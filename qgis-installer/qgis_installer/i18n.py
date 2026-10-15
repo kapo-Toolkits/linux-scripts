@@ -11,15 +11,6 @@ STR = {
  "mA": "A. Official QGIS repository (Debian/Ubuntu/Mint) — recommended",
  "mB": "B. Flatpak (Flathub) — any distribution, your user only",
 "mC": "C. Distribution package — simplest, usually older",
- "mD": "D. Container (Distrobox / Toolbx) — for immutable systems, QGIS lives in its own box",
- "mE": "E. Nix (nix-shell) — NixOS / Nix users, runs QGIS from nixpkgs",
- "ch_latest_dist": "Stable (what the repository calls qgis)", "ch_ltr_dist": "Long-term release (qgis-ltr)",
- "ch_nightly_dist": "Development build from git (AUR qgis-git)",
- "st_atomic": "ℹ Fedora Atomic system: packages are layered with rpm-ostree and need a reboot. Flatpak (B) or a container (D) avoid that.",
- "st_suse_imm": "ℹ Immutable openSUSE: the guide recommends a Distrobox container (D) instead of installing on the base system.",
- "st_nix": "ℹ Nix detected: option E starts QGIS from nixpkgs; for NixOS add pkgs.qgis (or pkgs.qgis-ltr) to environment.systemPackages in configuration.nix.",
- "st_aur": "ℹ Arch: the official repository has qgis; qgis-ltr and qgis-git come from the AUR through {h}.",
- "st_noaur": "ℹ Arch: install an AUR helper (yay or paru) to get the LTR or git version; the official qgis is always available.",
  "k_container": "Container {tool}: {name} (QGIS lives inside; removing it deletes the container's own files)",
  "ch_latest": "Latest release {v}", "ch_ltr": "Long-term release (LTR) {v} — most stable",
  "ch_nightly-release": "Nightly of the next point release", "ch_nightly-ltr": "Nightly of the next LTR point release",
@@ -53,14 +44,18 @@ STR = {
  "k_flatpak": "Flatpak ({i}) org.qgis.qgis {v}", "k_snap": "Snap: qgis {v}", "k_dist": "Distribution package ({pm}): qgis {v}",
  "k_data": "User data: {p} ({sz})", "k_unknown": "unknown",
  "guide": (
-  "WHICH METHOD?\n\n"
-  "A  Official repository — newest QGIS, updated through apt. Debian 12/13/sid, Ubuntu 22.04–26.04 and derivatives (Linux Mint uses its Ubuntu codename).\n"
-  "   Debian 12, Ubuntu 22.04 and 24.04 get only the LTR line (their libraries are too old for QGIS 4).\n"
-  "B  Flatpak — works on every distribution, sandboxed, installs for your user. Slightly bigger and files access is sandboxed.\n"
-  "C  Distribution package — tiny effort, but often an old QGIS. Fedora: qgis python3-qgis qgis-grass; openSUSE: qgis (or qgis-ltr) qgis-plugin-grass; Arch: qgis, and qgis-ltr / qgis-git from the AUR.\n"
-  "D  Container — Distrobox (openSUSE image) or Toolbx (Fedora image): QGIS runs from its own box and is exported to the menu. The way for immutable systems (Fedora Atomic, openSUSE MicroOS/Aeon/Kalpa).\n"
-  "E  Nix — nix-shell -p qgis (or qgis-ltr) starts QGIS without installing it; on NixOS add the package to configuration.nix.\n"
-  "Not covered because the guide gives no commands or the distribution is gone: Slackware (SlackBuilds.org), Mandriva, Spack (long source build).\n\n"
+  "WHICH WAY?\n\n"
+  "Say what you want and the program recommends the best way for your system, with the reason. You can pick any other way by hand.\n"
+  "• Stable and long-term (LTR) - fewest surprises; best for work and teaching.\n"
+  "• Newest release - newest features (a new major version can be rough in its first months).\n"
+  "• Next to my QGIS - try QGIS 4 without touching the one you have (Flatpak or a container).\n\n"
+  "Official repository (Debian 12/13/sid, Ubuntu 22.04-26.04, Mint) - updated through apt; Debian 12, Ubuntu 22.04 and 24.04 get only the LTR line. "
+  "Flatpak - every distribution, sandboxed; branch stable is QGIS 4, branch lts is the old QGIS 3 line on an end-of-life runtime. "
+  "Fedora, openSUSE, Arch, Mageia - the distribution's own package (Arch also has the AUR: built from source). "
+  "Fedora Atomic - rpm-ostree layering (reboot needed). Containers (Distrobox, Toolbx) - QGIS in its own box. Spack - builds everything from source. "
+  "NixOS and Slackware - instructions only, nothing is changed for you.\n"
+  "Under each way the program says how far it was checked: installed for real in a container, package names and a dry run in a container, "
+  "or only taken from the installation guide (not run by the author).\n\n"
   "CHANNELS\n\n"
   "• Latest release — newest features (new major version first months can be rough).\n"
   "• LTR (long-term) — fewer changes, best for work and teaching.\n"
@@ -83,6 +78,92 @@ STR = {
  "rq_none": "{plugin} needs nothing from the operating system.",
  "rq_all_ok": "Everything needed is already installed.",
  "rq_unknown_plugin": "Unknown plugin '{plugin}'. Known: {known}",
+ "rc_apt-official": "Official QGIS repository (Debian / Ubuntu / Mint…)",
+ "rc_apt-distro": "Distribution package (apt)",
+ "rc_flatpak": "Flatpak (Flathub)",
+ "rc_dnf-fedora": "Fedora package (dnf)",
+ "rc_rpm-ostree-fedora": "Fedora Atomic (rpm-ostree)",
+ "rc_zypper-opensuse": "openSUSE package (zypper)",
+ "rc_pacman-arch": "Arch Linux package (pacman)",
+ "rc_aur-helper": "Arch User Repository (AUR): builds from source",
+ "rc_urpmi-mageia": "Mageia package (urpmi)",
+ "rc_spack": "Spack: builds everything from source",
+ "rc_distrobox": "Distrobox container (openSUSE Tumbleweed)",
+ "rc_toolbx": "Toolbx container (Fedora)",
+ "rc_nix-manual": "NixOS (instructions)",
+ "rc_slackware-manual": "Slackware (instructions)",
+ "rcn_no_apt": "needs a Debian/Ubuntu based system with apt",
+ "rcn_codename": "this release is not in the official repository's list",
+ "rcn_arch": "the official repository is built for amd64 only",
+ "rcn_no_flatpak": "Flatpak is missing and no package manager was found to install it",
+ "rcn_not_fedora": "needs Fedora",
+ "rcn_immutable": "this is an immutable system: use Flatpak or a container",
+ "rcn_no_dnf": "dnf was not found",
+ "rcn_not_atomic": "needs a Fedora Atomic Desktop with rpm-ostree",
+ "rcn_not_opensuse": "needs openSUSE",
+ "rcn_no_zypper": "zypper was not found",
+ "rcn_not_arch": "needs Arch Linux or a derivative",
+ "rcn_no_pacman": "pacman was not found",
+ "rcn_no_aur_helper": "needs an AUR helper (yay or paru)",
+ "rcn_not_mageia": "needs Mageia (the successor of Mandriva)",
+ "rcn_no_urpmi": "urpmi was not found",
+ "rcn_no_spack": "Spack is not installed",
+ "rcn_no_distrobox": "Distrobox is not installed",
+ "rcn_no_toolbox": "Toolbx is not installed",
+ "rcn_not_nixos": "only for NixOS",
+ "rcn_not_slackware": "only for Slackware",
+ "rcw_apt_other_sources": "Remove QGIS and GRASS packages installed from other repositories first (the guide asks for this).",
+ "rcw_apt_ubuntugis": "Builds that use the ubuntugis libraries also exist for Ubuntu 22.04 and 24.04 (see the guide); they are not offered here.",
+ "rcw_distro_older": "Distribution packages are often older than the official repository.",
+ "rcw_flatpak_portal": "Some systems also need xdg-desktop-portal plus xdg-desktop-portal-gtk, -kde or -cosmic for file dialogs.",
+ "rcw_flatpak_pip": "Extra Python modules for plugins: flatpak run --devel --command=pip3 org.qgis.qgis install NAME --user",
+ "rcw_flatpak_lts_eol": "The LTR Flatpak (branch lts) is built on an end-of-life Qt 5.15 runtime.",
+ "rcw_fedora_version": "The version is the one your Fedora release carries (check with: dnf info qgis).",
+ "rcw_ostree_reboot": "rpm-ostree changes apply after a reboot.",
+ "rcw_ostree_flatpak": "The guide recommends Flatpak on Atomic Desktops.",
+ "rcw_suse_no_ltr": "openSUSE has no separate LTR package (qgis-ltr is not in the repositories): use the Flatpak lts branch or a container for the LTR.",
+ "rcw_arch_no_ltr": "The official repository carries the latest line only; LTR and git are in the AUR.",
+ "rcw_aur_build": "AUR packages are built from source on your computer from a build recipe anyone can submit: read it before you build. Runs as your user.",
+ "rcw_mageia_names": "The guide's old Mandriva line says qgis-python; Mageia has qgis and qgis-grass.",
+ "rcw_spack_long": "Spack builds QGIS and all its dependencies from source: it can take hours.",
+ "rcw_spack_load": "Afterwards run: spack load qgis, then qgis",
+ "rcw_box_alongside": "Runs in a separate container: your current QGIS is not touched.",
+ "rcw_box_update_distrobox": "Update later with: distrobox upgrade --all",
+ "rcw_box_toolbx_launch": "Toolbx does not add a menu entry: start with: toolbox run --container qgis-box qgis",
+ "rcw_nix_config": "Nothing is changed for you: copy the snippet into configuration.nix yourself and rebuild.",
+ "rcm_nix_try": "Try it without installing",
+ "rcm_nix_config": "configuration.nix (system install)",
+ "rcm_nix_python": "Extra Python packages",
+ "rcm_slackware_builds": "SlackBuilds (build scripts for Slackware)",
+ "why_apt_ltr": "The official repository gives you the long-term release (LTR) with normal apt updates.",
+ "why_distro_tracks_release": "Your distribution's own package is the simplest and is maintained for your release.",
+ "why_flatpak_lts": "Flatpak works on every system; the lts branch is the long-term QGIS 3 line.",
+ "why_apt_latest": "The official repository has the newest release for your system.",
+ "why_rolling_latest": "Your distribution ships the newest QGIS in its own repositories.",
+ "why_flatpak_stable": "Flatpak gives you the newest QGIS (the stable branch) on any system.",
+ "why_alongside_flatpak": "Flatpak is isolated: QGIS 4 runs next to your current QGIS and does not change it.",
+ "why_alongside_box": "A container keeps the new QGIS apart from your system.",
+ "why_nothing_fits": "No recipe fits this system. See the installation guide: {url}",
+ "goal_stable": "Stable and long-term (LTR)",
+ "goal_latest": "Newest release",
+ "goal_alongside": "Try QGIS 4 next to my QGIS",
+ "vf_container": "package names and a dry run were checked in a container",
+ "vf_real": "installed for real in a container",
+ "vf_flathub": "the Flathub branches were checked",
+ "vf_guide": "steps taken from the guide; not run by the author",
+ "vf_names": "package names exist; the install was not run",
+ "vf_manual": "instructions only",
+ "rc_manual_only": "Nothing to run: follow the instructions above.",
+ "rc_unknown": "Unknown recipe '{recipe}'. Known: {known}",
+ "rc_not_applicable": "Recipe {recipe} does not apply here: {why}",
+ "f_goal": "What do you want?", "f_recipe": "Way to install", "f_ropts": "Options",
+ "recommended": "Recommended for your system: {name}.",
+ "o_channel": "Version", "o_branch": "Flatpak branch", "o_scope": "Install for",
+ "o_geo": "Also add the openSUSE Application:Geo repository",
+ "br_stable": "stable - the newest QGIS (QGIS 4)", "br_lts": "lts - long-term QGIS 3 (old runtime, no longer maintained)",
+ "sc_user": "my user only (no password needed)", "sc_system": "the whole system",
+ "aur_ltr": "qgis-ltr - long-term release (built from source)", "aur_testing": "qgis-git - development version (built from source)",
+ "nixch_latest": "qgis - newest", "nixch_ltr": "qgis-ltr - long-term",
 },
 "ka": {
  "title": "QGIS-ის დაყენება", "lang_btn": "English", "tab_inst": "დაყენება", "tab_guide": "ინსტრუქცია",
@@ -91,15 +172,6 @@ STR = {
  "mA": "ა. ოფიციალური QGIS რეპოზიტორია (Debian/Ubuntu/Mint) — რეკომენდებული",
  "mB": "ბ. Flatpak (Flathub) — ნებისმიერ დისტრიბუციაზე, მხოლოდ თქვენთვის",
 "mC": "გ. დისტრიბუციის პაკეტი — უმარტივესი, ხშირად ძველი ვერსია",
- "mD": "დ. კონტეინერი (Distrobox / Toolbx) — immutable სისტემებისთვის, QGIS საკუთარ კონტეინერში ცხოვრობს",
- "mE": "ე. Nix (nix-shell) — NixOS/Nix მომხმარებლებისთვის, QGIS-ს nixpkgs-იდან უშვებს",
- "ch_latest_dist": "სტაბილური (რეპოზიტორიის qgis)", "ch_ltr_dist": "გრძელვადიანი რელიზი (qgis-ltr)",
- "ch_nightly_dist": "განვითარების ბილდი git-იდან (AUR qgis-git)",
- "st_atomic": "ℹ Fedora Atomic სისტემა: პაკეტები rpm-ostree-ით ემატება და გადატვირთვა სჭირდება. Flatpak (ბ) ან კონტეინერი (დ) ამას თავიდან აგარიდებთ.",
- "st_suse_imm": "ℹ Immutable openSUSE: სახელმძღვანელო ურჩევს Distrobox კონტეინერს (დ) და არა ძირითად სისტემაზე დაყენებას.",
- "st_nix": "ℹ Nix ნაპოვნია: ვარიანტი ე QGIS-ს nixpkgs-იდან უშვებს; NixOS-ზე configuration.nix-ში environment.systemPackages-ს დაუმატეთ pkgs.qgis (ან pkgs.qgis-ltr).",
- "st_aur": "ℹ Arch: ოფიციალურ რეპოზიტორიაშია qgis; qgis-ltr და qgis-git AUR-იდან მოდის {h}-ით.",
- "st_noaur": "ℹ Arch: LTR ან git ვერსიისთვის დააყენეთ AUR helper (yay ან paru); ოფიციალური qgis ყოველთვის ხელმისაწვდომია.",
  "k_container": "კონტეინერი {tool}: {name} (QGIS შიგნითაა; წაშლისას კონტეინერის საკუთარი ფაილებიც იკარგება)",
  "ch_latest": "უახლესი რელიზი {v}", "ch_ltr": "გრძელვადიანი რელიზი (LTR) {v} — ყველაზე სტაბილური",
  "ch_nightly-release": "შემდეგი point-რელიზის ღამის ბილდი", "ch_nightly-ltr": "შემდეგი LTR point-რელიზის ღამის ბილდი",
@@ -133,14 +205,18 @@ STR = {
  "k_flatpak": "Flatpak ({i}) org.qgis.qgis {v}", "k_snap": "Snap: qgis {v}", "k_dist": "დისტრიბუციის პაკეტი ({pm}): qgis {v}",
  "k_data": "მომხმარებლის მონაცემები: {p} ({sz})", "k_unknown": "უცნობი",
  "guide": (
-  "რომელი მეთოდი?\n\n"
-  "ა  ოფიციალური რეპოზიტორია — ყველაზე ახალი QGIS, განახლება apt-ით. Debian 12/13/sid, Ubuntu 22.04–26.04 და წარმოებულები (Linux Mint-ი თავის Ubuntu-ს კოდურ სახელს იყენებს).\n"
-  "   Debian 12-ს, Ubuntu 22.04-სა და 24.04-ს მხოლოდ LTR ხაზი აქვს (ბიბლიოთეკები QGIS 4-ისთვის ძველია).\n"
-  "ბ  Flatpak — ნებისმიერ დისტრიბუციაზე მუშაობს, იზოლირებულია, თქვენი მომხმარებლისთვის ყენდება. ცოტა მძიმეა და ფაილებზე წვდომა შეზღუდულია.\n"
-  "გ  დისტრიბუციის პაკეტი — უმარტივესი, მაგრამ ხშირად ძველი QGIS. Fedora: qgis python3-qgis qgis-grass; openSUSE: qgis (ან qgis-ltr) qgis-plugin-grass; Arch: qgis, ხოლო qgis-ltr / qgis-git — AUR-იდან.\n"
-  "დ  კონტეინერი — Distrobox (openSUSE-ის იმიჯი) ან Toolbx (Fedora-ს იმიჯი): QGIS საკუთარი კონტეინერიდან მუშაობს და მენიუში გამოდის. immutable სისტემებისთვის (Fedora Atomic, openSUSE MicroOS/Aeon/Kalpa).\n"
-  "ე  Nix — nix-shell -p qgis (ან qgis-ltr) QGIS-ს დაყენების გარეშე უშვებს; NixOS-ზე პაკეტი configuration.nix-ში დაამატეთ.\n"
-  "არ არის მხარდაჭერილი, რადგან სახელმძღვანელოში ბრძანებები არ წერია ან დისტრიბუცია აღარ არსებობს: Slackware (SlackBuilds.org), Mandriva, Spack (გრძელი კომპილაცია).\n\n"
+  "რომელი გზა?\n\n"
+  "თქვენ ამბობთ, რა გსურთ და პროგრამა თქვენი სისტემისთვის საუკეთესო გზას გირჩევთ მიზეზითურთ. ნებისმიერი სხვა გზის ხელით არჩევაც შეგიძლიათ.\n"
+  "• სტაბილური და გრძელვადიანი (LTR) - ყველაზე ნაკლები სიურპრიზი, სამუშაოსა და სწავლებისთვის საუკეთესო.\n"
+  "• უახლესი გამოშვება - ახალი შესაძლებლობები (ახალი მთავარი ვერსია პირველ თვეებში შეიძლება უხეში იყოს).\n"
+  "• ჩემი QGIS-ის გვერდით - QGIS 4-ის საცდელად, ახლანდელის შეხების გარეშე (Flatpak ან კონტეინერი).\n\n"
+  "ოფიციალური რეპოზიტორია (Debian 12/13/sid, Ubuntu 22.04-26.04, Mint) - ახლდება apt-ით. Debian 12-ს, Ubuntu 22.04-სა და 24.04-ს მხოლოდ LTR ხაზი აქვს. "
+  "Flatpak - ნებისმიერ დისტრიბუციაზე, იზოლირებული. შტო stable არის QGIS 4, შტო lts კი ძველი QGIS 3 ხაზი უკვე აღარ მხარდაჭერილ გარემოზე. "
+  "Fedora, openSUSE, Arch, Mageia - დისტრიბუციის საკუთარი პაკეტი (Arch-ს აქვს AUR-იც, რომელიც წყაროდან იგება). "
+  "Fedora Atomic - rpm-ostree-ით (საჭიროა გადატვირთვა). კონტეინერები (Distrobox, Toolbx) - QGIS საკუთარ ყუთში. Spack - ყველაფერს წყაროდან აგებს. "
+  "NixOS და Slackware - მხოლოდ ინსტრუქცია, თქვენთვის არაფერი იცვლება.\n"
+  "თითოეულ გზას პროგრამა წერს, რამდენად არის შემოწმებული: კონტეინერში ნამდვილად დაყენდა, პაკეტების სახელები და სატესტო გაშვება კონტეინერში, "
+  "ან მხოლოდ სახელმძღვანელოდანაა აღებული (ავტორს არ გაუშვია).\n\n"
   "არხები\n\n"
   "• უახლესი რელიზი — ახალი შესაძლებლობები (ახალი მაჟორული ვერსიის პირველ თვეებში შეიძლება უხეში იყოს).\n"
   "• LTR (გრძელვადიანი) — ნაკლები ცვლილება, სამუშაოსა და სწავლებისთვის საუკეთესო.\n"
@@ -163,6 +239,92 @@ STR = {
  "rq_none": "{plugin}-ს ოპერაციული სისტემიდან არაფერი სჭირდება.",
  "rq_all_ok": "ყველაფერი საჭირო უკვე დაყენებულია.",
  "rq_unknown_plugin": "უცნობი დანამატი „{plugin}“. ცნობილია: {known}",
+ "rc_apt-official": "ოფიციალური QGIS-ის რეპოზიტორია (Debian / Ubuntu / Mint…)",
+ "rc_apt-distro": "დისტრიბუციის პაკეტი (apt)",
+ "rc_flatpak": "Flatpak (Flathub)",
+ "rc_dnf-fedora": "Fedora-ს პაკეტი (dnf)",
+ "rc_rpm-ostree-fedora": "Fedora Atomic (rpm-ostree)",
+ "rc_zypper-opensuse": "openSUSE-ს პაკეტი (zypper)",
+ "rc_pacman-arch": "Arch Linux-ის პაკეტი (pacman)",
+ "rc_aur-helper": "Arch User Repository (AUR): წყაროდან აგებს",
+ "rc_urpmi-mageia": "Mageia-ს პაკეტი (urpmi)",
+ "rc_spack": "Spack: ყველაფერს წყაროდან აგებს",
+ "rc_distrobox": "Distrobox კონტეინერი (openSUSE Tumbleweed)",
+ "rc_toolbx": "Toolbx კონტეინერი (Fedora)",
+ "rc_nix-manual": "NixOS (ინსტრუქცია)",
+ "rc_slackware-manual": "Slackware (ინსტრუქცია)",
+ "rcn_no_apt": "საჭიროა Debian/Ubuntu-ზე დაფუძნებული სისტემა apt-ით",
+ "rcn_codename": "ეს გამოშვება ოფიციალური რეპოზიტორიის სიაში არ არის",
+ "rcn_arch": "ოფიციალური რეპოზიტორია მხოლოდ amd64-ისთვისაა",
+ "rcn_no_flatpak": "Flatpak არ არის და მისი დასაყენებელი პაკეტების მმართველი ვერ ვიპოვეთ",
+ "rcn_not_fedora": "საჭიროა Fedora",
+ "rcn_immutable": "ეს უცვლელი (immutable) სისტემაა: გამოიყენეთ Flatpak ან კონტეინერი",
+ "rcn_no_dnf": "dnf ვერ მოიძებნა",
+ "rcn_not_atomic": "საჭიროა Fedora Atomic Desktop rpm-ostree-ით",
+ "rcn_not_opensuse": "საჭიროა openSUSE",
+ "rcn_no_zypper": "zypper ვერ მოიძებნა",
+ "rcn_not_arch": "საჭიროა Arch Linux ან მისი წარმოებული",
+ "rcn_no_pacman": "pacman ვერ მოიძებნა",
+ "rcn_no_aur_helper": "საჭიროა AUR-ის დამხმარე (yay ან paru)",
+ "rcn_not_mageia": "საჭიროა Mageia (Mandriva-ს მემკვიდრე)",
+ "rcn_no_urpmi": "urpmi ვერ მოიძებნა",
+ "rcn_no_spack": "Spack დაყენებული არ არის",
+ "rcn_no_distrobox": "Distrobox დაყენებული არ არის",
+ "rcn_no_toolbox": "Toolbx დაყენებული არ არის",
+ "rcn_not_nixos": "მხოლოდ NixOS-ისთვის",
+ "rcn_not_slackware": "მხოლოდ Slackware-ისთვის",
+ "rcw_apt_other_sources": "ჯერ წაშალეთ QGIS-ისა და GRASS-ის პაკეტები, რომლებიც სხვა რეპოზიტორიებიდანაა დაყენებული (ამას სახელმძღვანელო ითხოვს).",
+ "rcw_apt_ubuntugis": "Ubuntu 22.04-სა და 24.04-ისთვის არსებობს ubuntugis-ის ბიბლიოთეკებზე აგებული ვერსიებიც (იხილეთ სახელმძღვანელო). აქ ისინი არ არის შემოთავაზებული.",
+ "rcw_distro_older": "დისტრიბუციის პაკეტები ხშირად ოფიციალურ რეპოზიტორიაზე ძველია.",
+ "rcw_flatpak_portal": "ზოგ სისტემას ფაილის ფანჯრებისთვის xdg-desktop-portal და მასთან xdg-desktop-portal-gtk, -kde ან -cosmic სჭირდება.",
+ "rcw_flatpak_pip": "დანამატებისთვის დამატებითი Python-მოდულები: flatpak run --devel --command=pip3 org.qgis.qgis install NAME --user",
+ "rcw_flatpak_lts_eol": "LTR Flatpak (შტო lts) ვადაგასულ Qt 5.15 გარემოზეა აგებული.",
+ "rcw_fedora_version": "ვერსია ისაა, რასაც თქვენი Fedora-ს გამოშვება შეიცავს (შეამოწმეთ: dnf info qgis).",
+ "rcw_ostree_reboot": "rpm-ostree-ის ცვლილებები გადატვირთვის შემდეგ ამოქმედდება.",
+ "rcw_ostree_flatpak": "Atomic Desktops-ზე სახელმძღვანელო Flatpak-ს გირჩევთ.",
+ "rcw_suse_no_ltr": "openSUSE-ს ცალკე LTR პაკეტი არ აქვს (qgis-ltr რეპოზიტორიებში არ არის): LTR-ისთვის გამოიყენეთ Flatpak-ის lts შტო ან კონტეინერი.",
+ "rcw_arch_no_ltr": "ოფიციალურ რეპოში მხოლოდ უახლესი ხაზია; LTR და git AUR-შია.",
+ "rcw_aur_build": "AUR-ის პაკეტები თქვენს კომპიუტერზე იგება წყაროდან ისეთი რეცეპტით, რომლის გამოქვეყნებაც ნებისმიერს შეუძლია. აგებამდე წაიკითხეთ. გაეშვება თქვენი მომხმარებლით.",
+ "rcw_mageia_names": "სახელმძღვანელოს ძველ Mandriva-ს სტრიქონში qgis-python წერია; Mageia-ში qgis და qgis-grass არის.",
+ "rcw_spack_long": "Spack QGIS-სა და ყველა დამოკიდებულებას წყაროდან აგებს: შეიძლება საათები დასჭირდეს.",
+ "rcw_spack_load": "მერე გაუშვით: spack load qgis, შემდეგ qgis",
+ "rcw_box_alongside": "ცალკე კონტეინერში მუშაობს: თქვენს ახლანდელ QGIS-ს არ ეხება.",
+ "rcw_box_update_distrobox": "მოგვიანებით განახლება: distrobox upgrade --all",
+ "rcw_box_toolbx_launch": "Toolbx მენიუს ჩანაწერს არ ამატებს: გაუშვით: toolbox run --container qgis-box qgis",
+ "rcw_nix_config": "თქვენთვის არაფერი იცვლება: ფრაგმენტი თავად ჩასვით configuration.nix-ში და ხელახლა ააგეთ სისტემა.",
+ "rcm_nix_try": "სცადეთ დაყენების გარეშე",
+ "rcm_nix_config": "configuration.nix (სისტემაში დაყენება)",
+ "rcm_nix_python": "დამატებითი Python-პაკეტები",
+ "rcm_slackware_builds": "SlackBuilds (Slackware-ის ასაგები სკრიპტები)",
+ "why_apt_ltr": "ოფიციალური რეპოზიტორია გრძელვადიან გამოშვებას (LTR) და ჩვეულებრივ apt-განახლებებს გაძლევთ.",
+ "why_distro_tracks_release": "თქვენი დისტრიბუციის პაკეტი ყველაზე მარტივია და თქვენი გამოშვებისთვის მოვლილია.",
+ "why_flatpak_lts": "Flatpak ყველა სისტემაზე მუშაობს; lts შტო გრძელვადიანი QGIS 3-ის ხაზია.",
+ "why_apt_latest": "ოფიციალურ რეპოზიტორიაში თქვენი სისტემისთვის უახლესი გამოშვებაა.",
+ "why_rolling_latest": "თქვენი დისტრიბუცია უახლეს QGIS-ს საკუთარ რეპოებში აწვდის.",
+ "why_flatpak_stable": "Flatpak ნებისმიერ სისტემაზე უახლეს QGIS-ს (stable შტო) გაძლევთ.",
+ "why_alongside_flatpak": "Flatpak იზოლირებულია: QGIS 4 თქვენს ახლანდელ QGIS-თან ერთად მუშაობს და მას არ ცვლის.",
+ "why_alongside_box": "კონტეინერი ახალ QGIS-ს თქვენი სისტემისგან გამოყოფს.",
+ "why_nothing_fits": "ამ სისტემას არცერთი რეცეპტი არ ერგება. იხილეთ სახელმძღვანელო: {url}",
+ "goal_stable": "სტაბილური და გრძელვადიანი (LTR)",
+ "goal_latest": "უახლესი გამოშვება",
+ "goal_alongside": "QGIS 4-ის გვერდიგვერდ საცდელად",
+ "vf_container": "პაკეტების სახელები და სატესტო გაშვება კონტეინერში შემოწმდა",
+ "vf_real": "კონტეინერში ნამდვილად დაყენდა",
+ "vf_flathub": "Flathub-ის შტოები შემოწმდა",
+ "vf_guide": "ნაბიჯები სახელმძღვანელოდანაა; ავტორს არ გაუშვია",
+ "vf_names": "პაკეტების სახელები არსებობს; დაყენება არ გაშვებულა",
+ "vf_manual": "მხოლოდ ინსტრუქცია",
+ "rc_manual_only": "გასაშვები არაფერია: მიჰყევით ზემოთ მოცემულ ინსტრუქციას.",
+ "rc_unknown": "უცნობი რეცეპტი „{recipe}“. ცნობილია: {known}",
+ "rc_not_applicable": "რეცეპტი {recipe} აქ არ გამოდგება: {why}",
+ "f_goal": "რა გსურთ?", "f_recipe": "დაყენების გზა", "f_ropts": "პარამეტრები",
+ "recommended": "თქვენი სისტემისთვის რეკომენდებულია: {name}.",
+ "o_channel": "ვერსია", "o_branch": "Flatpak-ის შტო", "o_scope": "ვისთვის დაყენდეს",
+ "o_geo": "openSUSE-ის Application:Geo რეპოზიტორიაც დაემატოს",
+ "br_stable": "stable - უახლესი QGIS (QGIS 4)", "br_lts": "lts - გრძელვადიანი QGIS 3 (ძველი გარემო, აღარ ახლდება)",
+ "sc_user": "მხოლოდ ჩემთვის (პაროლი არ სჭირდება)", "sc_system": "მთელი სისტემისთვის",
+ "aur_ltr": "qgis-ltr - გრძელვადიანი გამოშვება (იგება წყაროდან)", "aur_testing": "qgis-git - სატესტო ვერსია (იგება წყაროდან)",
+ "nixch_latest": "qgis - უახლესი", "nixch_ltr": "qgis-ltr - გრძელვადიანი",
 },
 }
 

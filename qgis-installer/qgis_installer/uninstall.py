@@ -90,12 +90,12 @@ def find_installs(sysinfo):
         have = [(n, out.split()[-1]) for n, (rc, out) in found if rc == 0 and out.split()]
         if have:
             items.append({"kind": "dist", "pm": pm, "pkgs": [n for n, _ in have], "v": have[0][1], "root": True})
-    elif (pm in ("dnf", "zypper") or sysinfo.get("atomic")) and shutil.which("rpm"):
+    elif (pm in ("dnf", "zypper") or sysinfo.get("immutable") == "ostree") and shutil.which("rpm"):
         names = ["qgis", "qgis-ltr"] if pm == "zypper" else ["qgis"]
         for n in names:
             rc, out = _run(["rpm", "-q", "--qf", "%{VERSION}", n])
             if rc == 0:
-                items.append({"kind": "dist", "pm": "rpm-ostree" if sysinfo.get("atomic") else pm,
+                items.append({"kind": "dist", "pm": "rpm-ostree" if sysinfo.get("immutable") == "ostree" else pm,
                               "pkgs": [n], "v": out.strip(), "root": True})
     # containers made by this installer (Distrobox / Toolbx)
     for tool, cmd in (("distrobox", ["distrobox", "list"]), ("toolbox", ["toolbox", "list", "--containers"])):

@@ -9,17 +9,8 @@ LATEST, LTR = "4.2.x", "3.44.x"           # per the QGIS installation guide (202
 KEY_URL = "https://download.qgis.org/downloads/qgis-archive-keyring.gpg"
 KEY_FPR = "2D7E3441A707FDB3E7059441D155B8E6A419C5BE"   # expires 2027-08-08
 KEYRING = "/etc/apt/keyrings/qgis-archive-keyring.gpg"
+CONTAINER_BOX = "qgis-box"      # the Distrobox / Toolbx container the recipes create
 SOURCES = "/etc/apt/sources.list.d/qgis.sources"
-
-METHODS = "ABCDE"   # A official apt repository, B Flatpak, C distribution package, D container (Distrobox/Toolbx), E Nix
-
-# immutable systems (the installation guide: Fedora Atomic Desktops, openSUSE MicroOS / Aeon / Kalpa)
-ATOMIC_VARIANTS = {"silverblue", "kinoite", "sericea", "onyx", "cosmic", "budgie", "iot", "coreos"}
-SUSE_IMMUTABLE_IDS = {"opensuse-microos", "opensuse-aeon", "opensuse-kalpa"}
-AUR_HELPERS = ("yay", "paru")                 # the guide says "an AUR-capable helper" (yaourt is dead)
-CONTAINER_BOX = "qgis-box"
-OPENSUSE_IMAGE = "registry.opensuse.org/opensuse/toolbox:latest"          # from the guide (Distrobox example)
-FEDORA_IMAGE = "registry.fedoraproject.org/fedora-toolbox"                # + ":<release>" (the guide shows rawhide)
 
 # supported codenames -> LTR only?
 SUPPORT = {
@@ -47,12 +38,52 @@ def read_os_release(path="/etc/os-release"):
     return d
 
 
-def detect(os_release=None, pm=None, arch=None, which=None, exists=None):
-    """Describe this system. ``os_release`` / ``pm`` / ``arch`` override the real values
-    (used by tests and by ``--os-release`` to preview what would happen on another system);
-    ``which`` / ``exists`` replace ``shutil.which`` / ``os.path.exists`` so tests are independent of the host."""
-    which = which or shutil.which
-    exists = exists or os.path.exists
+TOOLS = ("flatpak", "distrobox", "toolbox", "spack", "nix-shell", "yay", "paru", "rpm-ostree",
+         "transactional-update", "urpmi")
+
+
+def classify_distro(o, family):
+    """'debian' / 'ubuntu' / 'fedora' / 'rhel' / 'opensuse' / 'arch' / 'mageia' / 'slackware' / 'nixos' / 'other'.
+
+    ``o`` is the parsed os-release, ``family`` the apt family detected from it."""
+    i = o.get("ID", "").lower()
+    ids = {i} | set(o.get("ID_LIKE", "").lower().split())
+    if i == "nixos":
+        return "nixos"
+    if ids & {"mageia", "mandriva", "mandrake"}:
+        return "mageia"
+    if "slackware" in ids:
+        return "slackware"
+    if i == "fedora" or ("fedora" in ids and not ids & {"rhel", "centos"}):
+        return "fedora"
+    if ids & {"rhel", "centos"}:
+        return "rhel"
+    if i.startswith("opensuse") or ids & {"suse", "opensuse"}:
+        return "opensuse"
+    if "arch" in ids:
+        return "arch"
+    return family or "other"
+
+
+def immutable_kind(o, tools, exists=os.path.exists):
+    """'ostree' (Fedora Atomic Desktops...), 'transactional' (openSUSE MicroOS / Aeon / Kalpa) or None."""
+    if exists("/run/ostree-booted"):
+        return "ostree"
+    variant = (o.get("VARIANT_ID", "") + " " + o.get("ID", "")).lower()
+    if tools.get("transactional-update") and (
+            "microos" in variant or "aeon" in variant or "kalpa" in variant or "leapmicro" in variant
+            or "micro" in o.get("PRETTY_NAME", "").lower()):
+        return "transactional"
+    return None
+
+
+def detect(os_release=None, pm=None, arch=None, tools=None, immutable=None, exists=os.path.exists):
+    """Describe this system. ``os_release`` / ``pm`` / ``arch`` / ``tools`` / ``immutable`` override the real
+    values (used by tests and by ``--os-release`` to preview what would happen on another system).
+
+    Besides the apt-oriented keys (family, code, supported...) the result has ``distro`` (see classify_distro),
+    ``immutable`` (None, "ostree" or "transactional"; pass "none" to force None), and ``tools``: {name: bool} for flatpak, distrobox, toolbox, spack, nix-shell, yay, paru,
+    rpm-ostree, transactional-update, urpmi."""
     o = read_os_release(os_release or "/etc/os-release")
     like = (o.get("ID", "") + " " + o.get("ID_LIKE", "")).lower()
     family, code = None, o.get("VERSION_CODENAME", "")
@@ -65,27 +96,28 @@ def detect(os_release=None, pm=None, arch=None, which=None, exists=None):
     elif "debian" in like:
         family = "debian"
     if pm is None:
-        pm = next((m for m in ("apt-get", "dnf", "pacman", "zypper") if which(m)), "")
+        pm = next((m for m in ("apt-get", "dnf", "pacman", "zypper") if shutil.which(m)), "")
     if arch is None:
-        if which("dpkg"):
+        if shutil.which("dpkg"):
             arch = subprocess.run(["dpkg", "--print-architecture"], capture_output=True, text=True).stdout.strip()
         else:
             arch = platform.machine()
     supported, ltr_only = False, False
     if family and code in SUPPORT.get(family, {}):
         supported, ltr_only = True, SUPPORT[family][code]
-    oid = o.get("ID", "")
-    atomic = bool(exists("/run/ostree-booted")) or o.get("VARIANT_ID", "") in ATOMIC_VARIANTS
-    tool = "distrobox" if which("distrobox") else ("toolbox" if which("toolbox") else "")
+    if tools is None:
+        tools = {t: bool(shutil.which(t)) for t in TOOLS}
+    else:
+        tools = {t: bool(tools.get(t)) for t in TOOLS}
+    if not pm and tools.get("urpmi"):
+        pm = "urpmi"
     return {"name": o.get("PRETTY_NAME", "Linux"), "family": family, "code": code, "pm": pm,
             "arch": arch, "supported": supported, "ltr_only": ltr_only,
             "apt": family is not None and pm == "apt-get",
-            "id": oid, "version_id": o.get("VERSION_ID", ""),
-            "atomic": atomic and "fedora" in like,          # rpm-ostree layering is the Fedora Atomic way
-            "suse_immutable": oid in SUSE_IMMUTABLE_IDS,
-            "aur_helper": next((h for h in AUR_HELPERS if which(h)), "") if pm == "pacman" else "",
-            "container_tool": tool,
-            "nix": bool(which("nix-shell")) or oid == "nixos"}
+            "id": o.get("ID", ""), "version_id": o.get("VERSION_ID", ""), "distro": classify_distro(o, family),
+            "immutable": (immutable_kind(o, tools, exists) if immutable is None
+                          else (None if immutable == "none" else immutable)),
+            "tools": tools}
 
 
 def installed_qgis():
@@ -98,19 +130,12 @@ def installed_qgis():
 
 
 def method_available(method, sysinfo):
-    """Is install method usable here? A official apt repository, B Flatpak, C distribution package,
-    D container (Distrobox / Toolbx), E Nix (``nix-shell``)."""
+    """Is install method A (official apt repository), B (Flatpak) or C (distribution package) usable here?"""
     if method == "A":
         return bool(sysinfo["apt"] and sysinfo["supported"] and sysinfo["arch"] == "amd64")
     if method == "B":
         return True
-    if method == "C":
-        return bool(sysinfo["pm"]) or bool(sysinfo.get("atomic"))
-    if method == "D":
-        return bool(sysinfo.get("container_tool"))
-    if method == "E":
-        return bool(sysinfo.get("nix"))
-    return False
+    return bool(sysinfo["pm"])
 
 
 def allowed_channels(sysinfo):
@@ -120,29 +145,3 @@ def allowed_channels(sysinfo):
 
 def default_channel(sysinfo):
     return "ltr" if sysinfo["ltr_only"] else "latest"
-
-
-def channels_for(method, sysinfo):
-    """Channels the chosen method can offer on this system ([] = the method has no channel choice).
-
-    A: the official repository (LTR only on older bases).  C: Arch has ``qgis`` in the official repository and
-    ``qgis-ltr`` / ``qgis-git`` in the AUR (needs an AUR helper), openSUSE has ``qgis`` and ``qgis-ltr``.
-    D: the openSUSE image has both, the Fedora image only ``qgis``.  E: nixpkgs has ``qgis`` and ``qgis-ltr``."""
-    if method == "A":
-        return list(allowed_channels(sysinfo))
-    if method == "C":
-        if sysinfo.get("pm") == "pacman" and sysinfo.get("aur_helper"):
-            return ["latest", "ltr", "nightly"]
-        if sysinfo.get("pm") == "zypper" and not sysinfo.get("atomic"):
-            return ["latest", "ltr"]
-        return []
-    if method == "D":
-        return ["latest", "ltr"] if _container_is_suse(sysinfo) else []
-    if method == "E":
-        return ["latest", "ltr"]
-    return []
-
-
-def _container_is_suse(sysinfo):
-    """The Distrobox example in the guide uses the openSUSE image; Fedora hosts get the Fedora toolbox image."""
-    return sysinfo.get("container_tool") == "distrobox" and sysinfo.get("id") != "fedora"

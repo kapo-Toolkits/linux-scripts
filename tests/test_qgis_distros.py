@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""Offline tests of the distribution-specific QGIS paths from the installation guide: Fedora (+ Atomic),
-openSUSE (+ immutable), Arch (+ AUR), containers (Distrobox / Toolbx) and Nix.
+"""Offline tests of the distribution-specific QGIS paths of the installation guide: Fedora (+ Atomic), openSUSE
+(+ immutable), Arch (+ AUR), containers (Distrobox / Toolbx) and Nix - their scripts and their removal.
 
     python3 tests/test_qgis_distros.py
 
-Tool presence (distrobox, yay, nix-shell ...) is injected, so the results do not depend on the host.
+The recipes themselves (applicability, recommendation, plans) are tested in test_qgis_installer.py; this file checks
+what only matters for the immutable / container / AUR flows: every generated script parses, re-running is safe,
+and the uninstaller finds and removes exactly what these recipes create. Tools are injected, so nothing depends on the host.
 """
-import contextlib
-import io
 import os
 import subprocess
 import sys
@@ -17,136 +17,65 @@ from unittest import mock
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "qgis-installer"))
 
-import qgis_installer as qi  # noqa: E402
-from qgis_installer import cli as qcli, i18n, system, uninstall  # noqa: E402
+from qgis_installer import i18n, recipes, system, uninstall  # noqa: E402
 
 FIX = os.path.join(ROOT, "tests", "fixtures", "os-release")
-PK = {"grass": True, "python": True, "server": False}
 
 
-def fx(name, pm="", tools=(), ostree=False):
-    """Detect a fixture system with an injected PATH and /run/ostree-booted."""
-    return qi.detect(os.path.join(FIX, name), pm, "amd64",
-                     which=lambda c: "/usr/bin/" + c if c in tools else None,
-                     exists=lambda p: ostree and p == "/run/ostree-booted")
+def fx(name, pm="", tools=(), immutable=None):
+    return system.detect(os.path.join(FIX, name), pm, "amd64", tools={t: True for t in tools}, immutable=immutable or "none")
 
 
 def sh_ok(script):
     return subprocess.run(["sh", "-n", "-c", script], capture_output=True).returncode == 0
 
 
-def plan(method, d, channel="latest", **pk):
-    return qi.build_install(method, d, channel, dict(PK, **pk))
+class Scripts(unittest.TestCase):
+    def test_fedora_atomic_layers_idempotently_and_says_to_reboot(self):
+        d = fx("fedora-silverblue-43", "dnf", tools=("rpm-ostree",), immutable="ostree")
+        sh = recipes.make_plan("rpm-ostree-fedora", d)["steps"][0]["sh"]
+        self.assertIn("rpm-ostree install --idempotent qgis python3-qgis qgis-grass", sh)
+        self.assertIn("Reboot", sh)
+        self.assertTrue(sh_ok(sh))
 
+    def test_a_container_is_not_created_twice(self):
+        for rid, tool, cmd in (("distrobox", "distrobox", "distrobox list | grep -q qgis-box || distrobox create"),
+                               ("toolbx", "toolbox", "toolbox list --containers | grep -q qgis-box || toolbox create")):
+            sh = recipes.make_plan(rid, fx("fedora-43", "dnf", tools=(tool,)))["steps"][0]["sh"]
+            self.assertIn(cmd, sh)
 
-class Detection(unittest.TestCase):
-    def test_fedora_atomic_and_suse_immutable_and_nix(self):
-        self.assertTrue(fx("fedora-silverblue-43", "dnf")["atomic"])          # VARIANT_ID=silverblue
-        self.assertTrue(fx("fedora-43", "dnf", ostree=True)["atomic"])        # /run/ostree-booted
-        self.assertFalse(fx("fedora-43", "dnf")["atomic"])
-        self.assertFalse(fx("ubuntu-noble", "apt-get", ostree=True)["atomic"])  # ostree on a non-Fedora base: not rpm-ostree
-        self.assertTrue(fx("opensuse-microos", "zypper")["suse_immutable"])
-        self.assertFalse(fx("opensuse-tumbleweed", "zypper")["suse_immutable"])
-        self.assertTrue(fx("nixos")["nix"])
-        self.assertTrue(fx("ubuntu-noble", "apt-get", tools=("nix-shell",))["nix"])
-        self.assertFalse(fx("ubuntu-noble", "apt-get")["nix"])
+    def test_toolbx_on_fedora_is_pinned_to_the_hosts_release_elsewhere_it_is_the_guides_image(self):
+        sh = recipes.make_plan("toolbx", fx("fedora-silverblue-43", "dnf", tools=("toolbox",), immutable="ostree"))["steps"][0]["sh"]
+        self.assertIn("registry.fedoraproject.org/fedora-toolbox:43", sh)
+        sh = recipes.make_plan("toolbx", fx("opensuse-microos", "zypper", tools=("toolbox",), immutable="transactional"))["steps"][0]["sh"]
+        self.assertIn(recipes.TOOLBX_IMAGE, sh)
+        sh = recipes.make_plan("toolbx", fx("fedora-43", "dnf", tools=("toolbox",)), {"image": "example.org/x:1"})["steps"][0]["sh"]
+        self.assertIn("example.org/x:1", sh)                                     # an explicit image wins
 
-    def test_tools(self):
-        self.assertEqual(fx("arch", "pacman", tools=("yay", "paru"))["aur_helper"], "yay")
-        self.assertEqual(fx("arch", "pacman", tools=("paru",))["aur_helper"], "paru")
-        self.assertEqual(fx("arch", "pacman")["aur_helper"], "")
-        self.assertEqual(fx("ubuntu-noble", "apt-get", tools=("yay",))["aur_helper"], "")   # AUR only on pacman
-        self.assertEqual(fx("fedora-43", "dnf", tools=("distrobox", "toolbox"))["container_tool"], "distrobox")
-        self.assertEqual(fx("fedora-43", "dnf", tools=("toolbox",))["container_tool"], "toolbox")
-
-    def test_method_availability(self):
-        d = fx("fedora-43", "dnf", tools=("toolbox", "nix-shell"))
-        self.assertEqual([qi.method_available(m, d) for m in qi.METHODS], [False, True, True, True, True])
-        d = fx("fedora-43", "dnf")
-        self.assertEqual([qi.method_available(m, d) for m in "DE"], [False, False])
-        atomic = fx("fedora-silverblue-43", "")                              # no dnf at all, still installable
-        self.assertTrue(qi.method_available("C", atomic))
-
-    def test_channels_per_method(self):
-        self.assertEqual(qi.channels_for("A", fx("ubuntu-noble", "apt-get")), qi.LTR_ONLY_CHANNELS)
-        self.assertEqual(qi.channels_for("B", fx("arch", "pacman")), [])
-        self.assertEqual(qi.channels_for("C", fx("fedora-43", "dnf")), [])
-        self.assertEqual(qi.channels_for("C", fx("opensuse-tumbleweed", "zypper")), ["latest", "ltr"])
-        self.assertEqual(qi.channels_for("C", fx("arch", "pacman")), [])      # no AUR helper -> only the official qgis
-        self.assertEqual(qi.channels_for("C", fx("arch", "pacman", tools=("yay",))), ["latest", "ltr", "nightly"])
-        self.assertEqual(qi.channels_for("E", fx("nixos")), ["latest", "ltr"])
-        self.assertEqual(qi.channels_for("D", fx("opensuse-microos", "zypper", tools=("distrobox",))), ["latest", "ltr"])
-        self.assertEqual(qi.channels_for("D", fx("fedora-43", "dnf", tools=("toolbox",))), [])
-
-
-class Plans(unittest.TestCase):
-    def test_fedora_follows_the_guide(self):
-        s = plan("C", fx("fedora-43", "dnf"), server=True)
-        self.assertEqual(len(s), 1)
-        self.assertTrue(s[0]["root"])
-        self.assertIn("dnf install -y qgis python3-qgis qgis-grass qgis-server\n", s[0]["sh"])
-        self.assertIn("dnf install -y qgis\n", plan("C", fx("fedora-43", "dnf"), grass=False, python=False)[0]["sh"])
-
-    def test_fedora_atomic_layers_with_rpm_ostree(self):
-        s = plan("C", fx("fedora-silverblue-43", "dnf"))
-        self.assertIn("rpm-ostree install --idempotent qgis python3-qgis qgis-grass", s[0]["sh"])
-        self.assertIn("Reboot", s[0]["sh"])
-        self.assertTrue(sh_ok(s[0]["sh"]))
-
-    def test_opensuse_stable_and_ltr(self):
-        d = fx("opensuse-tumbleweed", "zypper")
-        self.assertIn("zypper --non-interactive install qgis qgis-plugin-grass\n", plan("C", d, "latest")[0]["sh"])
-        self.assertIn("zypper --non-interactive install qgis-ltr qgis-plugin-grass\n", plan("C", d, "ltr")[0]["sh"])
-
-    def test_arch_official_and_aur(self):
-        plain = fx("arch", "pacman")
-        s = plan("C", plain, "latest")
-        self.assertTrue(s[0]["root"] and "pacman -S --noconfirm qgis\n" in s[0]["sh"])
-        self.assertIn("pacman -S --noconfirm qgis\n", plan("C", plain, "ltr")[0]["sh"])      # no helper: official one
-        yay = fx("arch", "pacman", tools=("yay",))
-        s = plan("C", yay, "ltr")
-        self.assertEqual((s[0]["root"], s[0]["sh"]), (False, "set -eu\nyay -S --needed qgis-ltr\n"))   # AUR: as the user
-        self.assertIn("yay -S --needed qgis-git", plan("C", yay, "nightly")[0]["sh"])
-        self.assertIn("paru -S --needed qgis-git", plan("C", fx("arch", "pacman", tools=("paru",)), "nightly")[0]["sh"])
-
-    def test_nix_runs_qgis_without_installing(self):
-        d = fx("nixos")
-        self.assertEqual(plan("E", d, "latest"), [{"root": False, "sh": "set -eu\nnix-shell -p qgis --command qgis\n"}])
-        self.assertIn("nix-shell -p qgis-ltr --command qgis", plan("E", d, "ltr")[0]["sh"])
-
-    def test_distrobox_on_opensuse_uses_the_guides_image(self):
-        d = fx("opensuse-microos", "zypper", tools=("distrobox",))
-        s = plan("D", d, "ltr")
-        self.assertEqual([x["root"] for x in s], [False])                      # nothing needs the host's root
-        sh = s[0]["sh"]
-        self.assertIn("--image registry.opensuse.org/opensuse/toolbox:latest", sh)
-        self.assertIn("distrobox enter --name qgis-box -- sudo zypper --non-interactive install qgis-ltr qgis-plugin-grass", sh)
-        self.assertIn("distrobox-export --app qgis", sh)
-        self.assertIn("grep -q 'qgis-box'", sh)                                # re-running does not fail on an existing box
-
-    def test_toolbox_and_distrobox_on_fedora_use_the_hosts_release(self):
-        d = fx("fedora-silverblue-43", "dnf", tools=("toolbox",))
-        sh = plan("D", d)[0]["sh"]
-        self.assertIn("toolbox create --container qgis-box --image registry.fedoraproject.org/fedora-toolbox:43", sh)
-        self.assertIn("toolbox run --container qgis-box sudo dnf install -y qgis python3-qgis qgis-grass", sh)
-        d = fx("fedora-silverblue-43", "dnf", tools=("distrobox",))
-        sh = plan("D", d)[0]["sh"]
-        self.assertIn("fedora-toolbox:43", sh)
-        self.assertIn("sudo dnf install -y", sh)
-
-    def test_no_container_tool_no_plan(self):
-        self.assertEqual(plan("D", fx("fedora-43", "dnf")), [])
-
-    def test_every_new_script_parses(self):
-        cases = [("C", fx("fedora-43", "dnf")), ("C", fx("fedora-silverblue-43", "dnf")),
-                 ("C", fx("opensuse-tumbleweed", "zypper")), ("C", fx("arch", "pacman", tools=("yay",))),
-                 ("D", fx("opensuse-microos", "zypper", tools=("distrobox",))),
-                 ("D", fx("fedora-43", "dnf", tools=("toolbox",))), ("E", fx("nixos"))]
-        for method, d in cases:
-            for channel in ("latest", "ltr", "nightly"):
-                for server in (False, True):
-                    for s in plan(method, d, channel, server=server):
-                        self.assertTrue(sh_ok(s["sh"]), (method, d["name"], channel, s["sh"]))
+    def test_every_script_of_every_recipe_parses(self):
+        systems = [fx("fedora-43", "dnf", tools=("flatpak", "distrobox", "toolbox", "spack")),
+                   fx("fedora-silverblue-43", "dnf", tools=("rpm-ostree", "toolbox"), immutable="ostree"),
+                   fx("opensuse-tumbleweed", "zypper", tools=("distrobox",)),
+                   fx("opensuse-microos", "zypper", tools=("distrobox",), immutable="transactional"),
+                   fx("arch", "pacman", tools=("yay",)), fx("arch", "pacman", tools=("paru",)),
+                   fx("mageia-9", "", tools=("urpmi",)), fx("nixos"), fx("slackware"),
+                   fx("ubuntu-noble", "apt-get"), fx("debian-trixie", "apt-get")]
+        variants = [{}, {"server": True}, {"grass": False, "python": False}, {"channel": "testing"}, {"branch": "lts", "scope": "system"},
+                    {"geo_repo": True}]
+        seen = 0
+        for d in systems:
+            for rid, r in recipes.RECIPES.items():
+                if not recipes.applicability(rid, d)[0]:
+                    continue
+                for o in variants:
+                    try:
+                        plan = recipes.make_plan(rid, d, o)
+                    except ValueError:
+                        continue                                               # an option this recipe does not have
+                    for s in plan["steps"]:
+                        seen += 1
+                        self.assertTrue(sh_ok(s["sh"]), (rid, d["name"], o, s["sh"]))
+        self.assertGreater(seen, 40)                                           # the loop really looked at scripts
 
 
 class Removal(unittest.TestCase):
@@ -176,7 +105,13 @@ class Removal(unittest.TestCase):
                                              False, False, fx("fedora-43", "dnf"))
         self.assertEqual(steps, [])                                                # injection / unknown tool: nothing runs
 
-    def test_find_installs_sees_a_container_and_aur_packages(self):
+    def test_the_box_the_recipes_create_is_the_box_the_uninstaller_looks_for(self):
+        self.assertEqual(recipes.BOX, system.CONTAINER_BOX)
+        for rid in ("distrobox", "toolbx"):
+            sh = recipes.make_plan(rid, fx("fedora-43", "dnf", tools=("distrobox", "toolbox")))["steps"][0]["sh"]
+            self.assertIn(system.CONTAINER_BOX, sh)
+
+    def test_find_installs_sees_a_container_aur_packages_and_a_layered_package(self):
         def fake_run(cmd):
             if cmd[:2] == ["distrobox", "list"]:
                 return 0, "ID | NAME | STATUS\n1 | qgis-box | Up\n"
@@ -193,45 +128,26 @@ class Removal(unittest.TestCase):
         for it in items:
             self.assertTrue(i18n.label_for(it, "en") and i18n.label_for(it, "ka"))
 
+        def rpm_run(cmd):
+            return (0, "3.44.1") if cmd[:2] == ["rpm", "-q"] and cmd[-1] == "qgis" else (1, "")
+        with mock.patch.object(uninstall, "_run", rpm_run), \
+                mock.patch.object(uninstall.shutil, "which", lambda c: "/usr/bin/" + c if c == "rpm" else None), \
+                mock.patch.object(uninstall.os.path, "isdir", return_value=False):
+            items = uninstall.find_installs(fx("fedora-silverblue-43", "", tools=("rpm-ostree",), immutable="ostree"))
+        dist = [i for i in items if i["kind"] == "dist"]
+        self.assertEqual([(i["pm"], i["pkgs"]) for i in dist], [("rpm-ostree", ["qgis"])])
+
 
 class Texts(unittest.TestCase):
     def test_both_languages_have_the_same_keys(self):
         self.assertEqual(set(i18n.STR["en"]), set(i18n.STR["ka"]))
 
-    def test_new_keys_format(self):
+    def test_the_removed_method_texts_are_gone_and_the_guide_describes_the_recipes(self):
         for lang in ("en", "ka"):
-            for k in ("mD", "mE", "ch_latest_dist", "ch_ltr_dist", "ch_nightly_dist", "st_atomic", "st_suse_imm", "st_nix"):
-                self.assertTrue(i18n.t(k, lang))
-            self.assertIn("yay", i18n.t("st_aur", lang, h="yay"))
-            self.assertIn("qgis-box", i18n.t("k_container", lang, tool="distrobox", name="qgis-box"))
-
-
-class Cli(unittest.TestCase):
-    def call(self, *argv):
-        out, err = io.StringIO(), io.StringIO()
-        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
-            try:
-                rc = qcli.main(list(argv))
-            except SystemExit as e:
-                rc = e.code
-        return rc, out.getvalue(), err.getvalue()
-
-    SUSE = ["--os-release", os.path.join(FIX, "opensuse-tumbleweed"), "--pm", "zypper", "--arch", "amd64"]
-
-    def test_channel_validation_per_method(self):
-        rc, out, _ = self.call("--lang", "en", *self.SUSE, "plan", "--method", "C", "--channel", "ltr", "--script")
-        self.assertEqual(rc, 0)
-        self.assertIn("qgis-ltr", out)
-        rc, _, err = self.call("--lang", "en", *self.SUSE, "plan", "--method", "C", "--channel", "nightly")
-        self.assertEqual(rc, 2)
-        self.assertIn("not offered", err)
-
-    def test_info_lists_all_methods(self):
-        import json
-        rc, out, _ = self.call("--json", *self.SUSE, "info")
-        doc = json.loads(out)
-        self.assertEqual(sorted(doc["methods"]), list(qi.METHODS))
-        self.assertEqual(doc["method_channels"]["C"], ["latest", "ltr"])
+            self.assertNotIn("mD", i18n.STR[lang])
+            self.assertIn("Distrobox", i18n.STR[lang]["guide"])
+            self.assertNotIn("WHAT METHOD E", i18n.STR[lang]["guide"])
+            self.assertTrue(i18n.t("k_container", lang, tool="distrobox", name="qgis-box"))
 
 
 if __name__ == "__main__":
