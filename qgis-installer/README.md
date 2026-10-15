@@ -121,6 +121,22 @@ own profile, and the warning is shown only where it applies).
 Both Flatpak branches can be installed at the same time; removal now names the branch (`org.qgis.qgis//lts`) so that it removes the
 one you ticked and not an ambiguous reference.
 
+## What the installed plugins need
+
+```bash
+qgis-installer-cli plugin-deps                    # the plugins of all profiles (QGIS 3, 4, Flatpak); exit 1 = a plugin that will not load
+qgis-installer-cli plugin-deps --install          # install what is missing and has a package (commands shown, simulated, confirmed)
+qgis-installer-cli plugin-deps --install --optional
+```
+
+"No module named 'openpyxl'" is the commonest reason a plugin does not load. This reads the code of every installed plugin (it **never runs** it) and lists
+the Python libraries it imports that this Python cannot import. Third party means: not the standard library, not what QGIS itself provides, and not a
+module that is part of the plugin (a `.py` file or package anywhere in its folder). An unguarded import at the top of a module is *required*; an import inside
+a function, or guarded by `try ... except ImportError`, is *optional*; `if TYPE_CHECKING:` imports never run. Where the system has a package for a library
+(about 25 of the usual ones) it is named, otherwise the library is listed as "install by hand". Inside QGIS the plugin asks the Python QGIS itself runs; here it asks
+the Python that runs the program. Verified on the real code of 16 of our plugins (PostGIS Manager: psycopg2 required; geopandas, pandas, Shapely, openpyxl optional) and in real containers
+(a plugin that needs openpyxl is found, `--install` installs it, the scan is clean afterwards).
+
 ## The doctor: what is known to break QGIS
 
 ```bash
