@@ -84,8 +84,20 @@ printhub_extra() {
       echo "PySide6 found on the system - no private environment needed"
     else
       echo "Creating a private Python environment with PySide6 (downloads about 200 MB)..."
-      $SUDO python3 -m venv "$app/venv" || { echo "python3-venv is missing (Debian/Ubuntu: sudo apt install python3-venv)"; exit 1; }
-      $SUDO "$app/venv/bin/pip" install --quiet --disable-pip-version-check "PySide6>=6.6"
+      $SUDO rm -rf "$app/venv"
+      if $SUDO python3 -m venv "$app/venv" >/dev/null 2>&1; then
+        $SUDO "$app/venv/bin/pip" install --quiet --disable-pip-version-check "PySide6>=6.6"
+      else
+        # no python3-venv (Debian/Ubuntu split it out): make the environment without pip and let the system's pip fill it
+        $SUDO rm -rf "$app/venv"
+        if $SUDO python3 -m venv --without-pip "$app/venv" >/dev/null 2>&1 && python3 -m pip --version >/dev/null 2>&1; then
+          $SUDO python3 -m pip --python "$app/venv/bin/python" install --quiet --disable-pip-version-check "PySide6>=6.6"
+        else
+          $SUDO rm -rf "$app/venv"
+          echo "Cannot create the environment: install python3-venv (Debian/Ubuntu: sudo apt install python3-venv) or python3-pip, or PySide6 itself"
+          exit 1
+        fi
+      fi
     fi
     $SUDO install -D -m 644 "$here/printhub/packaging/assets/printhub.png" "$icon"
     echo "installed PrintHub into $app"
