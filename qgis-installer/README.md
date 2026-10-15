@@ -121,6 +121,31 @@ own profile, and the warning is shown only where it applies).
 Both Flatpak branches can be installed at the same time; removal now names the branch (`org.qgis.qgis//lts`) so that it removes the
 one you ticked and not an ambiguous reference.
 
+## One environment on many machines: the environment file
+
+For a class room or an office: write down what one machine has and make the others match.
+
+```bash
+qgis-installer-cli env export --name "GIS lab" --output lab.json   # on the reference machine
+qgis-installer-cli env check lab.json                              # on another: how far is it? (exit 1 = something missing)
+qgis-installer-cli env apply lab.json --dry-run                    # the commands, simulated, nothing installed
+qgis-installer-cli env apply lab.json --yes                        # install what is missing
+```
+
+```json
+{"schema": 1, "name": "GIS lab", "created": "2026-10-15",
+ "qgis": {"goal": "stable", "recipe": "apt-official", "options": {"channel": "ltr"}, "version": "3.44.5"},
+ "components": ["gdal", "numpy", "grass"]}
+```
+
+The file holds **names from closed lists, never commands**: a recipe must be one of the recipes, an option must be one that recipe has and
+have an allowed value, a component must be one of the components; anything else (and any unknown field, a file over 64 KB, malformed JSON) is
+refused with the reason before anything is looked at. 10 000 random malformed files are in the tests: the answer is always a clean refusal or a
+valid file. The free text (`name`) is never used in a command. The plan is built with the same builders as every other plan, shown, simulated and
+confirmed. If the recipe in the file does not exist on the machine it is applied to (an Ubuntu recipe on Fedora) the recommendation for the file's
+`goal` is used and the plan says so. An installed QGIS of another version than the file's is reported, not changed (use `install-version`).
+A machine that already matches gets no steps. Plugins are not part of the file yet.
+
 ## Look before you install, go back, keep a version
 
 **What would it do?** Before the question "run these?", the commands are given to the package manager in its own simulation mode

@@ -31,7 +31,13 @@ vers() {   # image: versions for real - list, go back, keep, release (and the Fl
   docker run --rm -v "$root":/repo:ro "$1" sh -c "$PREP; python3 /repo/tests/qgis_versions_container_test.py"
 }
 
+envf() {   # image: an environment file for real - check, apply, check, export
+  echo "=================== $1  environment file (real)"
+  docker run --rm -v "$root":/repo:ro "$1" sh -c "$PREP; python3 -u /repo/tests/qgis_envfile_container_test.py"
+}
+
 if [ "${1:-}" = "versions" ]; then shift; vers "$@"; exit $?; fi
+if [ "${1:-}" = "envfile" ]; then shift; envf "$@"; exit $?; fi
 if [ "${1:-}" = "components" ]; then shift; comp "$@"; exit $?; fi
 if [ $# -ge 2 ]; then run "$@"; exit $?; fi
 rc=0
@@ -51,4 +57,8 @@ vers debian:trixie                                      || rc=1
 vers fedora:latest                                      || rc=1
 vers opensuse/tumbleweed                                || rc=1
 vers archlinux:latest                                   || rc=1
+envf debian:trixie                                      || rc=1
+envf fedora:latest                                      || rc=1
+envf opensuse/tumbleweed                                || rc=1
+envf archlinux:latest                                   || rc=1
 exit $rc
