@@ -101,6 +101,26 @@ Debian, Fedora, openSUSE and Arch (`tests/run-recipes-containers.sh`). Nothing h
 be a dependency of QGIS itself, and removing it would take QGIS along. Python libraries installed this way are visible to a QGIS that
 uses the system's Python; a Flatpak or Snap QGIS has its own sandbox.
 
+## Several QGIS side by side: list, start, is there a newer build
+
+OSGeo4W keeps each QGIS in its own folder and lets you pick one. On Linux the QGIS programs live where their package manager put
+them (system packages, Flatpak `stable` and `lts`, the `qgis-box` container, Snap), and this finds them all:
+
+```bash
+qgis-installer-cli instances              # every QGIS that can be started, with the exact command
+qgis-installer-cli check-updates          # is a newer build waiting? reads only, installs nothing
+qgis-installer-cli launch flatpak-user-lts --yes
+```
+
+`check-updates` asks each installation's own package manager. For apt, zypper and pacman the answer is what the last refresh of the
+package index knows (it says so); for Flatpak, Snap and dnf it asks online, and when it cannot reach the network it says "could not
+tell" rather than "up to date". Containers are not asked. `launch` starts that QGIS detached from the program and shows the command first;
+**two QGIS programs of the same major version share your profile folder**, so close the other one first (Flatpak and Snap keep their
+own profile, and the warning is shown only where it applies).
+
+Both Flatpak branches can be installed at the same time; removal now names the branch (`org.qgis.qgis//lts`) so that it removes the
+one you ticked and not an ambiguous reference.
+
 ## Updating what is installed
 
 ```bash

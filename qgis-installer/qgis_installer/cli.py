@@ -6,6 +6,9 @@
     qgis-installer-cli plan [--goal G | --recipe ID | --method A|B|C] [--channel ltr] [--branch lts] [--script | --json]
     qgis-installer-cli install [same options] [--yes] [--dry-run]
     qgis-installer-cli list
+    qgis-installer-cli instances                                 # every QGIS that can be started, with how
+    qgis-installer-cli check-updates                             # is a newer build waiting? (reads only)
+    qgis-installer-cli launch ID [--yes]                         # start that QGIS (ID from: instances)
     qgis-installer-cli update [--yes] [--dry-run]                # newest build of the QGIS installations found here
     qgis-installer-cli uninstall [--kinds apt,repo,flatpak,snap,dist,data] [--purge] [--yes] [--dry-run]
     qgis-installer-cli components [list] [--category cli|engine|python|db]   # what can be added next to QGIS, and what is there
@@ -22,7 +25,7 @@ import argparse
 import json
 import sys
 
-from . import i18n, plan, recipes, requirements, runner, system, uninstall, update
+from . import i18n, instances, plan, recipes, requirements, runner, system, uninstall, update
 
 SCHEMA = 1
 KINDS = ("apt", "repo", "flatpak", "snap", "dist", "data")
@@ -159,6 +162,59 @@ def _show_plan(result, args, lang):
         print(m["text"])
     for n in notes:
         print("\n* " + n["text"])
+
+
+def _instances_cmd(args, items, lang):
+    t = lambda k, **kw: i18n.t(k, lang, **kw)  # noqa: E731
+    rows = instances.list_instances(items)
+    if args.cmd == "check-updates":
+        res = {r["id"]: r for r in instances.check_updates(items)}
+        for r in rows:
+            r["updates"] = res.get(r["id"])
+        if args.json:
+            print(json.dumps({"schema": SCHEMA, "instances": [dict(r, label=i18n.label_for(r["label_item"], lang)) for r in rows]},
+                             indent=2, ensure_ascii=False, default=str))
+            return 0
+        if not rows:
+            print(t("inst_none"))
+        for r in rows:
+            u = r["updates"]
+            state = {True: t("upd_available"), False: t("upd_current"), None: t("upd_unknown")}[u["update"] if u else None]
+            extra = (" ({})".format(u["candidate"]) if u and u.get("candidate") and u["update"] else "")
+            src = " - " + t("upd_" + u["source"]) if u else ""
+            print("- {}: {}{}{}".format(i18n.label_for(r["label_item"], lang), state, extra, src))
+        return 0
+    if args.cmd == "instances":
+        if args.json:
+            print(json.dumps({"schema": SCHEMA, "instances": [dict(r, label=i18n.label_for(r["label_item"], lang)) for r in rows]},
+                             indent=2, ensure_ascii=False))
+            return 0
+        if not rows:
+            print(t("inst_none"))
+        for r in rows:
+            how = " ".join(r["launch"]) if r["launch"] else t("inst_cannot_launch")
+            print("- {}  [{}]\n    {}".format(i18n.label_for(r["label_item"], lang), r["id"], how))
+        return 0
+    row = instances.find(rows, args.id)
+    if row is None:
+        print(t("inst_unknown_id", id=args.id, known=", ".join(r["id"] for r in rows) or "-"), file=sys.stderr)
+        return 2
+    if not row["launch"]:
+        print(t("inst_cannot_launch"), file=sys.stderr)
+        return 2
+    print(i18n.label_for(row["label_item"], lang))
+    print("  " + " ".join(row["launch"]))
+    if row["shared_profile"]:
+        print("* " + t("inst_profile"))
+    if not args.yes:
+        if not sys.stdin.isatty():
+            print("not confirmed: pass --yes to start it without a prompt", file=sys.stderr)
+            return 3
+        if input(t("run") + "? [y/N] ").strip().lower() not in ("y", "yes"):
+            print(t("cancel"))
+            return 1
+    print(t("inst_started", pid=instances.launch(row)))
+    return 0
 
 
 def _update_cmd(args, sysinfo, items, lang):
@@ -380,6 +436,11 @@ def build_parser():
 
     sub.add_parser("list", help="every QGIS installation found on this machine")
 
+    sub.add_parser("instances", help="every QGIS that can be started on this machine, and how")
+    sub.add_parser("check-updates", help="is a newer build of each installation waiting? (reads only, installs nothing)")
+    p = sub.add_parser("launch", help="start one installed QGIS (shows the command first)")
+    p.add_argument("id", help="installation id, from: instances")
+    p.add_argument("--yes", action="store_true", help="do not ask")
     p = sub.add_parser("update", help="update the QGIS installations found here (shows the commands first; close QGIS first)")
     p.add_argument("--yes", action="store_true", help="do not ask")
     p.add_argument("--dry-run", action="store_true", help="only show the commands")
@@ -454,6 +515,8 @@ def main(argv=None):
 
     if args.cmd == "update":
         return _update_cmd(args, sysinfo, items, lang)
+    if args.cmd in ("instances", "check-updates", "launch"):
+        return _instances_cmd(args, items, lang)
 
     # uninstall
     if args.kinds:
