@@ -121,6 +121,29 @@ own profile, and the warning is shown only where it applies).
 Both Flatpak branches can be installed at the same time; removal now names the branch (`org.qgis.qgis//lts`) so that it removes the
 one you ticked and not an ambiguous reference.
 
+## Look before you install, go back, keep a version
+
+**What would it do?** Before the question "run these?", the commands are given to the package manager in its own simulation mode
+(`apt-get -s`, `dnf --assumeno`, `zypper --dry-run`, `pacman --print`, `apk --simulate`, for a Flatpak the size from `flatpak remote-info`).
+The preview then says how many packages come, go or change, how much is downloaded and how much disk it needs, and warns when an
+install would **remove** something or a removal would take QGIS along. It reads only. On Fedora, for example, `components install proj`
+shows 779 MiB of datum grids (`proj-data-*`) before anything is downloaded. Where it cannot ask (a repository is added first, the
+package manager needs administrator rights even to look) the preview says so and claims nothing. `--no-simulate` skips it.
+
+```bash
+qgis-installer-cli versions apt                         # the versions that installation could be at (ID from: instances)
+qgis-installer-cli install-version apt 1:3.44.3+24noble --dry-run     # go to one, also back to an older one
+qgis-installer-cli hold apt        # keep the installed version: no updates for it      (unhold: allow them again)
+```
+
+apt, dnf and zypper list the versions their repositories offer (Ubuntu keeps older ones in its release and security pockets; Debian's
+mirrors keep only the current one, so there is nothing older to go back to there). Flatpak lists *builds* with a date and a subject, not
+QGIS version numbers. Arch keeps only the newest build in its repositories (nothing to choose; the Arch Linux Archive is a manual matter).
+Keeping a version: `apt-mark hold`, `zypper addlock`, `dnf versionlock`, `flatpak mask`; Arch has no command, only an `IgnorePkg` line, which is
+shown as an instruction. Going back to an older version can fail when other packages need the newer one: the simulation shows what would change.
+Verified for real in containers: the downgrade and the hold on Ubuntu 24.04 (`tzdata` 2026e to 2024a and back), `versionlock` on Fedora,
+`addlock` on openSUSE, the QGIS build list and `mask` on Flathub; not run for real: going to a Flatpak build.
+
 ## Updating what is installed
 
 ```bash

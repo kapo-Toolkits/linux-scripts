@@ -9,6 +9,9 @@
     qgis-installer-cli instances                                 # every QGIS that can be started, with how
     qgis-installer-cli check-updates                             # is a newer build waiting? (reads only)
     qgis-installer-cli launch ID [--yes]                         # start that QGIS (ID from: instances)
+    qgis-installer-cli versions ID                               # the versions that installation could be at
+    qgis-installer-cli install-version ID VERSION [--yes] [--dry-run]    # go to one (also back to an older one)
+    qgis-installer-cli hold ID | unhold ID [--yes] [--dry-run]   # keep the installed version / allow updates again
     qgis-installer-cli update [--yes] [--dry-run]                # newest build of the QGIS installations found here
     qgis-installer-cli uninstall [--kinds apt,repo,flatpak,snap,dist,data] [--purge] [--yes] [--dry-run]
     qgis-installer-cli components [list] [--category cli|engine|python|db]   # what can be added next to QGIS, and what is there
@@ -25,7 +28,7 @@ import argparse
 import json
 import sys
 
-from . import i18n, instances, plan, recipes, requirements, runner, system, uninstall, update
+from . import i18n, instances, plan, recipes, requirements, runner, simulate, system, uninstall, update, versions
 
 SCHEMA = 1
 KINDS = ("apt", "repo", "flatpak", "snap", "dist", "data")
@@ -137,8 +140,9 @@ def _show_plan(result, args, lang):
     if rid == "distro":
         _show(result["steps"], args, lang, "install")
         return
-    doc = _recipe_doc(rid, lang) if rid != "update" else {
-        "id": "update", "title": i18n.t("upd_title", lang), "kind": "run", "verified": "guide",
+    titles = {"update": "upd_title", "hold": "lock_title_on", "unhold": "lock_title_off", "install-version": "ver_title"}
+    doc = _recipe_doc(rid, lang) if rid not in titles else {
+        "id": rid, "title": i18n.t(titles[rid], lang), "kind": "run", "verified": "guide",
         "verified_text": i18n.t("vf_guide", lang)}
     notes = [{"key": k, "text": t("rcw_" + k)} for k in result["notes"]]
     manual = [{"title": t("rcm_" + m["title"]), "text": m["text"]} for m in result["manual"]]
@@ -167,6 +171,9 @@ def _show_plan(result, args, lang):
 def _instances_cmd(args, items, lang):
     t = lambda k, **kw: i18n.t(k, lang, **kw)  # noqa: E731
     rows = instances.list_instances(items)
+    if args.cmd == "instances":
+        for r in rows:
+            r["locked"] = versions.lock_state(r["label_item"])                  # kept (True) / free (False) / not known (None)
     if args.cmd == "check-updates":
         res = {r["id"]: r for r in instances.check_updates(items)}
         for r in rows:
@@ -193,7 +200,8 @@ def _instances_cmd(args, items, lang):
             print(t("inst_none"))
         for r in rows:
             how = " ".join(r["launch"]) if r["launch"] else t("inst_cannot_launch")
-            print("- {}  [{}]\n    {}".format(i18n.label_for(r["label_item"], lang), r["id"], how))
+            kept = " " + t("lock_marker") if r.get("locked") else ""
+            print("- {}  [{}]{}\n    {}".format(i18n.label_for(r["label_item"], lang), r["id"], kept, how))
         return 0
     row = instances.find(rows, args.id)
     if row is None:
@@ -215,6 +223,50 @@ def _instances_cmd(args, items, lang):
             return 1
     print(t("inst_started", pid=instances.launch(row)))
     return 0
+
+
+def _versions_cmd(args, items, lang):
+    t = lambda k, **kw: i18n.t(k, lang, **kw)  # noqa: E731
+    rows = instances.list_instances(items)
+    row = instances.find(rows, args.id)
+    if row is None:
+        print(t("inst_unknown_id", id=args.id, known=", ".join(r["id"] for r in rows) or "-"), file=sys.stderr)
+        return 2
+    item, label = row["label_item"], i18n.label_for(row["label_item"], lang)
+    if args.cmd in ("hold", "unhold"):
+        result = versions.lock_steps(item, args.cmd == "hold")
+        result["recipe"] = args.cmd
+        _show_plan(dict(result, why=None), args, lang)
+        return _execute(result["steps"], args, lang)
+    found = versions.available(item)
+    if args.cmd == "versions":
+        if args.json:
+            print(json.dumps({"schema": SCHEMA, "id": row["id"], "label": label, "locked": versions.lock_state(item), "versions": found["versions"],
+                              "note": t("rcw_" + found["note"]) if found["note"] else None}, indent=2, ensure_ascii=False))
+            return 0
+        print(t("ver_head", label=label))
+        for v in found["versions"]:
+            print("  {}  {}  [{}]".format(v["version"], t("ver_installed") if v["installed"] else "", v["origin"]).replace("    [", "  ["))
+        if not found["versions"]:
+            print("  " + t("ver_none"))
+        lock = versions.lock_state(item)
+        print("  " + {True: t("lock_kept"), False: t("lock_free"), None: t("lock_unknown")}[lock])
+        if found["note"]:
+            print("* " + t("rcw_" + found["note"]))
+        return 0
+    row_v = next((v for v in found["versions"] if v["version"] == args.version), None)
+    if row_v is None:
+        print(t("ver_unknown_version", v=args.version, known=", ".join(v["version"] for v in found["versions"]) or "-"), file=sys.stderr)
+        return 2
+    try:
+        result = versions.steps_for(item, row_v)
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    result["recipe"] = "install-version"
+    result["manual"] = []
+    _show_plan(dict(result, why=None), args, lang)
+    return _execute(result["steps"], args, lang)
 
 
 def _update_cmd(args, sysinfo, items, lang):
@@ -269,6 +321,10 @@ def _show(steps, args, lang, title):
 
 def _execute(steps, args, lang):
     """Confirm, run, report. Returns the exit code."""
+    if steps and not args.json and not getattr(args, "no_simulate", False):
+        text = simulate.format_text(simulate.explain(steps), lang)
+        if text:
+            print(text + "\n")
     if not steps:
         print(i18n.t("rc_manual_only", lang))
         return 0
@@ -398,6 +454,7 @@ def build_parser():
     ap = argparse.ArgumentParser(prog="qgis-installer-cli", description=__doc__.split("\n\n")[0])
     ap.add_argument("--lang", choices=("en", "ka"), help="language of messages (default: the one the GUI remembers, else en)")
     ap.add_argument("--json", action="store_true", help="machine-readable output")
+    ap.add_argument("--no-simulate", action="store_true", help="do not ask the package manager what the commands would do before they are shown")
     ap.add_argument("--os-release", help=argparse.SUPPRESS)
     ap.add_argument("--pm", help=argparse.SUPPRESS)
     ap.add_argument("--arch", help=argparse.SUPPRESS)
@@ -441,6 +498,18 @@ def build_parser():
     p = sub.add_parser("launch", help="start one installed QGIS (shows the command first)")
     p.add_argument("id", help="installation id, from: instances")
     p.add_argument("--yes", action="store_true", help="do not ask")
+    p = sub.add_parser("versions", help="the versions an installation could be at (reads only)")
+    p.add_argument("id", help="installation id, from: instances")
+    p = sub.add_parser("install-version", help="go to a version of an installation (shows the commands and what they would do first)")
+    p.add_argument("id")
+    p.add_argument("version", help="a version from: versions ID")
+    p.add_argument("--yes", action="store_true", help="do not ask")
+    p.add_argument("--dry-run", action="store_true", help="only show the commands")
+    for name, text in (("hold", "keep the installed version: no updates for it"), ("unhold", "allow updates for it again")):
+        p = sub.add_parser(name, help=text)
+        p.add_argument("id")
+        p.add_argument("--yes", action="store_true", help="do not ask")
+        p.add_argument("--dry-run", action="store_true", help="only show the commands")
     p = sub.add_parser("update", help="update the QGIS installations found here (shows the commands first; close QGIS first)")
     p.add_argument("--yes", action="store_true", help="do not ask")
     p.add_argument("--dry-run", action="store_true", help="only show the commands")
@@ -517,6 +586,8 @@ def main(argv=None):
         return _update_cmd(args, sysinfo, items, lang)
     if args.cmd in ("instances", "check-updates", "launch"):
         return _instances_cmd(args, items, lang)
+    if args.cmd in ("versions", "install-version", "hold", "unhold"):
+        return _versions_cmd(args, items, lang)
 
     # uninstall
     if args.kinds:

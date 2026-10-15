@@ -26,6 +26,12 @@ comp() {   # image: install two components for real with the command line and ch
   docker run --rm -v "$root":/repo:ro "$1" sh -c "$PREP; python3 /repo/tests/qgis_components_container_test.py"
 }
 
+vers() {   # image: versions for real - list, go back, keep, release (and the Flatpak build list on Debian)
+  echo "=================== $1  versions (real)"
+  docker run --rm -v "$root":/repo:ro "$1" sh -c "$PREP; python3 /repo/tests/qgis_versions_container_test.py"
+}
+
+if [ "${1:-}" = "versions" ]; then shift; vers "$@"; exit $?; fi
 if [ "${1:-}" = "components" ]; then shift; comp "$@"; exit $?; fi
 if [ $# -ge 2 ]; then run "$@"; exit $?; fi
 rc=0
@@ -40,4 +46,9 @@ comp debian:trixie                                      || rc=1
 comp fedora:latest                                      || rc=1
 comp opensuse/tumbleweed                                || rc=1
 comp archlinux:latest                                   || rc=1
+vers ubuntu:24.04                                       || rc=1
+vers debian:trixie                                      || rc=1
+vers fedora:latest                                      || rc=1
+vers opensuse/tumbleweed                                || rc=1
+vers archlinux:latest                                   || rc=1
 exit $rc

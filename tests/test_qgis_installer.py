@@ -23,6 +23,8 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "qgis-installer"))
 
 import qgis_installer as qi  # noqa: E402
+qi.simulate._run = lambda *a, **k: (1, "")          # nothing in this file asks the host's package manager: simulations get "cannot tell"
+qi.versions._run = lambda *a, **k: (1, "")
 from qgis_installer import cli as qcli, i18n, plan, recipes, requirements, runner, system, uninstall  # noqa: E402
 
 FIX = os.path.join(ROOT, "tests", "fixtures", "os-release")
@@ -1051,6 +1053,14 @@ class Components(unittest.TestCase):
             for c in requirements.CATEGORIES:
                 self.assertIn("cat_" + c, i18n.STR[lang])
 
+    def test_a_tool_in_a_perl_directory_that_a_plain_path_lacks_still_counts_as_installed(self):
+        real = shutil.which
+        with mock.patch.object(requirements.shutil, "which", lambda t: None),                 mock.patch.object(requirements.os, "access", lambda p, m: p == "/usr/bin/vendor_perl/exiftool"),                 mock.patch.object(requirements.os.path, "isfile", lambda p: p == "/usr/bin/vendor_perl/exiftool"):
+            self.assertTrue(requirements.is_present("exiftool", which=requirements.shutil.which))
+            self.assertFalse(requirements.is_present("saga", which=requirements.shutil.which))      # saga_cmd is nowhere
+        self.assertFalse(requirements.is_present("exiftool", which=lambda t: None))                  # an injected `which` decides alone
+        del real
+
     def test_present_follows_the_tools_and_modules_found(self):
         rows = {r["id"]: r for r in self.rows("apt-get", present=("gdalinfo", "ogr2ogr", "numpy"))}
         self.assertTrue(rows["gdal"]["present"] and rows["numpy"]["present"])
@@ -1354,6 +1364,465 @@ class InstancesCli(unittest.TestCase):
         rows = {r["id"]: r for r in json.loads(out2)["instances"]}
         self.assertIs(rows["apt"]["updates"]["update"], True)
         self.assertIsNone(rows["flatpak-user-stable"]["updates"]["update"])
+
+
+# --------------------------------------------------------------------------- simulation: what would the package manager do
+APT_SIM = """Reading package lists...
+Inst libexpat1 (2.8.3-1 Debian:13/stable [amd64])
+Inst poppler-data (0.4.12-1 Debian:13/stable [all])
+Inst proj-bin [9.5.0-1] (9.6.0-1 Debian:13/stable [amd64])
+0 upgraded, 2 newly installed, 0 to remove and 1 not upgraded.
+"""
+APT_URIS = """'http://deb.debian.org/debian/pool/main/e/expat/libexpat1_2.8.3-1_amd64.deb' libexpat1_2.8.3-1_amd64.deb 122672 MD5Sum:d02b
+'http://deb.debian.org/debian/pool/main/p/poppler-data/poppler-data_0.4.12-1_all.deb' poppler-data_0.4.12-1_all.deb 1601364 MD5Sum:a5fd
+"""
+DNF5_SIM = """Transaction Summary:
+ Installing:       422 packages
+ Removing:           2 packages
+
+Total size of inbound packages is 1 GiB. Need to download 1 GiB.
+After this operation, 2 GiB extra will be used (install 2 GiB, remove 0 B).
+Operation aborted by the user.
+"""
+DNF4_SIM = """Transaction Summary
+================
+Install  3 Packages
+Upgrade  1 Package
+
+Total download size: 12 M
+Installed size: 40 M
+Operation aborted.
+"""
+ZYP_SIM = """158 new packages to install.
+
+Package download size:   140.6 MiB
+
+Package install size change:
+              |     554.8 MiB  required by packages that will be installed
+   554.8 MiB  |  -      0 B    released by packages that will be removed
+"""
+PAC_SIM = "snappy|1.3.1-1|40127\nblosc|1.21.6-2|48520\ngeos|3.15.0-1|2019454\n"
+APK_SIM = "(1/2) Installing gdal (3.11.5-r2)\n(2/2) Installing gdal-tools (3.11.5-r2)\nOK: 263.4 MiB in 113 packages\n"
+FLAT_INFO = "        ID: org.qgis.qgis\n       Ref: app/org.qgis.qgis/x86_64/stable\n  Download: 1.4 GB\n Installed: 4.1 GB\n   Runtime: org.kde.Platform/x86_64/6.11\n"
+FLAT_INFO_NBSP = FLAT_INFO.replace("1.4 GB", "592.6\u00a0MB").replace("4.1 GB", "1.6?GB")
+
+
+def answers(table):
+    calls = []
+
+    def run(cmd, timeout=180):
+        calls.append(cmd)
+        for prefix, answer in table:
+            if cmd[:len(prefix)] == prefix:
+                return answer
+        return 1, ""
+    run.calls = calls
+    return run
+
+
+class SimulateParse(unittest.TestCase):
+    def test_install_upgrade_remove_lines_of_every_tool(self):
+        P = qi.simulate.parse_line
+        self.assertEqual(P("apt-get install -y gdal-bin python3-numpy"), {"tool": "apt", "verb": "install", "names": ["gdal-bin", "python3-numpy"], "opts": ["-y"]})
+        self.assertEqual(P("apt-get install -y --only-upgrade qgis")["opts"], ["-y", "--only-upgrade"])
+        self.assertEqual(P("apt-get purge -y qgis")["verb"], "remove")
+        self.assertEqual(P("dnf upgrade -y qgis")["verb"], "upgrade")
+        self.assertEqual(P("zypper --non-interactive update qgis")["verb"], "upgrade")
+        self.assertEqual((P("pacman -S --noconfirm qgis")["tool"], P("pacman -S --noconfirm qgis")["verb"]), ("pacman", "install"))
+        self.assertEqual(P("pacman -R --noconfirm qgis")["verb"], "remove")
+        self.assertEqual(P("apk add gdal")["verb"], "install")
+        fp = P("flatpak install --system -y flathub org.qgis.qgis//lts")
+        self.assertEqual((fp["tool"], fp["remote"], fp["names"], fp["opts"]), ("flatpak", "flathub", ["org.qgis.qgis//lts"], ["--system"]))
+
+    def test_other_lines_are_not_simulated(self):
+        for line in ("set -eu", "apt-get update", "wget -q https://x", "rpm-ostree install qgis", "flatpak remote-add --user flathub x",
+                     "apt-get install -y", "echo apt-get install qgis", "snap refresh qgis"):
+            self.assertIsNone(qi.simulate.parse_line(line), line)
+
+    def test_human_sizes(self):
+        self.assertEqual((qi.simulate.human(512), qi.simulate.human(1536), qi.simulate.human(1723364)), ("512 B", "1.5 KiB", "1.6 MiB"))
+
+
+class SimulateTools(unittest.TestCase):
+    def one(self, line, table):
+        return qi.simulate.simulate_line(line, run=answers(table))
+
+    def test_apt_counts_upgrades_apart_and_sums_the_download(self):
+        r = self.one("apt-get install -y gdal-bin", [(["apt-get", "-s", "install"], (0, APT_SIM)), (["apt-get", "-qq", "--print-uris"], (0, APT_URIS))])
+        self.assertEqual((r["installs"], r["upgrades"], r["removes"], r["download"]), (2, 1, [], "1.6 MiB"))
+
+    def test_an_older_version_is_a_downgrade_not_an_upgrade(self):
+        out = "Inst tzdata [2026e-0ubuntu0.24.04.1] (2024a-2ubuntu1 Ubuntu:24.04/noble [all])\nInst other [1.0] (2.0 Ubuntu:24.04/noble [all])\n"
+        r = self.one("apt-get install -y tzdata=2024a-2ubuntu1", [(["apt-get", "-s", "install"], (0, out))])
+        self.assertEqual((r["installs"], r["upgrades"], r["downgrades"]), (0, 1, 1))
+        text = qi.simulate.format_text({"items": [r], "unsimulated": 0, "warnings": []}, "en")
+        self.assertIn("1 to upgrade, 1 to go back to an older version", text)
+        self.assertIn("ძველ ვერსიას დაუბრუნდება: 1", qi.simulate.format_text({"items": [r], "unsimulated": 0, "warnings": []}, "ka"))
+
+    def test_apt_remove_lists_what_goes_with_it(self):
+        out = "Remv python3-scipy [1.15.3-1]\nRemv python3-numpy [1:2.2.4]\n0 upgraded, 0 newly installed, 2 to remove\n"
+        r = self.one("apt-get remove -y python3-numpy", [(["apt-get", "-s", "remove"], (0, out))])
+        self.assertEqual((r["removes"], r["remove_count"], r["download"]), (["python3-scipy", "python3-numpy"], 2, None))
+
+    def test_apt_that_cannot_look_is_none_not_zero(self):
+        self.assertIsNone(self.one("apt-get install -y x", [(["apt-get", "-s"], (100, "E: Unable to locate package x"))]))
+
+    def test_dnf5_and_dnf4(self):
+        r = self.one("dnf install -y gdal", [(["dnf", "install", "--assumeno"], (1, DNF5_SIM))])
+        self.assertEqual((r["installs"], r["remove_count"], r["download"], r["disk"]), (422, 2, "1 GiB", "2 GiB"))
+        r = self.one("dnf upgrade -y qgis", [(["dnf", "upgrade", "--assumeno"], (1, DNF4_SIM))])
+        self.assertEqual((r["installs"], r["upgrades"], r["download"], r["disk"]), (3, 1, "12 M", "40 M"))
+        self.assertIsNone(self.one("dnf install -y x", [(["dnf"], (1, "Error: no match"))]))
+
+    def test_zypper(self):
+        r = self.one("zypper --non-interactive install gdal", [(["zypper", "--non-interactive", "install", "--dry-run"], (0, ZYP_SIM))])
+        self.assertEqual((r["installs"], r["download"], r["disk"]), (158, "140.6 MiB", "554.8 MiB"))
+        r = self.one("zypper --non-interactive update qgis", [(["zypper", "--non-interactive", "update", "--dry-run"], (0, "Nothing to do.\n"))])
+        self.assertIsNone(r)                                                       # not "0 changes": nothing was understood
+
+    def test_pacman_install_and_remove(self):
+        r = self.one("pacman -S --noconfirm gdal", [(["pacman", "-S", "--print"], (0, PAC_SIM))])
+        self.assertEqual((r["installs"], r["download"]), (3, "2.0 MiB"))
+        r = self.one("pacman -R --noconfirm numpy", [(["pacman", "-R", "--print"], (0, "python-scipy\npython-numpy\n"))])
+        self.assertEqual(r["removes"], ["python-scipy", "python-numpy"])
+
+    def test_apk_and_flatpak(self):
+        r = self.one("apk add gdal-tools", [(["apk", "add", "--simulate"], (0, APK_SIM))])
+        self.assertEqual((r["installs"], r["download"]), (2, None))
+        r = self.one("flatpak install --user -y flathub org.qgis.qgis//stable", [(["flatpak", "remote-info", "--user", "flathub"], (0, FLAT_INFO))])
+        self.assertEqual((r["download"], r["disk"]), ("1.4 GB", "4.1 GB"))
+        r = self.one("flatpak install --user -y flathub org.qgis.qgis//stable", [(["flatpak", "remote-info"], (0, FLAT_INFO_NBSP))])
+        self.assertEqual((r["download"], r["disk"]), ("592.6 MB", "1.6 GB"))               # the no-break space (or its '?') is not part of the size
+        self.assertIsNone(self.one("flatpak install --user -y flathub x//y", [(["flatpak"], (1, "error: Remote not found"))]))
+
+    def test_simulation_never_runs_anything_but_the_simulating_forms(self):
+        run = answers([])
+        for line in ("apt-get install -y a", "apt-get remove -y a", "dnf install -y a", "dnf remove -y a", "zypper --non-interactive install a",
+                     "pacman -S --noconfirm a", "pacman -R --noconfirm a", "apk add a", "apk del a", "flatpak install --user -y flathub a"):
+            qi.simulate.simulate_line(line, run=run)
+        self.assertGreaterEqual(len(run.calls), 10)
+        for c in run.calls:
+            if c[0] == "apt-get":
+                self.assertTrue("-s" in c or "--print-uris" in c, c)
+            elif c[0] == "dnf":
+                self.assertIn("--assumeno", c)
+            elif c[0] == "zypper":
+                self.assertIn("--dry-run", c)
+            elif c[0] == "pacman":
+                self.assertIn("--print", c)
+            elif c[0] == "apk":
+                self.assertIn("--simulate", c)
+            elif c[0] == "flatpak":
+                self.assertEqual(c[1], "remote-info")
+
+
+class SimulateExplain(unittest.TestCase):
+    def test_a_plan_is_explained_line_by_line_and_the_unsimulatable_is_counted(self):
+        steps = [{"root": True, "sh": "set -eu\napt-get update\napt-get install -y gdal-bin\napt-get install -y nothing-here\n"}]
+        run = answers([(["apt-get", "-s", "install", "gdal-bin"], (0, APT_SIM)), (["apt-get", "-qq", "--print-uris"], (0, APT_URIS))])
+        res = qi.simulate.explain(steps, run=run)
+        self.assertEqual((len(res["items"]), res["unsimulated"], res["warnings"]), (1, 1, []))
+        text = qi.simulate.format_text(res, "en")
+        self.assertIn("2 to install, 1 to upgrade, download 1.6 MiB", text)
+        self.assertIn("1 command(s) could not be simulated", text)
+        self.assertIn("nothing is claimed about them", text)
+
+    def test_an_install_that_removes_something_warns(self):
+        run = answers([(["apt-get", "-s", "install"], (0, "Remv libold [1]\nInst libnew (2 x [amd64])\n"))])
+        res = qi.simulate.explain([{"root": True, "sh": "apt-get install -y libnew\n"}], run=run)
+        self.assertEqual(res["warnings"], [("sim_removes_by_install", {"n": 1, "names": "libold"})])
+        self.assertIn("! This would also REMOVE 1 package(s): libold", qi.simulate.format_text(res, "en"))
+
+    def test_a_removal_that_drags_qgis_along_is_the_loudest_warning(self):
+        run = answers([(["apt-get", "-s", "remove"], (0, "Remv qgis [3.44]\nRemv python3-qgis [3.44]\nRemv python3-numpy [2]\n"))])
+        res = qi.simulate.explain([{"root": True, "sh": "apt-get remove -y python3-numpy\n"}], run=run)
+        keys = [k for k, _ in res["warnings"]]
+        self.assertEqual(keys, ["sim_removes_dependents", "sim_qgis_dragged"])
+        self.assertIn("qgis, python3-qgis", res["warnings"][1][1]["names"])
+        self.assertIn("This would take QGIS along", qi.simulate.format_text(res, "ka") and qi.simulate.format_text(res, "en"))
+        self.assertIn("QGIS-საც წაიღებს", qi.simulate.format_text(res, "ka"))
+
+    def test_removing_exactly_what_was_asked_does_not_warn_and_removing_qgis_itself_is_not_dragging(self):
+        run = answers([(["apt-get", "-s", "remove"], (0, "Remv qgis [3.44]\nRemv python3-qgis [3.44]\n"))])
+        res = qi.simulate.explain([{"root": True, "sh": "apt-get remove -y qgis python3-qgis\n"}], run=run)
+        self.assertEqual(res["warnings"], [])
+
+    def test_nothing_to_say_is_an_empty_text(self):
+        self.assertEqual(qi.simulate.format_text(qi.simulate.explain([{"root": True, "sh": "echo hi\n"}]), "en"), "")
+
+    def test_every_text_exists_in_both_languages(self):
+        for key in ("sim_head", "sim_install", "sim_upgrade", "sim_remove", "sim_download", "sim_disk", "sim_nothing", "sim_unsimulated",
+                    "sim_removes_by_install", "sim_removes_dependents", "sim_qgis_dragged"):
+            for lang in ("en", "ka"):
+                self.assertIn(key, i18n.STR[lang])
+
+
+class SimulateCli(unittest.TestCase):
+    call = Cli.call
+    BASE = ["--lang", "en", "--os-release", os.path.join(FIX, "ubuntu-noble"), "--pm", "apt-get", "--arch", "amd64", "--tools", ""]
+
+    def fake(self):
+        return answers([(["apt-get", "-s", "install"], (0, APT_SIM)), (["apt-get", "-qq", "--print-uris"], (0, APT_URIS))])
+
+    def test_the_dry_run_shows_the_simulation_after_the_commands(self):
+        with mock.patch.object(qi.simulate, "_run", self.fake()), mock.patch.object(requirements, "is_present", lambda rid, **kw: False):
+            rc, out, _ = self.call(*self.BASE, "components", "install", "gdal", "--dry-run")
+        self.assertEqual(rc, 0)
+        self.assertIn("What the package manager says it would do", out)
+        self.assertIn("- apt install: 2 to install, 1 to upgrade, download 1.6 MiB", out)
+        self.assertLess(out.index("apt-get install -y gdal-bin"), out.index("What the package manager says"))     # the commands, then what they would do, then the question
+
+    def test_no_simulate_and_json_leave_the_output_as_it_was(self):
+        for extra in (["--no-simulate"], ["--json"]):
+            with mock.patch.object(qi.simulate, "_run", self.fake()), mock.patch.object(requirements, "is_present", lambda rid, **kw: False):
+                rc, out, _ = self.call(*extra, *self.BASE, "components", "install", "gdal", "--dry-run")
+            self.assertNotIn("What the package manager says", out)
+        doc = json.loads(out)
+        self.assertEqual(doc["steps"][0]["sh"].strip().splitlines()[-1], "apt-get install -y gdal-bin")
+
+    def test_update_and_install_plans_show_it_too(self):
+        items = [{"kind": "apt", "pkgs": ["qgis"], "v": "3.44", "o": "", "root": True}]
+        with mock.patch.object(qi.simulate, "_run", self.fake()), mock.patch.object(uninstall, "find_installs", lambda s: items):
+            rc, out, _ = self.call(*self.BASE, "update", "--dry-run")
+        self.assertIn("apt install:", out)
+        self.assertIn("only-upgrade", out)
+
+    def test_a_package_manager_that_cannot_look_does_not_stop_anything(self):
+        with mock.patch.object(requirements, "is_present", lambda rid, **kw: False):
+            rc, out, _ = self.call(*self.BASE, "components", "install", "gdal", "--dry-run")      # simulate._run says "cannot tell"
+        self.assertEqual(rc, 0)
+        self.assertIn("1 command(s) could not be simulated", out)
+        self.assertIn("apt-get install -y gdal-bin", out)
+
+
+# --------------------------------------------------------------------------- versions: choose one, go back, keep it
+MADISON = """    qgis | 1:3.44.5+24noble | http://qgis.org/ubuntu-ltr noble/main amd64 Packages
+    qgis | 1:3.44.3+24noble | http://qgis.org/ubuntu-ltr noble/main amd64 Packages
+    qgis | 1:3.44.3+24noble | http://archive.ubuntu.com/ubuntu noble/universe amd64 Packages
+python3-qgis | 1:3.44.5+24noble | http://qgis.org/ubuntu-ltr noble/main amd64 Packages
+"""
+DNF_LIST5 = """Installed packages
+qgis.x86_64 3.44.5-1.fc44 3d628ccc7de241efa0768e20e681b450
+
+Available packages
+qgis.x86_64 3.44.1-1.fc44 fedora
+qgis.x86_64 3.44.5-1.fc44 updates
+qgis.x86_64 3.44.10-1.fc44 updates
+"""
+ZYP_SEARCH = """Loading repository data...
+Reading installed packages...
+
+S  | Name | Type    | Version    | Arch   | Repository
+---+------+---------+------------+--------+------------------------
+i+ | qgis | package | 3.44.5-9.1 | x86_64 | openSUSE-Tumbleweed-Oss
+v  | qgis | package | 3.44.1-1.1 | x86_64 | geo
+"""
+COMMIT_A, COMMIT_B = "8" * 64, "4" * 64
+FLAT_LOG = """        ID: org.qgis.qgis
+       Ref: app/org.qgis.qgis/x86_64/stable
+  Download: 592.6?MB
+ Installed: 1.6?GB
+
+    Commit: {a}
+    Parent: {b}
+   Subject: patch pdal so it can detect zstd properly (b5b068e1a700)
+      Date: 2026-10-13 23:37:12 +0000
+   History:
+
+    Commit: {b}
+   Subject: Update to SDK 6.11 (1827da20ef01)
+      Date: 2026-09-03 19:28:06 +0000
+""".format(a=COMMIT_A, b=COMMIT_B)
+
+
+class VersionsList(unittest.TestCase):
+    def test_apt_lists_every_version_once_newest_first_with_where_it_comes_from(self):
+        rows = qi.versions.available(dict(APT, v="1:3.44.5+24noble"), run=answers([(["apt-cache", "madison", "qgis"], (0, MADISON))]))["versions"]
+        self.assertEqual([r["version"] for r in rows], ["1:3.44.5+24noble", "1:3.44.3+24noble"])
+        self.assertEqual([r["installed"] for r in rows], [True, False])
+        self.assertIn("qgis.org/ubuntu-ltr", rows[1]["origin"])                                  # the first origin of a duplicated version
+
+    def test_dnf_sorts_by_version_not_as_text_and_marks_the_installed_one(self):
+        item = {"kind": "dist", "pm": "dnf", "pkgs": ["qgis"], "v": "3.44.5", "root": True}
+        rows = qi.versions.available(item, run=answers([(["dnf", "-q", "list", "--showduplicates", "qgis"], (0, DNF_LIST5))]))["versions"]
+        self.assertEqual([r["version"] for r in rows], ["3.44.10-1.fc44", "3.44.5-1.fc44", "3.44.1-1.fc44"])      # 10 > 5 > 1
+        self.assertEqual([r["installed"] for r in rows], [False, True, False])
+        four = DNF_LIST5.replace("Installed packages", "Installed Packages").replace("Available packages", "Available Packages")
+        rows4 = qi.versions.available(item, run=answers([(["dnf"], (0, four))]))["versions"]
+        self.assertEqual(len(rows4), 3)
+
+    def test_zypper_reads_the_search_table(self):
+        item = {"kind": "dist", "pm": "zypper", "pkgs": ["qgis"], "v": "3.44.5", "root": True}
+        rows = qi.versions.available(item, run=answers([(["zypper", "--non-interactive", "search", "-s"], (0, ZYP_SEARCH))]))["versions"]
+        self.assertEqual([(r["version"], r["installed"], r["origin"]) for r in rows],
+                         [("3.44.5-9.1", True, "openSUSE-Tumbleweed-Oss"), ("3.44.1-1.1", False, "geo")])
+
+    def test_flatpak_lists_builds_not_version_numbers(self):
+        rows = qi.versions.available(FP_STABLE, run=answers([(["flatpak", "remote-info", "--log", "--user", "flathub", "org.qgis.qgis//stable"], (0, FLAT_LOG))]))
+        self.assertEqual([r["commit"] for r in rows["versions"]], [COMMIT_A, COMMIT_B])
+        self.assertTrue(rows["versions"][0]["version"].startswith("2026-10-13"))
+        self.assertIn("zstd", rows["versions"][0]["version"])
+        self.assertEqual(rows["note"], "ver_flatpak")
+
+    def test_arch_and_unknown_kinds_say_why_there_is_nothing_to_choose(self):
+        self.assertEqual(qi.versions.available(DIST_AUR, run=answers([])), {"versions": [], "note": "ver_arch"})
+        self.assertEqual(qi.versions.available(SNAP, run=answers([]))["note"], "ver_unsupported")
+
+    def test_nothing_listed_when_the_tool_failed(self):
+        self.assertEqual(qi.versions.available(APT, run=answers([]))["versions"], [])
+
+
+class VersionsGoTo(unittest.TestCase):
+    def test_apt_pins_exactly_the_packages_that_have_that_version_and_allows_the_downgrade(self):
+        run = answers([(["apt-cache", "madison", "qgis"], (0, MADISON)), (["apt-cache", "madison", "python3-qgis"], (0, MADISON)),
+                       (["apt-cache", "madison", "libqgis3"], (0, ""))])
+        item = dict(APT, pkgs=["libqgis3", "python3-qgis", "qgis"])
+        r = qi.versions.steps_for(item, {"version": "1:3.44.5+24noble"}, run=run)
+        sh = r["steps"][0]["sh"]
+        self.assertIn("apt-get install -y --allow-downgrades python3-qgis=1:3.44.5+24noble qgis=1:3.44.5+24noble\n", sh)
+        self.assertNotIn("libqgis3", sh)                                        # it has no such version: not forced
+        self.assertTrue(r["steps"][0]["root"] and sh_syntax_ok(sh))
+
+    def test_apt_refuses_a_version_the_main_package_does_not_have(self):
+        with self.assertRaises(ValueError):
+            qi.versions.steps_for(APT, {"version": "9.9"}, run=answers([(["apt-cache", "madison"], (0, MADISON))]))
+
+    def test_dnf_downgrades_when_older_and_installs_when_newer(self):
+        item = {"kind": "dist", "pm": "dnf", "pkgs": ["qgis"], "v": "3.44.5-1.fc44", "root": True}
+        down = qi.versions.steps_for(item, {"version": "3.44.1-1.fc44", "installed": False})["steps"][0]["sh"]
+        up = qi.versions.steps_for(item, {"version": "3.44.10-1.fc44", "installed": False})["steps"][0]["sh"]
+        self.assertIn("dnf downgrade -y qgis-3.44.1-1.fc44\n", down)
+        self.assertIn("dnf install -y qgis-3.44.10-1.fc44\n", up)
+
+    def test_zypper_allows_the_old_package(self):
+        item = {"kind": "dist", "pm": "zypper", "pkgs": ["qgis"], "v": "3.44.5-9.1", "root": True}
+        sh = qi.versions.steps_for(item, {"version": "3.44.1-1.1"})["steps"][0]["sh"]
+        self.assertIn("zypper --non-interactive install --oldpackage qgis=3.44.1-1.1\n", sh)
+
+    def test_flatpak_goes_to_a_commit_in_the_right_scope_and_refuses_a_made_up_one(self):
+        user = qi.versions.steps_for(FP_STABLE, {"version": "x", "commit": COMMIT_B})["steps"][0]
+        self.assertEqual((user["root"], "flatpak update --user -y --commit=" + COMMIT_B + " org.qgis.qgis//stable" in user["sh"]), (False, True))
+        sysm = qi.versions.steps_for(FP_LTS, {"version": "x", "commit": COMMIT_A})["steps"][0]
+        self.assertTrue(sysm["root"] and "--system" in sysm["sh"] and "org.qgis.qgis//lts" in sysm["sh"])
+        for bad in ({"version": "x", "commit": "../../etc"}, {"version": "x", "commit": "abc"}, {"version": "x"}):
+            with self.assertRaises(ValueError):
+                qi.versions.steps_for(FP_STABLE, bad)
+
+    def test_no_way_for_arch_or_snap(self):
+        for item in (DIST_AUR, SNAP):
+            with self.assertRaises(ValueError):
+                qi.versions.steps_for(item, {"version": "1"})
+
+    def test_a_version_string_cannot_inject_a_command(self):
+        run = answers([(["apt-cache", "madison"], (0, "qgis | 1; rm -rf ~ | x\n"))])
+        r = qi.versions.steps_for(APT, {"version": "1; rm -rf ~"}, run=run)
+        self.assertIn("'qgis=1; rm -rf ~'", r["steps"][0]["sh"])                  # one quoted word, not a second command
+        self.assertTrue(sh_syntax_ok(r["steps"][0]["sh"]))
+
+
+class VersionsKeep(unittest.TestCase):
+    def test_state_of_every_mechanism(self):
+        self.assertIs(qi.versions.lock_state(APT, run=answers([(["apt-mark", "showhold"], (0, "qgis\ntzdata\n"))])), True)
+        self.assertIs(qi.versions.lock_state(APT, run=answers([(["apt-mark", "showhold"], (0, "tzdata\n"))])), False)
+        self.assertIsNone(qi.versions.lock_state(APT, run=answers([])))                             # could not ask: not "free"
+        self.assertIs(qi.versions.lock_state(FP_STABLE, run=answers([(["flatpak", "mask", "--user"], (0, "org.qgis.qgis//stable\n"))])), True)
+        self.assertIs(qi.versions.lock_state(FP_STABLE, run=answers([(["flatpak", "mask", "--user"], (0, ""))])), False)
+        zy = {"kind": "dist", "pm": "zypper", "pkgs": ["qgis"], "v": "1", "root": True}
+        locks = "# | Name | Type    | Repository | Comment\n--+------+---------+------------+--------\n1 | qgis | package | (any)      | \n"
+        self.assertIs(qi.versions.lock_state(zy, run=answers([(["zypper", "--non-interactive", "locks"], (0, locks))])), True)
+        self.assertIs(qi.versions.lock_state(zy, run=answers([(["zypper", "--non-interactive", "locks"], (0, "No locks defined.\n"))])), False)
+        self.assertIsNone(qi.versions.lock_state(DIST_AUR, run=answers([])))
+        dnf = {"kind": "dist", "pm": "dnf", "pkgs": ["qgis"], "v": "1", "root": True}
+        five = "# Added by 'versionlock add' command on 2026-10-15 12:10:57\nPackage name: qgis\nevr = 3.44.5-1.fc44\n"
+        four = "qgis-0:3.44.5-1.fc44.*\nbash-0:5.1.8-6.fc.*\n"
+        for out in (five, four):
+            self.assertIs(qi.versions.lock_state(dnf, run=answers([(["dnf", "versionlock", "list"], (0, out))])), True, out)
+        other = "Package name: qgis-server\nevr = 1\n"
+        self.assertIs(qi.versions.lock_state(dnf, run=answers([(["dnf", "versionlock", "list"], (0, other))])), False)
+        self.assertIs(qi.versions.lock_state(dnf, run=answers([(["dnf", "versionlock", "list"], (0, ""))])), False)
+        self.assertIsNone(qi.versions.lock_state(dnf, run=answers([(["dnf", "versionlock", "list"], (1, "Unknown command"))])))
+
+    def test_hold_and_release_commands(self):
+        L = qi.versions.lock_steps
+        self.assertIn("apt-mark hold python3-qgis qgis\n", L(APT, True)["steps"][0]["sh"])
+        self.assertIn("apt-mark unhold python3-qgis qgis\n", L(APT, False)["steps"][0]["sh"])
+        self.assertIn("flatpak mask --user org.qgis.qgis//stable\n", L(FP_STABLE, True)["steps"][0]["sh"])
+        self.assertIn("flatpak mask --system --remove org.qgis.qgis//lts\n", L(FP_LTS, False)["steps"][0]["sh"])
+        self.assertTrue(L(FP_LTS, True)["steps"][0]["root"] and not L(FP_STABLE, True)["steps"][0]["root"])
+        zy = {"kind": "dist", "pm": "zypper", "pkgs": ["qgis"], "v": "1", "root": True}
+        self.assertIn("zypper --non-interactive addlock qgis\n", L(zy, True)["steps"][0]["sh"])
+        dnf = dict(zy, pm="dnf")
+        self.assertIn("dnf versionlock add qgis\n", L(dnf, True)["steps"][0]["sh"])
+        self.assertIn("lock_dnf_plugin", L(dnf, True)["notes"])
+        arch = L(DIST_AUR, True)
+        self.assertEqual(arch["steps"], [])                                      # no command exists: instructions only
+        self.assertIn("IgnorePkg = qgis-ltr", arch["manual"][0]["text"])
+        for item in (APT, FP_STABLE, zy, dnf):
+            for lock in (True, False):
+                self.assertTrue(sh_syntax_ok(L(item, lock)["steps"][0]["sh"]))
+
+    def test_every_text_exists_in_both_languages(self):
+        for key in ("ver_none", "ver_installed", "ver_unknown_version", "ver_head", "ver_title", "rcw_ver_downgrade", "rcw_ver_flatpak",
+                    "rcw_ver_arch", "rcw_ver_unsupported", "rcw_lock_dnf_plugin", "rcw_lock_arch", "rcw_lock_unsupported", "rcm_lock_arch",
+                    "lock_kept", "lock_free", "lock_unknown", "lock_title_on", "lock_title_off"):
+            for lang in ("en", "ka"):
+                self.assertIn(key, i18n.STR[lang])
+
+
+class VersionsCli(unittest.TestCase):
+    call = Cli.call
+    BASE = ["--lang", "en", "--os-release", os.path.join(FIX, "ubuntu-noble"), "--pm", "apt-get", "--arch", "amd64", "--tools", ""]
+
+    def run_cmd(self, *argv, items=(APT,), table=()):
+        run = answers(list(table) or [(["apt-cache", "madison"], (0, MADISON)), (["apt-mark", "showhold"], (0, "qgis\n"))])
+        with mock.patch.object(uninstall, "find_installs", lambda s: list(items)), mock.patch.object(qi.versions, "_run", run), \
+                mock.patch.object(qi.instances.shutil, "which", have("qgis", "flatpak")):
+            return self.call(*self.BASE, *argv)
+
+    def test_versions_lists_with_the_installed_mark_the_keep_state_and_the_note(self):
+        rc, out, _ = self.run_cmd("versions", "apt", items=(dict(APT, v="1:3.44.5+24noble"),))
+        self.assertEqual(rc, 0)
+        self.assertRegex(out, r"1:3.44.5\+24noble +\(installed\)")
+        self.assertIn("1:3.44.3+24noble", out)
+        self.assertIn("version kept (not updated)", out)
+        self.assertIn("Going back to an older version can fail", out)
+
+    def test_versions_json(self):
+        rc, out, _ = self.run_cmd("--json", "versions", "apt")
+        doc = json.loads(out)
+        self.assertEqual((doc["id"], doc["locked"], [v["version"] for v in doc["versions"]]), ("apt", True, ["1:3.44.5+24noble", "1:3.44.3+24noble"]))
+
+    def test_install_version_shows_commands_and_refuses_a_version_not_in_the_list(self):
+        rc, out, _ = self.run_cmd("install-version", "apt", "1:3.44.3+24noble", "--dry-run")
+        self.assertEqual(rc, 0)
+        self.assertIn("apt-get install -y --allow-downgrades", out)
+        self.assertIn("qgis=1:3.44.3+24noble", out)
+        rc, _, err = self.run_cmd("install-version", "apt", "9.9", "--dry-run")
+        self.assertEqual(rc, 2)
+        self.assertIn("Version '9.9' is not in the list. Choose one of: 1:3.44.5+24noble, 1:3.44.3+24noble", err)
+
+    def test_hold_and_unhold_and_unknown_ids(self):
+        rc, out, _ = self.run_cmd("hold", "apt", "--dry-run")
+        self.assertIn("apt-mark hold python3-qgis qgis", out)
+        rc, out, _ = self.run_cmd("unhold", "apt", "--dry-run")
+        self.assertIn("apt-mark unhold python3-qgis qgis", out)
+        rc, _, err = self.run_cmd("hold", "nope")
+        self.assertEqual(rc, 2)
+        self.assertIn("Unknown installation 'nope'", err)
+        rc, out, _ = self.run_cmd("hold", "dist-pacman-qgis-ltr", items=(DIST_AUR,), table=[(["x"], (0, ""))])
+        self.assertEqual(rc, 0)                                                  # instructions only: nothing to run
+        self.assertIn("IgnorePkg = qgis-ltr", out)
+
+    def test_instances_shows_whether_a_version_is_kept(self):
+        rc, out, _ = self.run_cmd("instances")                                   # the fake apt-mark says qgis is held
+        self.assertEqual(rc, 0)
+        self.assertIn("[apt] [version kept]", out)
+        rc, out, _ = self.run_cmd("instances", table=[(["apt-mark", "showhold"], (0, "tzdata\n"))])
+        self.assertNotIn("version kept", out)                                    # free: no marker
+        rc, out, _ = self.run_cmd("instances", table=[(["x"], (1, ""))])
+        self.assertNotIn("version kept", out)                                    # could not ask: no claim either way
+        rc, out, _ = self.run_cmd("--json", "instances")
+        self.assertIs(json.loads(out)["instances"][0]["locked"], True)
 
 
 if __name__ == "__main__":
