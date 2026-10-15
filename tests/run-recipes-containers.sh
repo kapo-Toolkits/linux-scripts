@@ -37,7 +37,19 @@ envf() {   # image: an environment file for real - check, apply, check, export
 }
 
 if [ "${1:-}" = "versions" ]; then shift; vers "$@"; exit $?; fi
+docd() {   # image: the doctor against a real system - no false alarm, each known problem found
+  echo "=================== $1  doctor (real)"
+  docker run --rm -v "$root":/repo:ro "$1" sh -c "$PREP; python3 -u /repo/tests/qgis_doctor_container_test.py"
+}
+
 if [ "${1:-}" = "envfile" ]; then shift; envf "$@"; exit $?; fi
+pipi() {   # image: pip install into a clean virtual environment and run from there
+  echo "=================== $1  pip install (real)"
+  docker run --rm -v "$root":/repo:ro "$1" sh -c "$PREP; python3 -u /repo/tests/qgis_pip_container_test.py"
+}
+
+if [ "${1:-}" = "doctor" ]; then shift; docd "$@"; exit $?; fi
+if [ "${1:-}" = "pip" ]; then shift; pipi "$@"; exit $?; fi
 if [ "${1:-}" = "components" ]; then shift; comp "$@"; exit $?; fi
 if [ $# -ge 2 ]; then run "$@"; exit $?; fi
 rc=0
@@ -61,4 +73,13 @@ envf debian:trixie                                      || rc=1
 envf fedora:latest                                      || rc=1
 envf opensuse/tumbleweed                                || rc=1
 envf archlinux:latest                                   || rc=1
+docd ubuntu:24.04                                       || rc=1
+docd debian:trixie                                      || rc=1
+docd fedora:latest                                      || rc=1
+docd opensuse/tumbleweed                                || rc=1
+docd archlinux:latest                                   || rc=1
+pipi ubuntu:22.04                                       || rc=1
+pipi debian:trixie                                      || rc=1
+pipi fedora:latest                                      || rc=1
+pipi archlinux:latest                                   || rc=1
 exit $rc

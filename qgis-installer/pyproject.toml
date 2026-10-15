@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "qgis-installer"
+version = "0.7.0"
+description = "Install, update, switch and look after QGIS and the programs around it on Linux: recipes for every system of the QGIS installation guide, simulation before anything runs, versions, environment files, a doctor. Georgian and English."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Giorgi Kapanadze" }]
+keywords = ["qgis", "gis", "installer", "linux", "georgia"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Topic :: Scientific/Engineering :: GIS",
+]
+dependencies = []                      # standard library only
+
+[project.urls]
+Source = "https://github.com/kapo-Toolkits/linux-scripts/tree/main/qgis-installer"
+
+[project.scripts]
+qgis-installer-cli = "qgis_installer.cli:main"
+
+[tool.setuptools]
+packages = ["qgis_installer"]

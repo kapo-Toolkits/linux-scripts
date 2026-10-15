@@ -121,6 +121,28 @@ own profile, and the warning is shown only where it applies).
 Both Flatpak branches can be installed at the same time; removal now names the branch (`org.qgis.qgis//lts`) so that it removes the
 one you ticked and not an ambiguous reference.
 
+## The doctor: what is known to break QGIS
+
+```bash
+qgis-installer-cli doctor        # reads only; exit 1 = a problem, 0 = none (a warning is not a problem)
+```
+
+It looks at concrete things and says which it looked at (so "no problem found" means "these were checked", and what could not be checked here is
+listed too):
+
+| Check | Finds |
+|---|---|
+| Python libraries hidden by your own copies | a `pip install --user` copy of numpy, GDAL for Python, pyproj, Shapely, pandas, SciPy, Matplotlib... in `~/.local/lib/python3.x/site-packages`, found *before* the system's copy that QGIS and its plugins were built against |
+| GDAL tools against GDAL for Python | `gdalinfo` and the Python bindings are different versions (major.minor) |
+| PROJ data folder | `PROJ_LIB` / `PROJ_DATA` pointing to a folder that is missing or has no `proj.db` |
+| release of the QGIS repository (apt) | the repository file is for another release than the one running: a distribution upgrade leaves it behind and updates then fail with 404 |
+| package database (apt) | `dpkg --audit` reports a half-finished state |
+| free disk space | under 1 GiB where the profile and the packages go |
+| installations sharing a profile | several system/container QGIS programs use one profile folder (Flatpak and Snap keep their own) |
+
+Verified in real containers: no finding on a clean system, then each problem made for real (a user copy of numpy next to the system's, a
+`PROJ_LIB` to nowhere, a repository file of another release) is found, and Python really does import the user copy first.
+
 ## One environment on many machines: the environment file
 
 For a class room or an office: write down what one machine has and make the others match.

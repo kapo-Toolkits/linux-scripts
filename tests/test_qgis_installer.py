@@ -1936,6 +1936,201 @@ class EnvValidate(unittest.TestCase):
         self.assertEqual(v["qgis"]["recipe"], None)
 
 
+# --------------------------------------------------------------------------- the doctor
+D = qi.doctor
+
+
+class DoctorShadowing(unittest.TestCase):
+    def test_a_user_copy_that_hides_a_system_copy_is_found(self):
+        with tempfile.TemporaryDirectory() as d:
+            user, system = os.path.join(d, "user"), os.path.join(d, "system")
+            for base, names in ((user, ("numpy", "osgeo", "mylib")), (system, ("numpy", "pandas", "mylib"))):
+                for n in names:
+                    os.makedirs(os.path.join(base, n))
+            found = D.check_shadowing([user], [system])
+            self.assertEqual([(lvl, key, p["name"]) for lvl, key, p in found], [("warn", "shadowing", "numpy")])
+            self.assertEqual((found[0][2]["user"], found[0][2]["system"]), (os.path.join(user, "numpy"), os.path.join(system, "numpy")))
+
+    def test_no_finding_without_both_copies_or_for_libraries_that_are_not_watched(self):
+        with tempfile.TemporaryDirectory() as d:
+            os.makedirs(os.path.join(d, "user", "numpy"))
+            os.makedirs(os.path.join(d, "system", "mylib"))
+            os.makedirs(os.path.join(d, "user", "mylib"))
+            self.assertEqual(D.check_shadowing([os.path.join(d, "user")], [os.path.join(d, "system")]), [])     # numpy only in user; mylib not watched
+            self.assertEqual(D.check_shadowing([], [os.path.join(d, "system")]), [])
+
+    def test_the_users_folders_are_found_for_every_python_version(self):
+        with tempfile.TemporaryDirectory() as d:
+            for v in ("python3.11", "python3.13"):
+                os.makedirs(os.path.join(d, ".local", "lib", v, "site-packages"))
+            os.makedirs(os.path.join(d, ".local", "lib", "python2.7", "site-packages"))
+            got = D.user_site_dirs(d)
+            self.assertEqual([os.path.basename(os.path.dirname(x)) for x in got], ["python3.11", "python3.13"])
+
+
+class DoctorChecks(unittest.TestCase):
+    def test_gdal_versions_are_compared_by_major_and_minor(self):
+        self.assertEqual(D.check_gdal("GDAL 3.10.3, released 2025/04/01", "3.8.4"),
+                         [("warn", "gdal_mismatch", {"cli": "3.10", "py": "3.8"})])
+        self.assertEqual(D.check_gdal("GDAL 3.8.4, released 2024/02/08", "3.8.1"), [])        # another patch level is fine
+        self.assertEqual(D.check_gdal("", "3.8.4"), [])
+        self.assertEqual(D.check_gdal("GDAL 3.8.4", None), [])                                  # not known: no claim
+
+    def test_python_gdal_version_asks_the_interpreter(self):
+        run = answers([(["python3", "-c"], (0, "3.8.4\n"))])
+        self.assertEqual(D.python_gdal_version(run=run), "3.8.4")
+        self.assertIsNone(D.python_gdal_version(run=answers([])))
+
+    def test_proj_folder_that_is_missing_or_has_no_database(self):
+        with tempfile.TemporaryDirectory() as d:
+            good, nodb = os.path.join(d, "good"), os.path.join(d, "nodb")
+            os.makedirs(good)
+            os.makedirs(nodb)
+            open(os.path.join(good, "proj.db"), "wb").close()
+            self.assertEqual(D.check_proj({"PROJ_LIB": good}), [])
+            self.assertEqual(D.check_proj({}), [])
+            self.assertEqual([(l, k) for l, k, _ in D.check_proj({"PROJ_LIB": os.path.join(d, "gone")})], [("problem", "proj_missing")])
+            self.assertEqual([(l, k) for l, k, _ in D.check_proj({"PROJ_DATA": nodb})], [("problem", "proj_nodb")])
+            both = D.check_proj({"PROJ_DATA": good + os.pathsep + nodb, "PROJ_LIB": os.path.join(d, "gone")})
+            self.assertEqual(sorted(k for _l, k, _ in both), ["proj_missing", "proj_nodb"])
+
+    def test_repository_file_of_another_release(self):
+        text = "Types: deb\nURIs: https://qgis.org/ubuntu-ltr\nSuites: jammy\nComponents: main\n"
+        self.assertEqual(D.check_repo(text, "noble"), [("problem", "repo_old", {"suite": "jammy", "codename": "noble"})])
+        self.assertEqual(D.check_repo(text, "jammy"), [])
+        self.assertEqual(D.check_repo("Types: deb\n", "noble"), [])                              # no Suites line: no claim
+        self.assertEqual(D.check_repo(text, ""), [])
+
+    def test_dpkg_audit(self):
+        self.assertEqual(D.check_dpkg(""), [])
+        self.assertEqual(D.check_dpkg("\n"), [])
+        f = D.check_dpkg("The following packages are only half configured:\n qgis\n")
+        self.assertEqual((f[0][0], f[0][1]), ("problem", "dpkg_broken"))
+        self.assertIn("half configured", f[0][2]["first"])
+
+    def test_disk_space(self):
+        usage = lambda path: type("U", (), {"free": {"/home/u": 200 * 1024 ** 2, "/var": 50 * 1024 ** 3}[path]})()  # noqa: E731
+        f = D.check_disk([("profile", "/home/u"), ("packages", "/var")], usage=usage, exists=lambda p: True)
+        self.assertEqual([(l, k, p["where"], p["free"]) for l, k, p in f], [("warn", "disk_low", "/home/u", "200 MB")])
+        self.assertEqual(D.check_disk([("profile", "/nowhere")], usage=usage, exists=lambda p: False), [])
+
+    def test_installations_that_share_a_profile(self):
+        self.assertEqual(D.check_sources([APT, BOX]), [("info", "shared_profile", {"n": 2})])
+        self.assertEqual(D.check_sources([APT, FP_STABLE, FP_LTS, SNAP]), [])                   # Flatpak and Snap keep their own
+        self.assertEqual(D.check_sources([APT]), [])
+
+
+class DoctorRun(unittest.TestCase):
+    def run_all(self, items=(), sysinfo=None, table=(), python_gdal=None, **kw):
+        sysinfo = sysinfo or {"apt": True, "code": "noble"}
+        kw.setdefault("home", "/nonexistent-home")
+        kw.setdefault("user_dirs", [])
+        kw.setdefault("system_dirs", [])
+        kw.setdefault("usage", lambda p: type("U", (), {"free": 50 * 1024 ** 3})())
+        kw.setdefault("exists", lambda p: True)
+        return D.run_all(list(items), sysinfo, env=kw.pop("env", {}), run=answers(list(table)), python_gdal=python_gdal, **kw)
+
+    def test_everything_that_was_looked_at_is_listed_and_a_clean_system_has_no_findings(self):
+        res = self.run_all(table=[(["gdalinfo"], (0, "GDAL 3.8.4, released 2024")), (["dpkg", "--audit"], (0, ""))], python_gdal="3.8.4",
+                           read=lambda path: "Suites: noble\n")
+        self.assertEqual(res["findings"], [])
+        self.assertEqual(res["ran"], ["shadowing", "gdal", "proj", "repo", "dpkg", "disk", "sources"])
+        self.assertEqual(res["skipped"], [])
+
+    def test_what_could_not_be_looked_at_is_said_not_passed_over(self):
+        res = self.run_all(table=[(["dpkg", "--audit"], (1, ""))], python_gdal=None)                     # no gdalinfo, dpkg unusable, no repo file
+        self.assertEqual(res["skipped"], ["gdal", "repo", "dpkg"])
+        self.assertNotIn("gdal", res["ran"])
+
+    def test_non_apt_systems_skip_the_apt_checks(self):
+        res = self.run_all(sysinfo={"apt": False, "code": ""}, python_gdal="3.8.4", table=[(["gdalinfo"], (0, "GDAL 3.8.4"))])
+        self.assertEqual(res["ran"], ["shadowing", "gdal", "proj", "disk", "sources"])
+
+    def test_findings_come_worst_first(self):
+        with tempfile.TemporaryDirectory() as d:
+            for base in ("u", "s"):
+                os.makedirs(os.path.join(d, base, "numpy"))
+            res = self.run_all(items=[APT, BOX], table=[(["gdalinfo"], (0, "GDAL 3.10.3")), (["dpkg", "--audit"], (0, "half configured\n"))],
+                               python_gdal="3.8.4", env={"PROJ_LIB": "/nowhere"}, user_dirs=[os.path.join(d, "u")], system_dirs=[os.path.join(d, "s")],
+                               exists=lambda p: p != "/nowhere" and os.path.exists(p) or p == d, read=lambda p: "Suites: jammy\n")
+        levels = [lvl for lvl, _k, _p in res["findings"]]
+        self.assertEqual(levels, sorted(levels, key=["problem", "warn", "info"].index))
+        keys = {k for _l, k, _p in res["findings"]}
+        self.assertEqual(keys, {"shadowing", "gdal_mismatch", "proj_missing", "repo_old", "dpkg_broken", "shared_profile"})
+
+
+class DoctorCli(unittest.TestCase):
+    call = Cli.call
+    BASE = ["--lang", "en", "--os-release", os.path.join(FIX, "ubuntu-noble"), "--pm", "apt-get", "--arch", "amd64", "--tools", ""]
+
+    def run_doctor(self, findings, ran=("shadowing", "proj"), skipped=(), *argv):
+        res = {"findings": findings, "ran": list(ran), "skipped": list(skipped)}
+        with mock.patch.object(uninstall, "find_installs", lambda s: []), mock.patch.object(D, "run_all", lambda items, sysinfo, **kw: res):
+            return self.call(*self.BASE, *argv, "doctor")
+
+    def test_a_clean_result_exits_0_and_says_what_was_looked_at(self):
+        rc, out, _ = self.run_doctor([], skipped=("gdal",))
+        self.assertEqual(rc, 0)
+        self.assertIn("What the doctor looked at: Python libraries hidden by your own copies, PROJ data folder.", out)
+        self.assertIn("No problem found in what was looked at.", out)
+        self.assertIn("Not looked at (not available here): GDAL tools against GDAL for Python.", out)
+
+    def test_a_problem_exits_1_a_warning_does_not(self):
+        rc, out, _ = self.run_doctor([("problem", "proj_missing", {"var": "PROJ_LIB", "path": "/x"})])
+        self.assertEqual(rc, 1)
+        self.assertIn("[PROBLEM] PROJ_LIB points to /x, which does not exist", out)
+        rc, out, _ = self.run_doctor([("warn", "disk_low", {"where": "/home/u", "free": "200 MB"})])
+        self.assertEqual(rc, 0)
+        self.assertIn("[warning] Only 200 MB free in /home/u", out)
+
+    def test_json_and_georgian(self):
+        rc, out, _ = self.run_doctor([("info", "shared_profile", {"n": 2})], ("sources",), (), "--json")
+        doc = json.loads(out)
+        self.assertEqual((rc, doc["findings"][0][1], doc["ran"]), (0, "shared_profile", ["sources"]))
+        res = {"findings": [("problem", "repo_old", {"suite": "jammy", "codename": "noble"})], "ran": ["repo"], "skipped": []}
+        with mock.patch.object(uninstall, "find_installs", lambda s: []), mock.patch.object(D, "run_all", lambda items, sysinfo, **kw: res):
+            rc, out, _ = self.call("--lang", "ka", *self.BASE[2:], "doctor")
+        self.assertEqual(rc, 1)
+        self.assertIn("[პრობლემა]", out)
+        self.assertIn("„jammy“-ისთვისაა", out)
+
+    def test_every_finding_and_check_has_a_text_in_both_languages(self):
+        keys = ["shadowing", "gdal_mismatch", "proj_missing", "proj_nodb", "repo_old", "dpkg_broken", "disk_low", "shared_profile"]
+        for lang in ("en", "ka"):
+            for k in keys:
+                self.assertIn("doc_" + k, i18n.STR[lang])
+            for c in ("shadowing", "gdal", "proj", "repo", "dpkg", "disk", "sources"):
+                self.assertIn("doc_chk_" + c, i18n.STR[lang])
+            for lvl in ("problem", "warn", "info"):
+                self.assertIn("doc_level_" + lvl, i18n.STR[lang])
+
+
+class Packaging(unittest.TestCase):
+    def test_the_version_is_the_same_in_the_package_and_in_pyproject(self):
+        try:
+            import tomllib
+        except ImportError:                                                     # Python before 3.11 has no TOML reader
+            self.skipTest("no tomllib")
+        with open(os.path.join(ROOT, "qgis-installer", "pyproject.toml"), "rb") as fh:
+            meta = tomllib.load(fh)
+        self.assertEqual(meta["project"]["version"], qi.__version__)
+        self.assertEqual(meta["project"]["scripts"], {"qgis-installer-cli": "qgis_installer.cli:main"})
+        self.assertEqual(meta["tool"]["setuptools"]["packages"], ["qgis_installer"])
+        self.assertEqual(meta["project"]["dependencies"], [])                    # standard library only
+
+    def test_every_module_of_the_package_is_packaged(self):
+        folder = os.path.join(ROOT, "qgis-installer", "qgis_installer")
+        self.assertEqual(sorted(f for f in os.listdir(folder) if f.endswith(".py"))[:2], ["__init__.py", "__main__.py"])
+        for f in os.listdir(folder):
+            self.assertFalse(os.path.isdir(os.path.join(folder, f)) and f != "__pycache__", f)    # a sub-package would need listing in pyproject
+
+    def test_version_flag(self):
+        with self.assertRaises(SystemExit) as cm, contextlib.redirect_stdout(io.StringIO()) as out:
+            qcli.main(["--version"])
+        self.assertEqual(cm.exception.code, 0)
+        self.assertEqual(out.getvalue().strip(), "qgis-installer " + qi.__version__)
+
+
 class GeorgianStyle(unittest.TestCase):
     def test_no_comma_before_the_word_da_in_any_georgian_text(self):
         """The house rule: no comma before the conjunction "da" ("and"). A word that merely starts with it (da-nart...) is not the conjunction."""
