@@ -10,7 +10,8 @@ STR = {
  "f_pkg": "Packages (official repository)", "log": "Log",
  "mA": "A. Official QGIS repository (Debian/Ubuntu/Mint) — recommended",
  "mB": "B. Flatpak (Flathub) — any distribution, your user only",
- "mC": "C. Distribution package — simplest, usually older",
+"mC": "C. Distribution package — simplest, usually older",
+ "k_container": "Container {tool}: {name} (QGIS lives inside; removing it deletes the container's own files)",
  "ch_latest": "Latest release {v}", "ch_ltr": "Long-term release (LTR) {v} — most stable",
  "ch_nightly-release": "Nightly of the next point release", "ch_nightly-ltr": "Nightly of the next LTR point release",
  "ch_nightly": "Nightly development (master) — unstable, debug build",
@@ -43,11 +44,18 @@ STR = {
  "k_flatpak": "Flatpak ({i}) org.qgis.qgis {v}", "k_snap": "Snap: qgis {v}", "k_dist": "Distribution package ({pm}): qgis {v}",
  "k_data": "User data: {p} ({sz})", "k_unknown": "unknown",
  "guide": (
-  "WHICH METHOD?\n\n"
-  "A  Official repository — newest QGIS, updated through apt. Debian 12/13/sid, Ubuntu 22.04–26.04 and derivatives (Linux Mint uses its Ubuntu codename).\n"
-  "   Debian 12, Ubuntu 22.04 and 24.04 get only the LTR line (their libraries are too old for QGIS 4).\n"
-  "B  Flatpak — works on every distribution, sandboxed, installs for your user. Slightly bigger and files access is sandboxed.\n"
-  "C  Distribution package — tiny effort, but often an old QGIS.\n\n"
+  "WHICH WAY?\n\n"
+  "Say what you want and the program recommends the best way for your system, with the reason. You can pick any other way by hand.\n"
+  "• Stable and long-term (LTR) - fewest surprises; best for work and teaching.\n"
+  "• Newest release - newest features (a new major version can be rough in its first months).\n"
+  "• Next to my QGIS - try QGIS 4 without touching the one you have (Flatpak or a container).\n\n"
+  "Official repository (Debian 12/13/sid, Ubuntu 22.04-26.04, Mint) - updated through apt; Debian 12, Ubuntu 22.04 and 24.04 get only the LTR line. "
+  "Flatpak - every distribution, sandboxed; branch stable is QGIS 4, branch lts is the old QGIS 3 line on an end-of-life runtime. "
+  "Fedora, openSUSE, Arch, Mageia - the distribution's own package (Arch also has the AUR: built from source). "
+  "Fedora Atomic - rpm-ostree layering (reboot needed). Containers (Distrobox, Toolbx) - QGIS in its own box. Spack - builds everything from source. "
+  "NixOS and Slackware - instructions only, nothing is changed for you.\n"
+  "Under each way the program says how far it was checked: installed for real in a container, package names and a dry run in a container, "
+  "or only taken from the installation guide (not run by the author).\n\n"
   "CHANNELS\n\n"
   "• Latest release — newest features (new major version first months can be rough).\n"
   "• LTR (long-term) — fewer changes, best for work and teaching.\n"
@@ -163,7 +171,8 @@ STR = {
  "f_pkg": "პაკეტები (ოფიციალური რეპოზიტორია)", "log": "ლოგი",
  "mA": "ა. ოფიციალური QGIS რეპოზიტორია (Debian/Ubuntu/Mint) — რეკომენდებული",
  "mB": "ბ. Flatpak (Flathub) — ნებისმიერ დისტრიბუციაზე, მხოლოდ თქვენთვის",
- "mC": "გ. დისტრიბუციის პაკეტი — უმარტივესი, ხშირად ძველი ვერსია",
+"mC": "გ. დისტრიბუციის პაკეტი — უმარტივესი, ხშირად ძველი ვერსია",
+ "k_container": "კონტეინერი {tool}: {name} (QGIS შიგნითაა; წაშლისას კონტეინერის საკუთარი ფაილებიც იკარგება)",
  "ch_latest": "უახლესი რელიზი {v}", "ch_ltr": "გრძელვადიანი რელიზი (LTR) {v} — ყველაზე სტაბილური",
  "ch_nightly-release": "შემდეგი point-რელიზის ღამის ბილდი", "ch_nightly-ltr": "შემდეგი LTR point-რელიზის ღამის ბილდი",
  "ch_nightly": "განვითარების ღამის ბილდი (master) — არასტაბილური, debug",
@@ -196,11 +205,18 @@ STR = {
  "k_flatpak": "Flatpak ({i}) org.qgis.qgis {v}", "k_snap": "Snap: qgis {v}", "k_dist": "დისტრიბუციის პაკეტი ({pm}): qgis {v}",
  "k_data": "მომხმარებლის მონაცემები: {p} ({sz})", "k_unknown": "უცნობი",
  "guide": (
-  "რომელი მეთოდი?\n\n"
-  "ა  ოფიციალური რეპოზიტორია — ყველაზე ახალი QGIS, განახლება apt-ით. Debian 12/13/sid, Ubuntu 22.04–26.04 და წარმოებულები (Linux Mint-ი თავის Ubuntu-ს კოდურ სახელს იყენებს).\n"
-  "   Debian 12-ს, Ubuntu 22.04-სა და 24.04-ს მხოლოდ LTR ხაზი აქვს (ბიბლიოთეკები QGIS 4-ისთვის ძველია).\n"
-  "ბ  Flatpak — ნებისმიერ დისტრიბუციაზე მუშაობს, იზოლირებულია, თქვენი მომხმარებლისთვის ყენდება. ცოტა მძიმეა და ფაილებზე წვდომა შეზღუდულია.\n"
-  "გ  დისტრიბუციის პაკეტი — უმარტივესი, მაგრამ ხშირად ძველი QGIS.\n\n"
+  "რომელი გზა?\n\n"
+  "თქვენ ამბობთ, რა გსურთ და პროგრამა თქვენი სისტემისთვის საუკეთესო გზას გირჩევთ მიზეზითურთ. ნებისმიერი სხვა გზის ხელით არჩევაც შეგიძლიათ.\n"
+  "• სტაბილური და გრძელვადიანი (LTR) - ყველაზე ნაკლები სიურპრიზი, სამუშაოსა და სწავლებისთვის საუკეთესო.\n"
+  "• უახლესი გამოშვება - ახალი შესაძლებლობები (ახალი მთავარი ვერსია პირველ თვეებში შეიძლება უხეში იყოს).\n"
+  "• ჩემი QGIS-ის გვერდით - QGIS 4-ის საცდელად, ახლანდელის შეხების გარეშე (Flatpak ან კონტეინერი).\n\n"
+  "ოფიციალური რეპოზიტორია (Debian 12/13/sid, Ubuntu 22.04-26.04, Mint) - ახლდება apt-ით. Debian 12-ს, Ubuntu 22.04-სა და 24.04-ს მხოლოდ LTR ხაზი აქვს. "
+  "Flatpak - ნებისმიერ დისტრიბუციაზე, იზოლირებული. შტო stable არის QGIS 4, შტო lts კი ძველი QGIS 3 ხაზი უკვე აღარ მხარდაჭერილ გარემოზე. "
+  "Fedora, openSUSE, Arch, Mageia - დისტრიბუციის საკუთარი პაკეტი (Arch-ს აქვს AUR-იც, რომელიც წყაროდან იგება). "
+  "Fedora Atomic - rpm-ostree-ით (საჭიროა გადატვირთვა). კონტეინერები (Distrobox, Toolbx) - QGIS საკუთარ ყუთში. Spack - ყველაფერს წყაროდან აგებს. "
+  "NixOS და Slackware - მხოლოდ ინსტრუქცია, თქვენთვის არაფერი იცვლება.\n"
+  "თითოეულ გზას პროგრამა წერს, რამდენად არის შემოწმებული: კონტეინერში ნამდვილად დაყენდა, პაკეტების სახელები და სატესტო გაშვება კონტეინერში, "
+  "ან მხოლოდ სახელმძღვანელოდანაა აღებული (ავტორს არ გაუშვია).\n\n"
   "არხები\n\n"
   "• უახლესი რელიზი — ახალი შესაძლებლობები (ახალი მაჟორული ვერსიის პირველ თვეებში შეიძლება უხეში იყოს).\n"
   "• LTR (გრძელვადიანი) — ნაკლები ცვლილება, სამუშაოსა და სწავლებისთვის საუკეთესო.\n"
@@ -330,6 +346,8 @@ def label_for(it, lang="en"):
         return t("k_snap", lang, v=it["v"])
     if k == "dist":
         return t("k_dist", lang, pm=it["pm"], v=it["v"])
+    if k == "container":
+        return t("k_container", lang, tool=it["tool"], name=it["name"])
     return t("k_data", lang, p=it["path"], sz=it["sz"])
 
 

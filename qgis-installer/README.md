@@ -82,13 +82,18 @@ GUI remembers). To preview another system: `--os-release tests/fixtures/os-relea
 | `qgis-installer-gui.py` | the Tk window - a thin layer over the package |
 | `qgis-installer-cli.py` | the command line (`python3 -m qgis_installer` from this folder does the same) |
 
-## Methods
+## Ways to install
 
-| | Method | Works on | Notes |
-|---|---|---|---|
-| A | **Official QGIS repository** | Debian / Ubuntu / Mint & derivatives, amd64 | latest (4.2.x), LTR (3.44.x) or nightly; packages `qgis`, `qgis-plugin-grass`, `python3-qgis`, optional `qgis-server` |
-| B | **Flatpak** (`org.qgis.qgis`, Flathub) | any distribution | installed `--user`, no root for QGIS itself |
-| C | **Distribution package** | apt / dnf / pacman / zypper | simplest, usually older ⚠️ dnf/pacman/zypper paths untested |
+See **Recipes** above: every way the guide describes is a recipe, `recommend` picks one for your goal and system, and the
+window offers the same. The old letters still work on the command line: `--method A` is `apt-official`, `B` is `flatpak`,
+`C` is the distribution package of your system (`apt-distro`, `dnf-fedora`, `zypper-opensuse`, `pacman-arch`).
+
+**Not run by the author** (taken from the guide, marked "from the guide" in the program): `rpm-ostree`, Spack, Distrobox,
+Toolbx and the AUR. Re-running the container recipes is safe (an existing `qgis-box` is reused); on Fedora hosts Toolbx
+uses `fedora-toolbox:<host release>`, elsewhere the guide's image. Fedora Atomic layering is `--idempotent` and tells you to reboot.
+
+`uninstall` also finds AUR packages (`qgis-ltr`, `qgis-git`), `rpm-ostree` layers and the `qgis-box` container
+(removing the container deletes the files inside it - the app says so).
 
 Supported codenames for A (from the [official guide](https://qgis.org/resources/installation-guide/#debian--ubuntu)):
 Debian bookworm\*, trixie, sid · Ubuntu resolute, questing, plucky, noble\*, jammy\* — **\*LTR line only** (their libraries are not QGIS 4 ready).
@@ -110,7 +115,8 @@ The **Uninstall** tab scans for *every* QGIS on the machine and lets you tick wh
 | QGIS repository / key files (`/etc/apt/sources.list.d/*qgis*`, keyrings) | `rm -f` + `apt-get update` |
 | Flatpak `org.qgis.qgis` (user and system) | `flatpak uninstall` |
 | Snap `qgis` | `snap remove` |
-| Distro package (dnf / zypper / pacman) | native remove |
+| Distro package (dnf / zypper / pacman, AUR `qgis-ltr` / `qgis-git`, `rpm-ostree` layers) | native remove |
+| Container `qgis-box` (Distrobox / Toolbx) | `distrobox rm` / `toolbox rm` |
 | User data: `~/.local/share/QGIS`, `~/.config/QGIS`, `~/.cache/QGIS`, `~/.var/app/org.qgis.qgis` | `rm -rf` on these **exact** paths only — **never ticked by default** (profiles, settings, plugins) |
 
 Everything root-level runs as one step (one password prompt), after a command preview. With *“open the Install tab afterwards”* ticked you can immediately install another channel — needed e.g. for latest → LTR, since apt will not downgrade.
@@ -124,4 +130,4 @@ Everything root-level runs as one step (one password prompt), after a command pr
 
 ## Status
 
-⚠️ Written from the guide; the generated shell is syntax-checked (`sh -n`) in the unit tests for every distribution fixture, method and channel, and the GUI starts. Detection was checked against a real apt install (QGIS 3.44 LTR from `qgis.org/ubuntu-ltr`); removal commands were generated and syntax-checked but **not executed**. Snap/dnf/pacman/zypper detection is untested.
+⚠️ Written from the guide; the generated shell is syntax-checked (`sh -n`) in the unit tests for every recipe on every distribution fixture, and the GUI starts. Detection was checked against a real apt install (QGIS 3.44 LTR from `qgis.org/ubuntu-ltr`); removal commands were generated and syntax-checked but **not executed**. Snap/dnf/pacman/zypper detection is untested.

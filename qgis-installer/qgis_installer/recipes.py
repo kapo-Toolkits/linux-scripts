@@ -23,7 +23,7 @@ FLATHUB_REPO = "https://dl.flathub.org/repo/flathub.flatpakrepo"
 GEO_REPO = "https://download.opensuse.org/repositories/Application:/Geo/openSUSE_Tumbleweed/"
 DISTROBOX_IMAGE = "registry.opensuse.org/opensuse/toolbox:latest"          # the guide's example
 TOOLBX_IMAGE = "registry.fedoraproject.org/fedora-toolbox:rawhide"          # the guide's example
-BOX = "qgis-box"
+BOX = system.CONTAINER_BOX
 
 FLATPAK_BRANCHES = ("stable", "lts")
 AUR_CHANNELS = {"ltr": "qgis-ltr", "testing": "qgis-git"}
@@ -119,6 +119,9 @@ def _distro(name):
 # ---------------------------------------------------------------- plans
 def _plan_apt_official(s, o):
     channel = o.get("channel") or system.default_channel(s)
+    if channel not in system.allowed_channels(s):
+        raise ValueError("channel '{}' is not offered for this system (allowed: {})".format(
+            channel, ", ".join(system.allowed_channels(s))))
     pk = {"grass": o.get("grass", True), "python": o.get("python", True), "server": o.get("server", False)}
     steps = plan.build_install("A", s, channel, pk)
     return {"steps": steps, "notes": ["apt_other_sources", "apt_ubuntugis"]}
@@ -157,7 +160,9 @@ def _plan_dnf(s, o):
 
 def _plan_rpm_ostree(s, o):
     names = _pkgs(o, ["qgis"], grass="qgis-grass", python="python3-qgis", server="qgis-server")
-    return {"steps": [_step(True, "rpm-ostree install " + " ".join(names))], "notes": ["ostree_reboot", "ostree_flatpak"]}
+    return {"steps": [_step(True, "rpm-ostree install --idempotent " + " ".join(names) +
+                            "\necho 'Reboot to use the layered packages (systemctl reboot).'")],
+            "notes": ["ostree_reboot", "ostree_flatpak"]}
 
 
 def _plan_zypper(s, o):
@@ -195,16 +200,23 @@ def _plan_spack(s, o):
 def _plan_distrobox(s, o):
     image = o.get("image") or DISTROBOX_IMAGE
     q = shlex.quote
-    sh = ("distrobox create --yes --name {box} --image {img}\n"
+    sh = ("distrobox list | grep -q {box} || distrobox create --yes --name {box} --image {img}\n"
           "distrobox enter {box} -- sudo zypper --non-interactive install qgis qgis-plugin-grass\n"
           "distrobox enter {box} -- distrobox-export --app qgis").format(box=BOX, img=q(image))
     return {"steps": [_step(False, sh)], "notes": ["box_alongside", "box_update_distrobox"]}
 
 
+def _toolbx_image(s):
+    """The guide shows rawhide; on a Fedora host the box is pinned to the host's release so it matches the system."""
+    if s.get("distro") == "fedora" and s.get("version_id"):
+        return "registry.fedoraproject.org/fedora-toolbox:" + s["version_id"]
+    return TOOLBX_IMAGE
+
+
 def _plan_toolbx(s, o):
-    image = o.get("image") or TOOLBX_IMAGE
+    image = o.get("image") or _toolbx_image(s)
     q = shlex.quote
-    sh = ("toolbox create --assumeyes --image {img} {box}\n"
+    sh = ("toolbox list --containers | grep -q {box} || toolbox create --assumeyes --image {img} {box}\n"
           "toolbox run --container {box} sudo dnf install -y qgis qgis-grass python3-qgis").format(box=BOX, img=q(image))
     return {"steps": [_step(False, sh)], "notes": ["box_alongside", "box_toolbx_launch"]}
 

@@ -312,7 +312,8 @@ class Cli(unittest.TestCase):
         doc = json.loads(out)
         self.assertEqual(rc, 0)
         self.assertEqual(doc["schema"], qcli.SCHEMA)
-        self.assertEqual(doc["methods"], {"A": True, "B": True, "C": True})
+        self.assertEqual({m: doc["methods"][m] for m in "ABC"}, {"A": True, "B": True, "C": True})
+        self.assertEqual(sorted(doc["methods"]), ["A", "B", "C"])
         self.assertEqual(doc["channels"], qi.LTR_ONLY_CHANNELS)
         self.assertEqual(doc["default_channel"], "ltr")
         rc, out, _ = self.call("--json", *self.FEDORA, "info")
@@ -722,7 +723,7 @@ class RecipePlans(unittest.TestCase):
         self.assertNotIn("qgis-grass", self.text(self.sh("dnf-fedora", d, grass=False)))
         atomic = fxt("fedora-silverblue", "dnf", ["rpm-ostree"], "ostree")
         r = self.sh("rpm-ostree-fedora", atomic)
-        self.assertIn("rpm-ostree install qgis python3-qgis qgis-grass", self.text(r))
+        self.assertIn("rpm-ostree install --idempotent qgis python3-qgis qgis-grass", self.text(r))
         self.assertIn("ostree_reboot", r["notes"])
 
     def test_opensuse_uses_only_packages_that_exist(self):

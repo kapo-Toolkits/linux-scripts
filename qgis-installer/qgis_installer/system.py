@@ -9,6 +9,7 @@ LATEST, LTR = "4.2.x", "3.44.x"           # per the QGIS installation guide (202
 KEY_URL = "https://download.qgis.org/downloads/qgis-archive-keyring.gpg"
 KEY_FPR = "2D7E3441A707FDB3E7059441D155B8E6A419C5BE"   # expires 2027-08-08
 KEYRING = "/etc/apt/keyrings/qgis-archive-keyring.gpg"
+CONTAINER_BOX = "qgis-box"      # the Distrobox / Toolbx container the recipes create
 SOURCES = "/etc/apt/sources.list.d/qgis.sources"
 
 # supported codenames -> LTR only?
@@ -113,7 +114,7 @@ def detect(os_release=None, pm=None, arch=None, tools=None, immutable=None, exis
     return {"name": o.get("PRETTY_NAME", "Linux"), "family": family, "code": code, "pm": pm,
             "arch": arch, "supported": supported, "ltr_only": ltr_only,
             "apt": family is not None and pm == "apt-get",
-            "id": o.get("ID", ""), "distro": classify_distro(o, family),
+            "id": o.get("ID", ""), "version_id": o.get("VERSION_ID", ""), "distro": classify_distro(o, family),
             "immutable": (immutable_kind(o, tools, exists) if immutable is None
                           else (None if immutable == "none" else immutable)),
             "tools": tools}
