@@ -12,6 +12,9 @@
     qgis-installer-cli versions ID                               # the versions that installation could be at
     qgis-installer-cli install-version ID VERSION [--yes] [--dry-run]    # go to one (also back to an older one)
     qgis-installer-cli hold ID | unhold ID [--yes] [--dry-run]   # keep the installed version / allow updates again
+    qgis-installer-cli env export [--name TEXT] [--output FILE]  # write what this machine has as an environment file
+    qgis-installer-cli env check FILE                            # how far is this machine from that file? (reads only)
+    qgis-installer-cli env apply FILE [--yes] [--dry-run]        # install what is missing (commands shown, simulated, confirmed)
     qgis-installer-cli update [--yes] [--dry-run]                # newest build of the QGIS installations found here
     qgis-installer-cli uninstall [--kinds apt,repo,flatpak,snap,dist,data] [--purge] [--yes] [--dry-run]
     qgis-installer-cli components [list] [--category cli|engine|python|db]   # what can be added next to QGIS, and what is there
@@ -28,7 +31,7 @@ import argparse
 import json
 import sys
 
-from . import i18n, instances, plan, recipes, requirements, runner, simulate, system, uninstall, update, versions
+from . import envspec, i18n, instances, plan, recipes, requirements, runner, simulate, system, uninstall, update, versions
 
 SCHEMA = 1
 KINDS = ("apt", "repo", "flatpak", "snap", "dist", "data")
@@ -140,7 +143,7 @@ def _show_plan(result, args, lang):
     if rid == "distro":
         _show(result["steps"], args, lang, "install")
         return
-    titles = {"update": "upd_title", "hold": "lock_title_on", "unhold": "lock_title_off", "install-version": "ver_title"}
+    titles = {"update": "upd_title", "hold": "lock_title_on", "unhold": "lock_title_off", "install-version": "ver_title", "env-apply": "env_title"}
     doc = _recipe_doc(rid, lang) if rid not in titles else {
         "id": rid, "title": i18n.t(titles[rid], lang), "kind": "run", "verified": "guide",
         "verified_text": i18n.t("vf_guide", lang)}
@@ -265,6 +268,56 @@ def _versions_cmd(args, items, lang):
         return 2
     result["recipe"] = "install-version"
     result["manual"] = []
+    _show_plan(dict(result, why=None), args, lang)
+    return _execute(result["steps"], args, lang)
+
+
+def _read_spec(path, lang):
+    """-> the validated spec, or None after saying why not (the file is untrusted)."""
+    t = lambda k, **kw: i18n.t(k, lang, **kw)  # noqa: E731
+    try:
+        return envspec.load(path)
+    except OSError as exc:
+        print(t("env_unreadable", path=path, why=str(exc)), file=sys.stderr)
+    except envspec.SpecError as exc:
+        print(t("env_too_big") if "larger than 64 KB" in str(exc) else t("env_invalid", why=str(exc)), file=sys.stderr)
+    return None
+
+
+def _env_cmd(args, sysinfo, items, lang):
+    t = lambda k, **kw: i18n.t(k, lang, **kw)  # noqa: E731
+    rows = requirements.components(sysinfo["pm"])
+    if args.env_cmd == "export":
+        text = json.dumps(envspec.export_spec(items, rows, args.name), indent=2, ensure_ascii=False) + "\n"
+        if args.output:
+            try:
+                with open(args.output, "w", encoding="utf-8", newline="\n") as fh:
+                    fh.write(text)
+            except OSError as exc:
+                print(t("env_unreadable", path=args.output, why=str(exc)), file=sys.stderr)
+                return 2
+            print(t("env_written", path=args.output))
+        else:
+            sys.stdout.write(text)
+        return 0
+    spec = _read_spec(args.file, lang)
+    if spec is None:
+        return 2
+    state = envspec.check(spec, items, rows)
+    if args.env_cmd == "check" or not args.json:
+        lines = envspec.describe(spec, state, lang)
+        if args.env_cmd == "check":
+            if args.json:
+                print(json.dumps(dict(state, schema=SCHEMA), indent=2, ensure_ascii=False))
+                return 0
+            print("\n".join(lines))
+            return 0 if not (state["components_missing"] or state["qgis"]["state"] == "missing") else 1
+        print("\n".join(lines) + "\n")
+    result = envspec.plan(spec, items, rows, sysinfo)
+    if not result["steps"] and not result["manual"]:
+        print(t("env_matches") if not result["notes"] else "\n".join("* " + t("rcw_" + n) for n in result["notes"]))
+        return 0
+    result["recipe"] = "env-apply"
     _show_plan(dict(result, why=None), args, lang)
     return _execute(result["steps"], args, lang)
 
@@ -510,6 +563,17 @@ def build_parser():
         p.add_argument("id")
         p.add_argument("--yes", action="store_true", help="do not ask")
         p.add_argument("--dry-run", action="store_true", help="only show the commands")
+    p = sub.add_parser("env", help="environment files: the same QGIS and components on many machines")
+    es = p.add_subparsers(dest="env_cmd", required=True)
+    q = es.add_parser("export", help="write what this machine has (QGIS, components) as an environment file")
+    q.add_argument("--name", default="", help="a name for the file's content")
+    q.add_argument("--output", help="the file to write (default: print it)")
+    q = es.add_parser("check", help="how far is this machine from the file? (reads only)")
+    q.add_argument("file")
+    q = es.add_parser("apply", help="install what the file asks for and this machine lacks")
+    q.add_argument("file")
+    q.add_argument("--yes", action="store_true", help="do not ask")
+    q.add_argument("--dry-run", action="store_true", help="only show the commands")
     p = sub.add_parser("update", help="update the QGIS installations found here (shows the commands first; close QGIS first)")
     p.add_argument("--yes", action="store_true", help="do not ask")
     p.add_argument("--dry-run", action="store_true", help="only show the commands")
@@ -584,6 +648,8 @@ def main(argv=None):
 
     if args.cmd == "update":
         return _update_cmd(args, sysinfo, items, lang)
+    if args.cmd == "env":
+        return _env_cmd(args, sysinfo, items, lang)
     if args.cmd in ("instances", "check-updates", "launch"):
         return _instances_cmd(args, items, lang)
     if args.cmd in ("versions", "install-version", "hold", "unhold"):

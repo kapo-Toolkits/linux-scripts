@@ -7,6 +7,7 @@ The distribution matrix comes from tests/fixtures/os-release/*; the real apt/qgi
 tests/qgis_container_test.py (run in throw-away containers).
 """
 import contextlib
+import datetime
 import io
 import json
 import os
@@ -1823,6 +1824,325 @@ class VersionsCli(unittest.TestCase):
         self.assertNotIn("version kept", out)                                    # could not ask: no claim either way
         rc, out, _ = self.run_cmd("--json", "instances")
         self.assertIs(json.loads(out)["instances"][0]["locked"], True)
+
+
+# --------------------------------------------------------------------------- environment files
+REPO_UBUNTU_LTR = {"kind": "repo", "files": ["/etc/apt/sources.list.d/qgis.sources"], "c": " \u2014 ubuntu-ltr", "root": True}
+
+
+def comp_rows(pm="apt-get", present=()):
+    return requirements.components(pm, which=lambda t: "/x/" + t if t in present else None,
+                                   find_spec=lambda m: object() if m in present else None)
+
+
+class EnvExport(unittest.TestCase):
+    TODAY = datetime.date(2026, 10, 15)
+
+    def export(self, items, present=("gdalinfo", "ogr2ogr", "numpy"), name=""):
+        return qi.envspec.export_spec(items, comp_rows(present=present), name, today=self.TODAY)
+
+    def test_apt_with_the_qgis_repository_and_its_channel(self):
+        spec = self.export([dict(APT, v="1:3.44.5+24noble"), REPO_UBUNTU_LTR], name="GIS lab")
+        self.assertEqual(spec["qgis"], {"goal": "stable", "recipe": "apt-official", "options": {"channel": "ltr"}, "version": "1:3.44.5+24noble"})
+        self.assertEqual((spec["schema"], spec["name"], spec["created"]), (1, "GIS lab", "2026-10-15"))
+        self.assertEqual(spec["components"], ["gdal", "numpy"])
+
+    def test_the_channel_is_read_from_the_repository_url_for_every_variant(self):
+        for url, channel, goal in (("ubuntu", "latest", "latest"), ("debian-ltr", "ltr", "stable"), ("ubuntugis-ltr", "ltr", "stable"),
+                                   ("ubuntu-nightly-ltr", "nightly-ltr", "stable"), ("debian-nightly-release", "nightly-release", "latest"),
+                                   ("ubuntu-nightly", "nightly", "latest")):
+            spec = self.export([APT, dict(REPO_UBUNTU_LTR, c=" \u2014 " + url)])
+            self.assertEqual((spec["qgis"]["options"]["channel"], spec["qgis"]["goal"]), (channel, goal), url)
+
+    def test_apt_without_the_repository_is_the_distribution_package(self):
+        self.assertEqual(self.export([APT])["qgis"]["recipe"], "apt-distro")
+
+    def test_the_other_kinds_and_nothing(self):
+        self.assertEqual(self.export([FP_LTS])["qgis"], {"goal": "stable", "recipe": "flatpak", "options": {"branch": "lts", "scope": "system"}, "version": "3.44.5"})
+        self.assertEqual(self.export([FP_STABLE])["qgis"]["goal"], "latest")
+        self.assertEqual(self.export([{"kind": "dist", "pm": "dnf", "pkgs": ["qgis"], "v": "3.44.1", "root": True}])["qgis"]["recipe"], "dnf-fedora")
+        self.assertEqual(self.export([BOX])["qgis"], {"goal": "alongside", "recipe": "distrobox", "options": {}})
+        self.assertIsNone(self.export([])["qgis"])
+        self.assertIsNone(self.export([{"kind": "dist", "pm": "urpmi", "pkgs": ["qgis"], "v": "1", "root": True}])["qgis"])
+        self.assertEqual(self.export([], present=())["components"], [])
+
+    def test_the_export_is_a_valid_file_and_survives_a_round_trip(self):
+        spec = self.export([dict(APT, v="1:3.44.5+24noble"), REPO_UBUNTU_LTR], name="x")
+        again = qi.envspec.validate(json.loads(json.dumps(spec)))
+        self.assertEqual(again, spec)
+        for items in ([FP_LTS], [BOX], [], [APT]):
+            qi.envspec.validate(self.export(items))
+
+
+class EnvValidate(unittest.TestCase):
+    def good(self, **over):
+        doc = {"schema": 1, "name": "lab", "created": "2026-10-15", "components": ["gdal"],
+               "qgis": {"goal": "stable", "recipe": "apt-official", "options": {"channel": "ltr"}, "version": "3.44.5"}}
+        doc.update(over)
+        return doc
+
+    def bad(self, doc, needle):
+        with self.assertRaises(qi.envspec.SpecError) as cm:
+            qi.envspec.validate(doc)
+        self.assertIn(needle, str(cm.exception))
+
+    def test_a_good_file_is_accepted_and_duplicates_collapse(self):
+        v = qi.envspec.validate(self.good(components=["gdal", "numpy", "gdal"]))
+        self.assertEqual(v["components"], ["gdal", "numpy"])
+        self.assertEqual(qi.envspec.validate({"schema": 1})["qgis"], None)              # only the schema is required
+
+    def test_the_shape_of_the_file(self):
+        self.bad([], "one JSON object")
+        self.bad(self.good(schema=2), "schema must be 1")
+        self.bad(dict(self.good(), extra=1), "unknown field")
+        self.bad(self.good(name="a\nb"), "name")
+        self.bad(self.good(name=5), "name")
+        self.bad(self.good(created="yesterday"), "created")
+        self.bad(self.good(components="gdal"), "list")
+        self.bad(self.good(components=[5]), "list")
+        self.bad(self.good(components=["gdal", "rm -rf ~"]), "unknown component")
+        self.bad(self.good(qgis="apt"), "qgis must be")
+
+    def test_the_qgis_part_only_holds_names_from_closed_lists(self):
+        def q(**kw):
+            base = {"goal": "stable", "recipe": "apt-official", "options": {}}
+            base.update(kw)
+            return self.good(qgis=base)
+        self.bad(q(extra=1), "unknown field")
+        self.bad(q(goal="best"), "goal")
+        self.bad(q(recipe="apt-official; rm -rf ~"), "unknown recipe")
+        self.bad(q(recipe=["x"]), "unknown recipe")
+        self.bad(q(options=[]), "options")
+        self.bad(q(options={"branch": "lts"}), "not an option of recipe")                  # a Flatpak option on an apt recipe
+        self.bad(q(options={"channel": "../etc"}), "channel")
+        self.bad(q(options={"channel": ["ltr"]}), "channel")
+        self.bad(q(options={5: 1}), "not an option")
+        self.bad(q(goal=["stable"]), "goal")
+        self.bad(q(recipe={"a": 1}), "unknown recipe")
+        self.bad(q(recipe="flatpak", options={"branch": ["lts"]}), "branch")
+        self.bad(q(recipe="flatpak", options={"scope": {"x": 1}}), "scope")
+        self.bad(q(recipe="flatpak", options={"branch": "dev"}), "branch")
+        self.bad(q(recipe="flatpak", options={"scope": "root"}), "scope")
+        self.bad(q(recipe="distrobox", options={"image": "x; rm -rf ~"}), "image")
+        self.bad(q(recipe="distrobox", options={"image": "$(id)"}), "image")
+        self.bad(q(recipe="zypper-opensuse", options={"geo_repo": "yes"}), "true or false")
+        self.bad(q(version="1; rm -rf ~"), "version")
+        self.bad(q(version=3), "version")
+        ok = qi.envspec.validate(q(recipe="distrobox", options={"image": "registry.opensuse.org/opensuse/toolbox:latest"}))
+        self.assertEqual(ok["qgis"]["options"]["image"], "registry.opensuse.org/opensuse/toolbox:latest")
+
+    def test_a_null_recipe_is_allowed_it_means_use_the_goal(self):
+        v = qi.envspec.validate(self.good(qgis={"goal": "latest", "recipe": None, "options": {}}))
+        self.assertEqual(v["qgis"]["recipe"], None)
+
+
+class GeorgianStyle(unittest.TestCase):
+    def test_no_comma_before_the_word_da_in_any_georgian_text(self):
+        """The house rule: no comma before the conjunction "da" ("and"). A word that merely starts with it (da-nart...) is not the conjunction."""
+        hits = [k for k, v in i18n.STR["ka"].items() if isinstance(v, str) and re.search("," + " " + "და" + r"(?![ა-ჰ])", v)]
+        self.assertEqual(hits, [])
+
+
+class EnvFuzz(unittest.TestCase):
+    """A file passed around between machines: whatever it holds, the answer is a clean SpecError or a valid spec - never a crash."""
+
+    def junk(self, rnd, depth=0):
+        pick = rnd.randrange(12 if depth < 3 else 8)
+        if pick == 0:
+            return None
+        if pick == 1:
+            return rnd.choice([True, False])
+        if pick == 2:
+            return rnd.randrange(-5, 10**6)
+        if pick == 3:
+            return rnd.random() * 1e9
+        if pick == 4:
+            return rnd.choice(["", "stable", "ltr", "latest", "apt-official", "flatpak", "gdal", "numpy", "user", "system", "../../x", "x; rm -rf ~",
+                               "$(id)", "\n", "\x00", "3.44.5", "2026-10-15", "a" * 300, "\u10d0\u10d1"])
+        if pick == 5:
+            return rnd.choice(list(__import__("qgis_installer").recipes.RECIPES))
+        if pick in (6, 7):
+            return rnd.choice(["schema", "name", "components", "qgis", "options", "channel", "branch", "scope", "image", "grass", "x"])
+        if pick in (8, 9):
+            return [self.junk(rnd, depth + 1) for _ in range(rnd.randrange(4))]
+        return {rnd.choice(["schema", "name", "created", "components", "qgis", "goal", "recipe", "options", "version", "channel", "branch",
+                            "scope", "image", "grass", "python", "server", "geo_repo", "extra"]): self.junk(rnd, depth + 1)
+                for _ in range(rnd.randrange(6))}
+
+    def test_ten_thousand_random_files(self):
+        import random
+        rnd = random.Random(20261015)
+        ok = bad = 0
+        for _ in range(10000):
+            doc = {"schema": 1 if rnd.random() < 0.8 else self.junk(rnd)}
+            for key in ("name", "created", "components", "qgis"):
+                if rnd.random() < 0.6:
+                    doc[key] = self.junk(rnd)
+            if rnd.random() < 0.7:
+                doc["qgis"] = {"goal": self.junk(rnd) if rnd.random() < 0.3 else "stable", "recipe": self.junk(rnd),
+                               "options": {rnd.choice(["channel", "branch", "scope", "image", "grass", "x"]): self.junk(rnd) for _ in range(rnd.randrange(3))},
+                               "version": self.junk(rnd)}
+            before = json.dumps(doc, default=str, sort_keys=True)
+            try:
+                out = qi.envspec.validate(doc)
+                ok += 1
+                json.dumps(out)                                                   # what comes out is plain JSON data again
+                self.assertTrue(out["components"] == [c for c in out["components"] if c in qi.envspec.component_ids()])
+                if out["qgis"]:
+                    self.assertIn(out["qgis"]["goal"], qi.recipes.GOALS)
+                    self.assertTrue(out["qgis"]["recipe"] is None or out["qgis"]["recipe"] in qi.recipes.RECIPES)
+            except qi.envspec.SpecError:
+                bad += 1
+            self.assertEqual(json.dumps(doc, default=str, sort_keys=True), before)       # the input is never changed
+        self.assertGreater(ok, 20)                                                # the generator does hit valid files...
+        self.assertGreater(bad, 5000)                                             # ...and mostly invalid ones
+
+
+class EnvPlan(unittest.TestCase):
+    def spec(self, **kw):
+        return qi.envspec.validate(dict({"schema": 1, "components": ["gdal", "numpy"],
+                                        "qgis": {"goal": "stable", "recipe": "apt-official", "options": {"channel": "ltr"}, "version": "3.44.5"}}, **kw))
+
+    def test_check_tells_missing_ok_version_and_unavailable(self):
+        rows = comp_rows(present=("numpy",))
+        st = qi.envspec.check(self.spec(), [], rows)
+        self.assertEqual((st["qgis"]["state"], st["components_missing"], st["components_ok"]), ("missing", ["gdal"], ["numpy"]))
+        st = qi.envspec.check(self.spec(), [dict(APT, v="1:3.44.5+24noble")], rows)
+        self.assertEqual(st["qgis"], {"state": "ok", "installed": "1:3.44.5+24noble"})
+        st = qi.envspec.check(self.spec(), [dict(APT, v="1:3.40.1+24noble")], rows)
+        self.assertEqual((st["qgis"]["state"], st["qgis"]["wanted"]), ("version", "3.44.5"))
+        self.assertEqual(qi.envspec.check(self.spec(qgis=None), [], rows)["qgis"], {"state": "none"})
+        un = qi.envspec.check(self.spec(components=["rasterio"]), [], comp_rows("pacman"))                  # Arch has no package for it
+        self.assertEqual((un["components_missing"], un["unavailable"]), ([], ["rasterio"]))
+
+    def test_the_plan_installs_qgis_with_the_recipe_and_the_missing_components(self):
+        d = fxt("ubuntu-noble", "apt-get")
+        res = qi.envspec.plan(self.spec(), [], comp_rows(present=("numpy",)), d)
+        self.assertEqual(res["recipe"], "apt-official")
+        text = "\n".join(st["sh"] for st in res["steps"])
+        self.assertIn("qgis.org", text)                                                    # the official repository is set up
+        self.assertIn("apt-get install -y gdal-bin\n", text)                               # only what is missing
+        self.assertNotIn("python3-numpy", text.split("qgis.org")[-1].split("gdal-bin")[-1])
+        for st in res["steps"]:
+            self.assertTrue(sh_syntax_ok(st["sh"]), st["sh"])
+
+    def test_an_ubuntu_file_on_fedora_uses_what_fedora_recommends_for_the_same_goal(self):
+        d = fxt("fedora-43", "dnf")
+        res = qi.envspec.plan(self.spec(), [], comp_rows("dnf"), d)
+        self.assertEqual(res["recipe"], "dnf-fedora")
+        self.assertIn("env_recipe_swapped", res["notes"])
+        self.assertIn("dnf install -y qgis python3-qgis qgis-grass", "\n".join(st["sh"] for st in res["steps"]))
+
+    def test_a_machine_that_already_matches_gets_no_steps(self):
+        d = fxt("ubuntu-noble", "apt-get")
+        res = qi.envspec.plan(self.spec(), [dict(APT, v="1:3.44.5+24noble")], comp_rows(present=("gdalinfo", "ogr2ogr", "numpy")), d)
+        self.assertEqual((res["steps"], res["manual"], res["notes"]), ([], [], []))
+
+    def test_another_installed_version_is_reported_not_forced(self):
+        d = fxt("ubuntu-noble", "apt-get")
+        res = qi.envspec.plan(self.spec(components=[]), [dict(APT, v="1:3.40.1+24noble")], comp_rows(), d)
+        self.assertEqual((res["steps"], res["notes"]), ([], ["env_version_differs"]))
+
+    def test_instructions_only_recipes_and_no_recipe_at_all(self):
+        nix = qi.envspec.validate({"schema": 1, "components": [], "qgis": {"goal": "stable", "recipe": "nix-manual", "options": {}}})
+        res = qi.envspec.plan(nix, [], comp_rows(""), fxt("nixos", ""))
+        self.assertEqual(res["steps"], [])
+        self.assertIn("nix-shell", res["manual"][0]["text"])
+        res = qi.envspec.plan(self.spec(), [], comp_rows(""), fxt("slackware", "", tools=()))
+        self.assertIn("env_recipe_swapped", res["notes"])
+        self.assertIn("env_no_recipe", res["notes"]) if res["recipe"] is None else None
+
+    def test_nothing_from_the_file_but_closed_names_reaches_a_command(self):
+        evil = {"schema": 1, "name": "$(touch /tmp/pwned)", "created": "2026-10-15", "components": ["gdal"],
+                "qgis": {"goal": "stable", "recipe": "apt-official", "options": {"channel": "ltr"}, "version": "3.44.5"}}
+        res = qi.envspec.plan(qi.envspec.validate(evil), [], comp_rows(), fxt("ubuntu-noble", "apt-get"))
+        self.assertNotIn("pwned", "\n".join(st["sh"] for st in res["steps"]))             # the free text of the file is never used
+
+
+class EnvCli(unittest.TestCase):
+    call = Cli.call
+    BASE = ["--lang", "en", "--os-release", os.path.join(FIX, "ubuntu-noble"), "--pm", "apt-get", "--arch", "amd64", "--tools", ""]
+
+    def write(self, d, doc, name="env.json"):
+        path = os.path.join(d, name)
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(doc if isinstance(doc, str) else json.dumps(doc))
+        return path
+
+    def run_env(self, *argv, items=(), present=()):
+        with mock.patch.object(uninstall, "find_installs", lambda s: list(items)), \
+                mock.patch.object(requirements, "is_present", lambda rid, **kw: rid in present):
+            return self.call(*self.BASE, *argv)
+
+    DOC = {"schema": 1, "name": "lab", "components": ["gdal", "numpy"],
+           "qgis": {"goal": "stable", "recipe": "apt-official", "options": {"channel": "ltr"}, "version": "3.44.5"}}
+
+    def test_export_to_stdout_and_to_a_file(self):
+        rc, out, _ = self.run_env("env", "export", "--name", "lab", items=[dict(APT, v="1:3.44.5+24noble"), REPO_UBUNTU_LTR], present=("numpy",))
+        doc = json.loads(out)
+        self.assertEqual((rc, doc["qgis"]["recipe"], doc["components"], doc["name"]), (0, "apt-official", ["numpy"], "lab"))
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "x.json")
+            rc, out, _ = self.run_env("env", "export", "--output", path, items=[APT])
+            self.assertIn("Written: " + path, out)
+            with open(path, encoding="utf-8") as fh:
+                qi.envspec.validate(json.load(fh))
+
+    def test_check_reports_and_the_exit_code_says_whether_something_is_missing(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = self.write(d, self.DOC)
+            rc, out, _ = self.run_env("env", "check", path, present=("numpy",))
+            self.assertEqual(rc, 1)
+            self.assertIn("QGIS: not installed, the file asks for one", out)
+            self.assertIn("Components: 1 of 2 present", out)
+            self.assertIn("to install: GDAL command line tools", out)
+            rc, out, _ = self.run_env("env", "check", path, items=[dict(APT, v="1:3.44.5+24noble")], present=("gdal", "numpy"))
+            self.assertEqual(rc, 0)
+            self.assertIn("installed (1:3.44.5+24noble), as the file asks", out)
+            rc, out, _ = self.run_env("--json", "env", "check", path, present=("numpy",))
+            doc = json.loads(out)
+            self.assertEqual((doc["qgis"]["state"], doc["components_missing"]), ("missing", ["gdal"]))
+
+    def test_apply_shows_the_plan_and_runs_nothing_on_a_dry_run(self):
+        with tempfile.TemporaryDirectory() as d, mock.patch.object(runner, "run_steps") as run:
+            path = self.write(d, self.DOC)
+            rc, out, _ = self.run_env("env", "apply", path, "--dry-run", present=("numpy",))
+        self.assertEqual(rc, 0)
+        self.assertIn("qgis.org", out)
+        self.assertIn("apt-get install -y gdal-bin", out)
+        self.assertRegex(out, r"\d+ command\(s\) could not be simulated")    # (the host's package manager is not asked in tests)
+        run.assert_not_called()
+
+    def test_apply_on_a_machine_that_matches_says_so(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = self.write(d, self.DOC)
+            rc, out, _ = self.run_env("env", "apply", path, "--yes", items=[dict(APT, v="1:3.44.5+24noble")], present=("gdal", "numpy"))
+        self.assertEqual(rc, 0)
+        self.assertIn("This machine already matches the file.", out)
+
+    def test_bad_files_are_refused_with_a_reason_and_exit_2(self):
+        with tempfile.TemporaryDirectory() as d:
+            for label, doc, needle in (("json", "{not json", "Not a valid environment file"),
+                                       ("recipe", dict(self.DOC, qgis={"goal": "stable", "recipe": "x; rm -rf ~", "options": {}}), "unknown recipe"),
+                                       ("component", dict(self.DOC, components=["gdal", "evil"]), "unknown component"),
+                                       ("big", " " * (65 * 1024), "larger than 64 KB")):
+                path = self.write(d, doc, label + ".json")
+                for cmd in ("check", "apply"):
+                    rc, out, err = self.run_env("env", cmd, path)
+                    self.assertEqual(rc, 2, (label, cmd))
+                    self.assertIn(needle, err)
+                    self.assertEqual(out, "")                                  # nothing printed, nothing run
+            rc, _, err = self.run_env("env", "check", os.path.join(d, "nope.json"))
+            self.assertEqual(rc, 2)
+            self.assertIn("Cannot read", err)
+
+    def test_georgian(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = self.write(d, self.DOC)
+            with mock.patch.object(uninstall, "find_installs", lambda s: []), mock.patch.object(requirements, "is_present", lambda rid, **kw: False):
+                rc, out, _ = self.call("--lang", "ka", *self.BASE[2:], "env", "check", path)
+        self.assertIn("დაყენებული არ არის", out)
+        self.assertIn("კომპონენტები: 0 / 2 არის", out)
 
 
 if __name__ == "__main__":
