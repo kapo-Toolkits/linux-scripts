@@ -17,6 +17,7 @@ declare -A FILES=(
   [printer-setup]="printer-setup/printer-setup-gui.py|printer-setup"
   [qgis-installer]="qgis-installer/qgis-installer-gui.py|qgis-installer qgis-installer/qgis-installer-cli.py|qgis-installer-cli"
   [bluetooth-setup]="bluetooth-setup/bluetooth-setup-gui.py|bluetooth-setup"
+  [printhub]="printhub/printhub-launcher.sh|printhub"   # not part of "all": the app + PySide6 are installed too
 )
 declare -A GUISCRIPT=(
   [usb-eject]=usb-eject/usb-eject-gui.py
@@ -24,6 +25,7 @@ declare -A GUISCRIPT=(
   [printer-setup]=printer-setup/printer-setup-gui.py
   [qgis-installer]=qgis-installer/qgis-installer-gui.py
   [bluetooth-setup]=bluetooth-setup/bluetooth-setup-gui.py
+  [printhub]=printhub/run.py
 )
 declare -A DESKTOP=(
   [usb-eject]=usb-eject/usb-eject-gui.desktop
@@ -31,6 +33,7 @@ declare -A DESKTOP=(
   [printer-setup]=printer-setup/printer-setup.desktop
   [qgis-installer]=qgis-installer/qgis-installer.desktop
   [bluetooth-setup]=bluetooth-setup/bluetooth-setup.desktop
+  [printhub]=printhub/packaging/linux/printhub.desktop
 )
 ALL=(usb-eject wifi-hotspot printer-setup qgis-installer bluetooth-setup)
 
@@ -38,6 +41,7 @@ usage() {
   cat <<U
 Usage: ./install.sh [--prefix DIR] [--uninstall] TOOL...|all
 Tools: ${ALL[*]}
+       printhub   (print front-end; not part of 'all' - needs PySide6, ~200 MB when the system has none)
   --prefix DIR   install under DIR instead of /usr/local
   --desktop      also put a clickable launcher on your Desktop
   --folders      also put a double-click launcher inside each tool's folder here
@@ -67,7 +71,31 @@ SUDO=""
 probe="$PREFIX"; while [ ! -e "$probe" ]; do probe="$(dirname "$probe")"; done
 [ -w "$probe" ] || SUDO="sudo"
 
+# PrintHub is an application, not a single script: copy the package, give it PySide6 (system one, else a private
+# venv), install the icon.  The launcher and the menu entry go through the generic loop below.
+printhub_extra() {
+  local app="$PREFIX/lib/printhub" icon="$PREFIX/share/icons/hicolor/256x256/apps/io.printhub.PrintHub.png"
+  if [ "$ACTION" = install ]; then
+    command -v python3 >/dev/null || { echo "python3 is required for PrintHub"; exit 1; }
+    $SUDO rm -rf "$app/printhub"; $SUDO mkdir -p "$app"
+    $SUDO cp -r "$here/printhub/printhub" "$app/printhub"
+    $SUDO find "$app/printhub" -name __pycache__ -prune -exec rm -rf {} +
+    if python3 -c 'import PySide6' 2>/dev/null; then
+      echo "PySide6 found on the system - no private environment needed"
+    else
+      echo "Creating a private Python environment with PySide6 (downloads about 200 MB)..."
+      $SUDO python3 -m venv "$app/venv" || { echo "python3-venv is missing (Debian/Ubuntu: sudo apt install python3-venv)"; exit 1; }
+      $SUDO "$app/venv/bin/pip" install --quiet --disable-pip-version-check "PySide6>=6.6"
+    fi
+    $SUDO install -D -m 644 "$here/printhub/packaging/assets/printhub.png" "$icon"
+    echo "installed PrintHub into $app"
+  else
+    $SUDO rm -rf "$app"; $SUDO rm -f "$icon"; echo "removed $app"
+  fi
+}
+
 for tool in "${TOOLS[@]}"; do
+  [ "$tool" = printhub ] && printhub_extra
   for pair in $(echo "${FILES[$tool]}" | tr ' ' '\n' | sed 's/|/,/'); do
     src="${pair%%,*}"; cmd="${pair##*,}"
     if [ "$ACTION" = install ]; then
