@@ -1936,6 +1936,13 @@ class EnvValidate(unittest.TestCase):
         self.assertEqual(v["qgis"]["recipe"], None)
 
 
+class GeorgianStyle(unittest.TestCase):
+    def test_no_comma_before_the_word_da_in_any_georgian_text(self):
+        """The house rule: no comma before the conjunction "da" ("and"). A word that merely starts with it (da-nart...) is not the conjunction."""
+        hits = [k for k, v in i18n.STR["ka"].items() if isinstance(v, str) and re.search("," + " " + "და" + r"(?![ა-ჰ])", v)]
+        self.assertEqual(hits, [])
+
+
 class EnvFuzz(unittest.TestCase):
     """A file passed around between machines: whatever it holds, the answer is a clean SpecError or a valid spec - never a crash."""
 
