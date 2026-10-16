@@ -24,7 +24,7 @@ Still Linux-specific by nature: Hotspot needs NetworkManager + `iw`, USB eject n
 ## Install / uninstall
 
 ```bash
-./install.sh all                 # or: usb-eject wifi-hotspot printer-setup qgis-installer bluetooth-setup
+./install.sh all                 # or: usb-eject wifi-hotspot printer-setup qgis-installer bluetooth-setup shortcuts
 ./install.sh --uninstall all
 ./install.sh --prefix ~/.local all   # no sudo; menu entries land in ~/.local/share/applications
 ```
@@ -42,4 +42,5 @@ tests/run-qgis-containers.sh           # needs docker; real apt + qgis.org in th
 CI (GitHub Actions) runs both on every push and weekly.
 | [bluetooth-setup](bluetooth-setup/) | GUI (EN/KA): which Bluetooth dongle works and what it supports (Classic/LE/SSP), scan, pair, connect, audio output |
 | [printhub](printhub/) | Print front-end (Qt): PDF, images and Office files with preview and full print settings; EN/KA; `./install.sh printhub` |
+| [shortcuts](shortcuts/) | Simple GUI (EN/KA): tick toolkit programs and put their launchers on the Desktop (or remove them) |
 

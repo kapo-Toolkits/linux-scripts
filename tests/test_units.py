@@ -272,6 +272,96 @@ class Bluetooth(unittest.TestCase):
             self.assertIn(("confirm", "111222"), [self.m.parse_bt_line(x) for x in seen])
 
 
+class Shortcuts(unittest.TestCase):
+    m = load("shortcuts/shortcuts-gui.py")
+
+    def tool(self, i):
+        return next(x for x in self.m.TOOLS if x["id"] == i)
+
+    def make_root(self, d):
+        root = os.path.join(d, "checkout")
+        for x in self.m.TOOLS:
+            os.makedirs(os.path.dirname(os.path.join(root, x["script"])), exist_ok=True)
+            open(os.path.join(root, x["script"]), "w").close()
+        open(os.path.join(root, "install.sh"), "w").close()
+        return root
+
+    def test_every_tool_has_the_fields_a_launcher_needs(self):
+        ids = [x["id"] for x in self.m.TOOLS]
+        self.assertEqual(len(ids), len(set(ids)))
+        for x in self.m.TOOLS:
+            for k in ("cmd", "script", "file", "icon", "cats"):
+                self.assertTrue(x[k], (x["id"], k))
+            self.assertTrue(x["file"].endswith(".desktop"))
+            self.assertEqual(set(x["name"]), {"en", "ka"})
+            self.assertEqual(set(x["comment"]), {"en", "ka"})
+
+    def test_resolve_prefers_the_installed_command_then_the_folder(self):
+        with tempfile.TemporaryDirectory() as d:
+            root, home = self.make_root(d), os.path.join(d, "home")
+            tool = self.tool("usb-eject")
+            nobin = {"bin_dirs": [os.path.join(d, "no-such-bin")]}          # independent of what the host has installed
+            kind, ex = self.m.resolve_exec(tool, root, which=lambda c: "/usr/bin/" + c, home=home, **nobin)
+            self.assertEqual((kind, ex), ("installed", "/usr/bin/usb-eject-gui"))
+            os.makedirs(os.path.join(home, ".local", "bin"))
+            exe = os.path.join(home, ".local", "bin", tool["cmd"])
+            open(exe, "w").close()
+            os.chmod(exe, 0o755)
+            self.assertEqual(self.m.resolve_exec(tool, root, which=lambda c: "/usr/bin/" + c, home=home), ("installed", exe))
+            os.remove(exe)
+            kind, ex = self.m.resolve_exec(tool, root, which=lambda c: None, home=home, **nobin)
+            self.assertEqual(kind, "folder")
+            self.assertTrue(ex.startswith("python3 ") and ex.endswith("usb-eject/usb-eject-gui.py"))
+            self.assertTrue(self.m.resolve_exec(self.tool("printhub"), root, which=lambda c: None, home=home, **nobin)[1].startswith("sh "))
+            self.assertEqual(self.m.resolve_exec(tool, None, which=lambda c: None, home=home, **nobin), (None, None))
+
+    def test_add_replace_foreign_and_remove(self):
+        with tempfile.TemporaryDirectory() as d:
+            root, desk = self.make_root(d), os.path.join(d, "Desktop")
+            kw = {"which": lambda c: None, "home": os.path.join(d, "h"), "bin_dirs": [os.path.join(d, "nobin")]}
+            tool = self.tool("wifi-hotspot")
+            res, path = self.m.add_shortcut(tool, root, desk, **kw)
+            self.assertEqual(res, "added")
+            text = open(path).read()
+            self.assertIn("Exec=python3 " + os.path.join(root, "wifi-hotspot/hotspot-gui.py"), text)
+            self.assertIn("Name[ka]=Wi-Fi Hotspot", text)
+            self.assertIn("X-Toolkit-Id=wifi-hotspot", text)
+            self.assertIn("Path=" + os.path.join(root, "wifi-hotspot"), text)
+            self.assertTrue(os.access(path, os.X_OK))
+            self.assertEqual(self.m.add_shortcut(tool, root, desk, **kw)[0], "added")      # ours: replaced, no error
+            self.assertEqual(self.m.remove_shortcut(tool, desk), "removed")
+            self.assertEqual(self.m.remove_shortcut(tool, desk), "absent")
+            # somebody else's file with the same name is never touched
+            with open(os.path.join(desk, tool["file"]), "w") as f:
+                f.write("[Desktop Entry]\nName=Mine\nExec=/opt/other/thing\n")
+            self.assertEqual(self.m.add_shortcut(tool, root, desk, **kw)[0], "foreign")
+            self.assertEqual(self.m.remove_shortcut(tool, desk), "foreign")
+            self.assertIn("Name=Mine", open(os.path.join(desk, tool["file"])).read())
+            # not available anywhere -> nothing is written
+            self.assertEqual(self.m.add_shortcut(self.tool("printhub"), None, desk, **kw), ("missing", None))
+
+    def test_launchers_made_by_install_sh_are_recognised(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = os.path.join(d, "hotspot-gui.desktop")
+            with open(p, "w") as f:
+                f.write("[Desktop Entry]\nName=Wi-Fi Hotspot\nExec=/home/k/.local/bin/hotspot-gui\n")
+            self.assertTrue(self.m.is_ours(p, self.tool("wifi-hotspot")))
+            self.assertFalse(self.m.is_ours(p, self.tool("usb-eject")))
+            self.assertFalse(self.m.is_ours(os.path.join(d, "nothing.desktop"), self.tool("usb-eject")))
+
+    def test_find_root(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = self.make_root(d)
+            self.assertEqual(self.m.find_root({"TOOLKIT_ROOT": root}, here="/nowhere/x", home=d), root)
+            self.assertEqual(self.m.find_root({}, here=os.path.join(root, "shortcuts"), home=d), root)
+            cfg = os.path.join(d, ".config", "linux-scripts")
+            os.makedirs(cfg)
+            with open(os.path.join(cfg, "root"), "w") as f:
+                f.write(root + "\n")
+            self.assertEqual(self.m.find_root({}, here="/nowhere/x", home=d), root)       # what install.sh remembered
+            self.assertIsNone(self.m.find_root({}, here="/nowhere/x", home=os.path.join(d, "empty")))
+
+
 class Usb(unittest.TestCase):
     m = load("usb-eject/usb-eject-gui.py")
 
