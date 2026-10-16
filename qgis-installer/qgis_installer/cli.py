@@ -415,7 +415,7 @@ def _show(steps, args, lang, title):
         print(i18n.steps_text(steps, lang))
 
 
-def _execute(steps, args, lang):
+def _execute(steps, args, lang, installed=False):
     """Confirm, run, report. Returns the exit code."""
     if steps and not args.json and not getattr(args, "no_simulate", False):
         text = simulate.format_text(simulate.explain(steps), lang)
@@ -435,7 +435,7 @@ def _execute(steps, args, lang):
             return 3
     rc, failed = runner.run_steps(steps, on_line=lambda s: print(s, end=""), elevate=runner.default_elevator())
     if rc == 0:
-        print(i18n.t("done_ok", lang))
+        print(i18n.t("done_ok" if installed else "done_plain", lang))
         return 0
     if runner.needs_elevation_fallback(rc, failed):
         path = runner.write_root_script(steps)
@@ -684,7 +684,7 @@ def main(argv=None):
         if result is None:
             return 2
         _show_plan(result, args, lang)
-        return 0 if args.cmd == "plan" else _execute(result["steps"], args, lang)
+        return 0 if args.cmd == "plan" else _execute(result["steps"], args, lang, installed=True)
 
     items = uninstall.find_installs(sysinfo)
     if args.cmd == "list":
