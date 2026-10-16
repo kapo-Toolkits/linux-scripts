@@ -17,6 +17,7 @@ declare -A FILES=(
   [printer-setup]="printer-setup/printer-setup-gui.py|printer-setup"
   [qgis-installer]="qgis-installer/qgis-installer-gui.py|qgis-installer qgis-installer/qgis-installer-cli.py|qgis-installer-cli"
   [bluetooth-setup]="bluetooth-setup/bluetooth-setup-gui.py|bluetooth-setup"
+  [shortcuts]="shortcuts/shortcuts-gui.py|toolkit-shortcuts"
   [printhub]="printhub/printhub-launcher.sh|printhub"   # not part of "all": the app + PySide6 are installed too
 )
 declare -A GUISCRIPT=(
@@ -25,6 +26,7 @@ declare -A GUISCRIPT=(
   [printer-setup]=printer-setup/printer-setup-gui.py
   [qgis-installer]=qgis-installer/qgis-installer-gui.py
   [bluetooth-setup]=bluetooth-setup/bluetooth-setup-gui.py
+  [shortcuts]=shortcuts/shortcuts-gui.py
   [printhub]=printhub/run.py
 )
 declare -A DESKTOP=(
@@ -33,9 +35,10 @@ declare -A DESKTOP=(
   [printer-setup]=printer-setup/printer-setup.desktop
   [qgis-installer]=qgis-installer/qgis-installer.desktop
   [bluetooth-setup]=bluetooth-setup/bluetooth-setup.desktop
+  [shortcuts]=shortcuts/shortcuts.desktop
   [printhub]=printhub/packaging/linux/printhub.desktop
 )
-ALL=(usb-eject wifi-hotspot printer-setup qgis-installer bluetooth-setup)
+ALL=(usb-eject wifi-hotspot printer-setup qgis-installer bluetooth-setup shortcuts)
 
 usage() {
   cat <<U
@@ -147,6 +150,10 @@ for tool in "${TOOLS[@]}"; do
   fi
 done
 
+if [ "$ACTION" = install ] && [ "$(id -u)" != 0 ]; then
+  # lets toolkit-shortcuts find programs of this checkout that are not installed
+  mkdir -p "$HOME/.config/linux-scripts" && printf '%s\n' "$here" > "$HOME/.config/linux-scripts/root"
+fi
 if [ "$ACTION" = install ]; then
   for m in lscommon lsqr; do
     $SUDO install -D -m 644 "$here/common/$m.py" "$PREFIX/lib/linux-scripts/$m.py"
@@ -161,7 +168,7 @@ if [ "$ACTION" = install ]; then
 fi
 if [ "$ACTION" = uninstall ]; then
   case " ${TOOLS[*]} " in *" qgis-installer "*) $SUDO rm -rf "$PREFIX/lib/linux-scripts/qgis_installer";; esac
-  guis=0; for g in usb-eject-gui hotspot-gui printer-setup qgis-installer qgis-installer-cli bluetooth-setup; do [ -e "$PREFIX/bin/$g" ] && guis=1; done
+  guis=0; for g in usb-eject-gui hotspot-gui printer-setup qgis-installer qgis-installer-cli bluetooth-setup toolkit-shortcuts; do [ -e "$PREFIX/bin/$g" ] && guis=1; done
   [ "$guis" = 0 ] && $SUDO rm -rf "$PREFIX/lib/linux-scripts" && echo "removed shared helper"
 fi
 command -v update-desktop-database >/dev/null && $SUDO update-desktop-database -q "$PREFIX/share/applications" 2>/dev/null || true
