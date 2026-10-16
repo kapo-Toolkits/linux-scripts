@@ -1665,11 +1665,7 @@ class VersionsList(unittest.TestCase):
         self.assertIn("zstd", rows["versions"][0]["version"])
 
     def test_flatpak_a_commit_that_the_real_log_repeats_is_listed_once(self):
-        twice = FLAT_LOG + "
-    Commit: {a}
-   Subject: again
-      Date: 2026-10-13 23:37:12 +0000
-".format(a=COMMIT_A)
+        twice = FLAT_LOG + "\n    Commit: " + COMMIT_A + "\n   Subject: again\n      Date: 2026-10-13 23:37:12 +0000\n"
         rows = qi.versions.available(FP_STABLE, run=answers([(["flatpak", "remote-info", "--log"], (0, twice))]))
         self.assertEqual([r["commit"] for r in rows["versions"]], [COMMIT_A, COMMIT_B])
         self.assertEqual(rows["note"], "ver_flatpak")
