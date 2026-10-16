@@ -2517,5 +2517,58 @@ class EnvCli(unittest.TestCase):
         self.assertIn("კომპონენტები: 0 / 2 არის", out)
 
 
+class Offline(unittest.TestCase):
+    def sh(self, result):
+        self.assertEqual(len(result["steps"]), 1)
+        return result["steps"][0]["sh"]
+
+    def test_export_sets_the_collection_id_before_the_copy_and_takes_the_repo_file_along(self):
+        r = qi.offline.export_plan("/media/usb", "lts", "system")
+        sh = self.sh(r)
+        self.assertTrue(r["steps"][0]["root"])
+        order = [sh.index(x) for x in ("remote-add", "--collection-id=org.flathub.Stable", "flatpak install", "create-usb", "curl -fsSL")]
+        self.assertEqual(order, sorted(order))                        # create-usb refuses a remote without a collection ID
+        self.assertIn("flatpak info --system org.qgis.qgis//lts >/dev/null 2>&1 || flatpak install", sh)   # an installed QGIS is not downloaded again
+
+    def test_install_reads_only_the_folder_and_checks_it_first(self):
+        sh = self.sh(qi.offline.install_plan("/media/usb", "stable", "user"))
+        self.assertIn("test -d /media/usb/.ostree/repo", sh)
+        self.assertIn("--sideload-repo=/media/usb/.ostree/repo flathub org.qgis.qgis//stable", sh)
+        self.assertIn("flatpak remote-add --user --if-not-exists flathub /media/usb/flathub.flatpakrepo", sh)
+        self.assertNotIn("https://", sh)                                # no network address anywhere in the offline install
+        self.assertFalse(qi.offline.install_plan("/media/usb", "stable", "user")["steps"][0]["root"])
+
+    def test_a_path_is_quoted_and_bad_input_is_refused(self):
+        sh = self.sh(qi.offline.export_plan("/media/my usb; rm -rf ~", "lts", "user"))
+        self.assertIn("'/media/my usb; rm -rf ~'", sh)
+        for bad in ("", "/", "/a\nb"):
+            with self.assertRaises(qi.offline.OfflineError):
+                qi.offline.export_plan(bad)
+        with self.assertRaises(qi.offline.OfflineError):
+            qi.offline.install_plan("/x", branch="nightly")
+        with self.assertRaises(qi.offline.OfflineError):
+            qi.offline.install_plan("/x", scope="everywhere")
+
+    def test_without_flatpak_it_says_so_and_runs_nothing(self):
+        for fn in (qi.offline.export_plan, qi.offline.install_plan):
+            r = fn("/x", have_flatpak=False)
+            self.assertEqual((r["steps"], r["notes"]), ([], ["off_no_flatpak"]))
+
+    def test_every_note_and_error_has_text_in_both_languages(self):
+        for key in ("off_no_flatpak", "off_export_size", "off_install_offline"):
+            for lang in ("en", "ka"):
+                self.assertIn("rcw_" + key, qi.i18n.STR[lang])
+        for key in ("off_bad_path", "off_bad_scope", "off_bad_branch", "off_title_export", "off_title_install"):
+            for lang in ("en", "ka"):
+                self.assertIn(key, qi.i18n.STR[lang])
+
+    def test_the_command_line_shows_the_commands_with_a_dry_run(self):
+        with mock.patch("shutil.which", return_value="/usr/bin/flatpak"):
+            code, out, _ = Cli.call(Cli(), "--lang", "en", *Cli.NOBLE, "offline", "export", "/media/usb", "--dry-run")
+        self.assertEqual(code, 0)
+        self.assertIn("flatpak create-usb --system /media/usb org.qgis.qgis//lts", out)
+        self.assertIn("installed for real in a container", out)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=1)

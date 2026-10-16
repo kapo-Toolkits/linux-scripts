@@ -32,9 +32,10 @@ Hidden helpers for tests and "what would this do on another system":
 import argparse
 import json
 import os
+import shutil
 import sys
 
-from . import __version__, doctor, envspec, i18n, instances, pluginscan, plan, recipes, requirements, runner, simulate, system, uninstall, update, versions
+from . import __version__, doctor, envspec, i18n, instances, offline, pluginscan, plan, recipes, requirements, runner, simulate, system, uninstall, update, versions
 
 SCHEMA = 1
 KINDS = ("apt", "repo", "flatpak", "snap", "dist", "data")
@@ -146,10 +147,10 @@ def _show_plan(result, args, lang):
     if rid == "distro":
         _show(result["steps"], args, lang, "install")
         return
-    titles = {"update": "upd_title", "hold": "lock_title_on", "unhold": "lock_title_off", "install-version": "ver_title", "env-apply": "env_title"}
+    titles = {"update": "upd_title", "hold": "lock_title_on", "unhold": "lock_title_off", "install-version": "ver_title", "env-apply": "env_title", "offline-export": "off_title_export", "offline-install": "off_title_install"}
     doc = _recipe_doc(rid, lang) if rid not in titles else {
-        "id": rid, "title": i18n.t(titles[rid], lang), "kind": "run", "verified": "guide",
-        "verified_text": i18n.t("vf_guide", lang)}
+        "id": rid, "title": i18n.t(titles[rid], lang), "kind": "run", "verified": "real" if rid.startswith("offline-") else "guide",
+        "verified_text": i18n.t("vf_real" if rid.startswith("offline-") else "vf_guide", lang)}
     notes = [{"key": k, "text": t("rcw_" + k)} for k in result["notes"]]
     manual = [{"title": t("rcm_" + m["title"]), "text": m["text"]} for m in result["manual"]]
     if args.json:
@@ -363,6 +364,18 @@ def _env_cmd(args, sysinfo, items, lang):
     result["recipe"] = "env-apply"
     _show_plan(dict(result, why=None), args, lang)
     return _execute(result["steps"], args, lang)
+
+
+def _offline_cmd(args, lang):
+    make = offline.export_plan if args.off_cmd == "export" else offline.install_plan
+    try:
+        result = make(args.folder, args.branch, args.scope, have_flatpak=shutil.which("flatpak") is not None)
+    except offline.OfflineError as e:
+        print(i18n.t(str(e), lang), file=sys.stderr)
+        return 2
+    result["recipe"] = "offline-" + args.off_cmd
+    _show_plan(result, args, lang)
+    return _execute(result["steps"], args, lang) if result["steps"] else 2
 
 
 def _update_cmd(args, sysinfo, items, lang):
@@ -645,6 +658,15 @@ def build_parser():
     q.add_argument("ids", nargs="+", help="component ids, e.g. gdal numpy")
     q.add_argument("--yes", action="store_true", help="do not ask")
     q.add_argument("--dry-run", action="store_true", help="only show the commands")
+    p = sub.add_parser("offline", help="QGIS without internet on the target machine: make a folder or USB copy, install from it (Flatpak)")
+    of = p.add_subparsers(dest="off_cmd", required=True)
+    for name, text in (("export", "make the copy (this machine needs a network; about 1.2 GB)"), ("install", "install from a copy (no network)")):
+        q = of.add_parser(name, help=text)
+        q.add_argument("folder", help="the destination folder or USB mount point" if name == "export" else "the folder or USB mount point that holds the copy")
+        q.add_argument("--branch", choices=offline.BRANCHES, default="lts", help="Flathub branch (default: lts)")
+        q.add_argument("--scope", choices=("user", "system"), default="system", help="Flatpak installation (default: system)")
+        q.add_argument("--yes", action="store_true", help="do not ask")
+        q.add_argument("--dry-run", action="store_true", help="only show the commands")
     p = sub.add_parser("requirements", help="what the GIS GEORGIA QGIS plugins need from this system")
     rq = p.add_subparsers(dest="rq_cmd", required=True)
     q = rq.add_parser("check", help="which requirements are present (this system's Python and PATH)")
@@ -671,6 +693,8 @@ def main(argv=None):
         return _info(args, sysinfo, lang)
     if args.cmd == "components":
         return _components(args, sysinfo, lang)
+    if args.cmd == "offline":
+        return _offline_cmd(args, lang)
     if args.cmd == "requirements":
         return _requirements(args, sysinfo, lang)
 

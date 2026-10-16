@@ -137,6 +137,20 @@ a function, or guarded by `try ... except ImportError`, is *optional*; `if TYPE_
 the Python that runs the program. Verified on the real code of 16 of our plugins (PostGIS Manager: psycopg2 required; geopandas, pandas, Shapely, openpyxl optional) and in real containers
 (a plugin that needs openpyxl is found, `--install` installs it, the scan is clean afterwards).
 
+## QGIS for a machine without internet
+
+```bash
+qgis-installer-cli offline export /media/usb               # on a machine WITH a network: QGIS LTS and its runtime, about 1.2 GB
+qgis-installer-cli offline install /media/usb              # on the other machine, no network needed (it needs Flatpak itself)
+qgis-installer-cli offline export ~/qgis-offline --branch stable --scope user
+```
+
+Only the Flatpak build can be copied in one piece (it carries its runtime). `flatpak create-usb` refuses Flathub as it is, because the remote has no
+collection ID, so the plan sets the public one (`org.flathub.Stable`) first and puts the Flathub repo file next to the copy. The commands are shown and
+confirmed like everything else. Verified for real: `tests/run-offline-containers.sh` exports in a container with a network, then installs in a fresh
+container with **no** network and checks that Flatpak and this program both see QGIS (the script downloads the 1.2 GB, so CI does not run it).
+Not verified: a real USB stick (any folder works the same), and a machine whose Flatpak is older than 1.16.
+
 ## The doctor: what is known to break QGIS
 
 ```bash
