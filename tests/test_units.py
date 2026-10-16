@@ -322,7 +322,8 @@ class Shortcuts(unittest.TestCase):
             tool = self.tool("wifi-hotspot")
             res, path = self.m.add_shortcut(tool, root, desk, **kw)
             self.assertEqual(res, "added")
-            text = open(path).read()
+            with open(path) as fh:
+                text = fh.read()
             self.assertIn("Exec=python3 " + os.path.join(root, "wifi-hotspot/hotspot-gui.py"), text)
             self.assertIn("Name[ka]=Wi-Fi Hotspot", text)
             self.assertIn("X-Toolkit-Id=wifi-hotspot", text)
@@ -336,7 +337,8 @@ class Shortcuts(unittest.TestCase):
                 f.write("[Desktop Entry]\nName=Mine\nExec=/opt/other/thing\n")
             self.assertEqual(self.m.add_shortcut(tool, root, desk, **kw)[0], "foreign")
             self.assertEqual(self.m.remove_shortcut(tool, desk), "foreign")
-            self.assertIn("Name=Mine", open(os.path.join(desk, tool["file"])).read())
+            with open(os.path.join(desk, tool["file"])) as fh:
+                self.assertIn("Name=Mine", fh.read())
             # not available anywhere -> nothing is written
             self.assertEqual(self.m.add_shortcut(self.tool("printhub"), None, desk, **kw), ("missing", None))
 
@@ -360,6 +362,131 @@ class Shortcuts(unittest.TestCase):
                 f.write(root + "\n")
             self.assertEqual(self.m.find_root({}, here="/nowhere/x", home=d), root)       # what install.sh remembered
             self.assertIsNone(self.m.find_root({}, here="/nowhere/x", home=os.path.join(d, "empty")))
+
+
+class Installer(unittest.TestCase):
+    m = load("installer/installer-gui.py")
+
+    def test_every_tool_is_one_install_sh_knows(self):
+        with open(os.path.join(ROOT, "install.sh")) as f:
+            src = f.read()
+        for x in self.m.TOOLS:
+            self.assertIn(f"[{x['id']}]=", src, x["id"])           # present in install.sh's tables
+            self.assertEqual(set(x["name"]), {"en", "ka"})
+            self.assertEqual(set(x["info"]), {"en", "ka"})
+        self.assertEqual(set(self.m.STR["en"]), set(self.m.STR["ka"]))
+
+    def test_build_command_matches_install_sh_options(self):
+        b = self.m.build_command
+        self.assertEqual(b("/r", ["usb-eject"], "install", "user", home="/h"),
+                         ["bash", "/r/install.sh", "--prefix", "/h/.local", "usb-eject"])
+        self.assertEqual(b("/r", ["a", "b"], "uninstall", "user", desktop=True, folders=True, home="/h"),
+                         ["bash", "/r/install.sh", "--prefix", "/h/.local", "--uninstall", "--desktop", "--folders", "a", "b"])
+        sysc = b("/r", ["usb-eject"], "install", "system", desktop=True, folders=True, home="/h")
+        self.assertEqual(sysc, ["bash", "/r/install.sh", "--prefix", "/usr/local", "usb-eject"])   # no launchers as root
+
+    def test_elevation(self):
+        self.assertEqual(self.m.elevate(["x"], which=lambda c: "/usr/bin/pkexec", euid=1000), ["pkexec", "x"])
+        self.assertIsNone(self.m.elevate(["x"], which=lambda c: None, euid=1000))
+        self.assertEqual(self.m.elevate(["x"], which=lambda c: None, euid=0), ["x"])
+
+    def test_installed_state(self):
+        tool = {"cmds": ["foo"]}
+        ex = lambda p: p in ("/h/.local/bin/foo",)               # noqa: E731
+        self.assertEqual(self.m.installed_where(tool, "/h", ex), {"user"})
+        ex = lambda p: p in ("/h/.local/bin/foo", "/usr/local/bin/foo")   # noqa: E731
+        self.assertEqual(self.m.installed_where(tool, "/h", ex), {"user", "system"})
+        self.assertEqual(self.m.installed_where(tool, "/h", lambda p: False), set())
+
+    def test_launcher_text(self):
+        txt = self.m.launcher_text("/r")
+        self.assertIn("Exec=python3 /r/installer/installer-gui.py", txt)
+        self.assertIn("Path=/r", txt)
+        self.assertIn("Name[ka]=", txt)
+
+    def test_a_real_install_and_uninstall_through_the_same_code_path(self):
+        with tempfile.TemporaryDirectory() as d:
+            lines = []
+            cmd = ["bash", os.path.join(ROOT, "install.sh"), "--prefix", d, "usb-eject"]
+            self.assertEqual(self.m.run_command(cmd, lines.append), 0)
+            self.assertTrue(os.path.exists(os.path.join(d, "bin", "usb-eject-gui")))
+            self.assertIn("usb-eject", "".join(lines))
+            self.assertEqual(self.m.run_command(cmd[:4] + ["--uninstall"] + cmd[4:], lines.append), 0)
+            self.assertFalse(os.path.exists(os.path.join(d, "bin", "usb-eject-gui")))
+            self.assertEqual(self.m.run_command(["definitely-not-a-command-xyz", "x"], lines.append), 127)
+
+    def test_prerequisite_commands_per_package_manager(self):
+        self.assertEqual(self.m.prereq_command("apt-get")[:2], ["sh", "-c"])
+        self.assertIn("python3-venv", self.m.prereq_command("apt-get")[2])
+        self.assertIn("python3-pip", self.m.prereq_command("dnf")[2])
+        self.assertIn("python-pip", self.m.prereq_command("pacman")[2])
+        self.assertIsNone(self.m.prereq_command("unknown-pm"))
+        self.assertIsNone(self.m.prereq_command(""))
+
+    def test_jobs_stop_at_the_first_failure(self):
+        seen = []
+        ok, bad, never = ["sh", "-c", "echo one"], ["sh", "-c", "echo two; exit 3"], ["sh", "-c", "echo three"]
+        self.assertEqual(self.m.run_jobs([ok, bad, never], seen.append), 3)
+        self.assertEqual("".join(seen).split(), ["one", "two"])          # the third never ran
+        self.assertEqual(self.m.run_jobs([ok, ok], lambda l: None), 0)
+        self.assertEqual(self.m.run_jobs([], lambda l: None), 0)
+
+    def test_tool_path_follows_the_location(self):
+        ex = lambda p: p in ("/h/.local/bin/printhub",)            # noqa: E731
+        self.assertEqual(self.m.tool_path("printhub", "user", "/h", ex), "/h/.local/bin/printhub")
+        self.assertIsNone(self.m.tool_path("printhub", "system", "/h", ex))
+        self.assertIsNone(self.m.tool_path("printhub", "user", "/h", lambda p: False))
+
+    def test_window_offers_prerequisite_then_installs_then_starts_printhub(self):
+        m = self.m
+        calls = {"jobs": None, "asked": [], "popen": []}
+        patches = dict(venv_ready=lambda *a, **k: False, detect_pm=lambda: "apt-get",
+                       elevate=lambda c, **k: ["pkexec"] + list(c),
+                       run_jobs=lambda jobs, on_line: calls.__setitem__("jobs", jobs) or 0,
+                       tool_path=lambda *a, **k: "/h/.local/bin/printhub")
+        class FakeApp:                                     # only what go() touches, no display needed
+            pass
+        saved = {k: getattr(m, k) for k in patches}
+        saved_mb, saved_popen = (m.messagebox, m.subprocess.Popen)
+        try:
+            for k, v in patches.items():
+                setattr(m, k, v)
+            m.messagebox = types.SimpleNamespace(
+                askyesno=lambda title, msg: calls["asked"].append(msg) or True,
+                showinfo=lambda *a: None, showwarning=lambda *a: None)
+            m.subprocess.Popen = lambda cmd, **k: calls["popen"].append(cmd)
+            app = FakeApp()
+            app.busy, app.where = False, types.SimpleNamespace(get=lambda: "user")
+            app.v_desk = app.v_fold = types.SimpleNamespace(get=lambda: False)
+            app.selected_ids = lambda: ["printhub"]
+            app.b_inst = app.b_un = types.SimpleNamespace(state=lambda *a: None)
+            app.lbl_status = types.SimpleNamespace(config=lambda **k: None)
+            app.say = lambda *a: None
+            app.render = lambda: None
+            app.finish = lambda rc: m.App.finish(app, rc)
+            app.after = lambda ms, fn, *a: fn(*a)           # run the "UI" hand-off inline
+            m.threading = types.SimpleNamespace(Thread=lambda target, daemon: types.SimpleNamespace(start=target))
+            m.App.go(app, "install")
+            self.assertEqual(len(calls["asked"]), 1)
+            self.assertIn("python3-venv", calls["asked"][0])
+            jobs = calls["jobs"]
+            self.assertEqual(jobs[0][:3], ["pkexec", "sh", "-c"])                 # 1. the prerequisite, as administrator
+            self.assertIn("install.sh", jobs[1][1])                                # 2. the install itself, as the user
+            self.assertIn("printhub", jobs[1])
+            self.assertEqual(calls["popen"], [["/h/.local/bin/printhub"]])         # 3. and PrintHub starts
+        finally:
+            for k, v in saved.items():
+                setattr(m, k, v)
+            m.messagebox, m.subprocess.Popen = saved_mb, saved_popen
+            import threading
+            m.threading = threading
+
+    def test_venv_check_is_false_when_nothing_works(self):
+        class R:
+            returncode = 1
+        self.assertFalse(self.m.venv_ready(run=lambda *a, **k: R()))
+        R.returncode = 0
+        self.assertTrue(self.m.venv_ready(run=lambda *a, **k: R()))
 
 
 class Usb(unittest.TestCase):
