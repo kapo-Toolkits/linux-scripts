@@ -5,3 +5,4 @@ printer-setup/drivers/*.deb
 printer-setup/drivers/*.rpm
 # per-machine double-click launchers made by ./install.sh --folders (absolute paths)
 */start-*.desktop
+/start-installer.desktop

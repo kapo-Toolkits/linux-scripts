@@ -362,6 +362,65 @@ class Shortcuts(unittest.TestCase):
             self.assertIsNone(self.m.find_root({}, here="/nowhere/x", home=os.path.join(d, "empty")))
 
 
+class Installer(unittest.TestCase):
+    m = load("installer/installer-gui.py")
+
+    def test_every_tool_is_one_install_sh_knows(self):
+        with open(os.path.join(ROOT, "install.sh")) as f:
+            src = f.read()
+        for x in self.m.TOOLS:
+            self.assertIn(f"[{x['id']}]=", src, x["id"])           # present in install.sh's tables
+            self.assertEqual(set(x["name"]), {"en", "ka"})
+            self.assertEqual(set(x["info"]), {"en", "ka"})
+        self.assertEqual(set(self.m.STR["en"]), set(self.m.STR["ka"]))
+
+    def test_build_command_matches_install_sh_options(self):
+        b = self.m.build_command
+        self.assertEqual(b("/r", ["usb-eject"], "install", "user", home="/h"),
+                         ["bash", "/r/install.sh", "--prefix", "/h/.local", "usb-eject"])
+        self.assertEqual(b("/r", ["a", "b"], "uninstall", "user", desktop=True, folders=True, home="/h"),
+                         ["bash", "/r/install.sh", "--prefix", "/h/.local", "--uninstall", "--desktop", "--folders", "a", "b"])
+        sysc = b("/r", ["usb-eject"], "install", "system", desktop=True, folders=True, home="/h")
+        self.assertEqual(sysc, ["bash", "/r/install.sh", "--prefix", "/usr/local", "usb-eject"])   # no launchers as root
+
+    def test_elevation(self):
+        self.assertEqual(self.m.elevate(["x"], which=lambda c: "/usr/bin/pkexec", euid=1000), ["pkexec", "x"])
+        self.assertIsNone(self.m.elevate(["x"], which=lambda c: None, euid=1000))
+        self.assertEqual(self.m.elevate(["x"], which=lambda c: None, euid=0), ["x"])
+
+    def test_installed_state(self):
+        tool = {"cmds": ["foo"]}
+        ex = lambda p: p in ("/h/.local/bin/foo",)               # noqa: E731
+        self.assertEqual(self.m.installed_where(tool, "/h", ex), {"user"})
+        ex = lambda p: p in ("/h/.local/bin/foo", "/usr/local/bin/foo")   # noqa: E731
+        self.assertEqual(self.m.installed_where(tool, "/h", ex), {"user", "system"})
+        self.assertEqual(self.m.installed_where(tool, "/h", lambda p: False), set())
+
+    def test_launcher_text(self):
+        txt = self.m.launcher_text("/r")
+        self.assertIn("Exec=python3 /r/installer/installer-gui.py", txt)
+        self.assertIn("Path=/r", txt)
+        self.assertIn("Name[ka]=", txt)
+
+    def test_a_real_install_and_uninstall_through_the_same_code_path(self):
+        with tempfile.TemporaryDirectory() as d:
+            lines = []
+            cmd = ["bash", os.path.join(ROOT, "install.sh"), "--prefix", d, "usb-eject"]
+            self.assertEqual(self.m.run_command(cmd, lines.append), 0)
+            self.assertTrue(os.path.exists(os.path.join(d, "bin", "usb-eject-gui")))
+            self.assertIn("usb-eject", "".join(lines))
+            self.assertEqual(self.m.run_command(cmd[:4] + ["--uninstall"] + cmd[4:], lines.append), 0)
+            self.assertFalse(os.path.exists(os.path.join(d, "bin", "usb-eject-gui")))
+            self.assertEqual(self.m.run_command(["definitely-not-a-command-xyz", "x"], lines.append), 127)
+
+    def test_venv_check_is_false_when_nothing_works(self):
+        class R:
+            returncode = 1
+        self.assertFalse(self.m.venv_ready(run=lambda *a, **k: R()))
+        R.returncode = 0
+        self.assertTrue(self.m.venv_ready(run=lambda *a, **k: R()))
+
+
 class Usb(unittest.TestCase):
     m = load("usb-eject/usb-eject-gui.py")
 

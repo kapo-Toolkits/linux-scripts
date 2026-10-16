@@ -43,4 +43,5 @@ CI (GitHub Actions) runs both on every push and weekly.
 | [bluetooth-setup](bluetooth-setup/) | GUI (EN/KA): which Bluetooth dongle works and what it supports (Classic/LE/SSP), scan, pair, connect, audio output |
 | [printhub](printhub/) | Print front-end (Qt): PDF, images and Office files with preview and full print settings; EN/KA; `./install.sh printhub` |
 | [shortcuts](shortcuts/) | Simple GUI (EN/KA): tick toolkit programs and put their launchers on the Desktop (or remove them) |
+| [installer](installer/) | Window around `install.sh` (EN/KA): tick programs, choose “for me / for everyone”, click Install; `--make-launcher` makes a double-click icon in this folder |
 
