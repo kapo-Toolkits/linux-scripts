@@ -50,6 +50,7 @@ STR = {
  "s4": "4. Add", "add": "Add printer", "driverless": "Add driverless (network)",
  "s5": "5. Test", "queue": "Queue:", "test": "Print test page", "log": "Log",
  "hub": "Open PrintHub (print files)",
+ "hub_offer": "PrintHub is not installed.\n\nOpen the installer window to add it? (it also installs what PrintHub needs, and starts it)",
  "hub_missing": "PrintHub is not installed.\n\nIt prints PDFs, images and Office files with a preview and full settings.\nInstall it from the toolkit folder:\n\n./install.sh printhub",
  "pick": "Select a printer in the list first.", "err": "Error", "info": "Printer Setup",
  "searching": "Searching installed drivers (can take a few seconds)…",
@@ -91,6 +92,7 @@ STR = {
  "s4": "4. დამატება", "add": "პრინტერის დამატება", "driverless": "დრაივერის გარეშე (ქსელი)",
  "s5": "5. შემოწმება", "queue": "რიგი:", "test": "სატესტო გვერდი", "log": "ლოგი",
  "hub": "PrintHub-ის გახსნა (ფაილების ბეჭდვა)",
+ "hub_offer": "PrintHub დაყენებული არ არის.\n\nგავხსნა დამყენებლის ფანჯარა, რომ დაემატოს? (ის იმასაც დააყენებს, რაც PrintHub-ს სჭირდება, და გაუშვებს)",
  "hub_missing": "PrintHub დაყენებული არ არის.\n\nის PDF-ს, სურათებსა და Office ფაილებს ბეჭდავს წინასწარი ნახვითა და სრული პარამეტრებით.\nდააყენეთ ხელსაწყოების საქაღალდიდან:\n\n./install.sh printhub",
  "pick": "ჯერ სიაში აირჩიეთ პრინტერი.", "err": "შეცდომა", "info": "პრინტერის დაყენება",
  "searching": "ინსტალირებულ დრაივერებში ვეძებ (რამდენიმე წამი)…",
@@ -502,12 +504,30 @@ class App(tk.Tk):
         if qs and not self.q_var.get():
             self.q_var.set(qs[0])
 
+    def installer_script(self):
+        """The toolkit installer window (installer/installer-gui.py) of this checkout, found next to this program or
+        through the path install.sh remembered; None when it is not around."""
+        cands = [os.path.join(os.path.dirname(_here), "installer", "installer-gui.py")]
+        try:
+            with open(os.path.join(os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config"),
+                                   "linux-scripts", "root")) as f:
+                cands.append(os.path.join(f.read().strip(), "installer", "installer-gui.py"))
+        except OSError:
+            pass
+        return next((c for c in cands if os.path.isfile(c)), None)
+
     def on_hub(self):
         """PrintHub (same toolkit) prints files with preview and settings; printer-setup only installs printers."""
-        exe = shutil.which("printhub")
-        if not exe:
+        exe = shutil.which("printhub") or next((c for c in (os.path.expanduser("~/.local/bin/printhub"), "/usr/local/bin/printhub")
+                                                if os.access(c, os.X_OK)), None)
+        if exe:
+            subprocess.Popen([exe], start_new_session=True)
+            return
+        script = self.installer_script()
+        if not script:
             return messagebox.showinfo(t("info"), t("hub_missing"))
-        subprocess.Popen([exe], start_new_session=True)
+        if messagebox.askyesno(t("info"), t("hub_offer")):
+            subprocess.Popen([sys.executable, script, "--select", "printhub"], start_new_session=True)
 
     def on_test(self):
         self.load_queues()

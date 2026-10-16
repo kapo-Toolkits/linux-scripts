@@ -16,7 +16,7 @@ for _p in reversed((os.path.join(_here, "..", "common"), os.path.join(_here, "..
                     "/usr/local/lib/linux-scripts", "/usr/lib/linux-scripts")):   # first entry wins
     if os.path.isdir(_p):
         sys.path.insert(0, _p)
-from lscommon import ensure_tkinter, load_lang, save_lang  # noqa: E402
+from lscommon import detect_pm, ensure_tkinter, load_lang, save_lang  # noqa: E402
 
 ensure_tkinter()
 
@@ -68,6 +68,8 @@ STR = {
  "confirm_un": "Remove the selected programs ({where})?\n\n{names}", "no_pkexec": "pkexec is not available. Run this in a terminal instead:\n\n{cmd}",
  "venv": "PrintHub needs the Python ‘venv’ package (or pip), and neither is installed.\n\nInstall it first:\n\n  sudo apt install python3-venv\n\nthen click Install again.",
  "heavy": "PrintHub downloads about 200 MB (PySide6). Continue?",
+ "prereq_ask": "PrintHub needs Python's venv / pip, which this computer does not have yet.\n\nInstall it now, then PrintHub, and start PrintHub?\n(asks for the administrator password; command: {cmd})",
+ "prereq_run": "Installing what PrintHub needs…", "launching": "Starting PrintHub…",
  "note": "This window only runs ./install.sh for you — the command is shown above the buttons.",
 },
 "ka": {
@@ -84,6 +86,8 @@ STR = {
  "no_pkexec": "pkexec არ არის. გაუშვით ტერმინალში:\n\n{cmd}".replace("\\\n", "\n"),
  "venv": "PrintHub-ს სჭირდება Python-ის ‘venv’ პაკეტი (ან pip), მაგრამ არცერთი არ არის დაყენებული.\n\nჯერ დააყენეთ:\n\n  sudo apt install python3-venv\n\nმერე ისევ დააჭირეთ „დაყენებას“.".replace("\\\n", "\n"),
  "heavy": "PrintHub-ი დაახლოებით 200 MB-ს ჩამოტვირთავს (PySide6). გავაგრძელო?",
+ "prereq_ask": "PrintHub-ს სჭირდება Python-ის venv / pip, რაც ამ კომპიუტერზე ჯერ არ არის.\n\nდავაყენო ახლა, მერე PrintHub და გავუშვა PrintHub?\n(ადმინისტრატორის პაროლს მოითხოვს; ბრძანება: {cmd})",
+ "prereq_run": "ვაყენებ იმას, რაც PrintHub-ს სჭირდება…", "launching": "ვუშვებ PrintHub-ს…",
  "note": "ეს ფანჯარა მხოლოდ ./install.sh-ს უშვებს თქვენთვის — ბრძანება ღილაკების ზემოთ ჩანს.",
 },
 }
@@ -146,10 +150,44 @@ def venv_ready(which=shutil.which, run=subprocess.run):
         or ok(["python3", "-m", "pip", "--version"])
 
 
+# what PrintHub needs to create its private Python environment, per package manager (all run as administrator)
+PREREQ = {
+    "apt-get": "apt-get install -y python3-venv || (apt-get update && apt-get install -y python3-venv)",
+    "dnf": "dnf install -y python3-pip",
+    "pacman": "pacman -S --noconfirm python-pip",
+    "zypper": "zypper --non-interactive install python3-pip",
+    "apk": "apk add py3-pip",
+}
+
+
+def prereq_command(pm):
+    """['sh', '-c', '…'] installing venv/pip for this package manager, or None when we do not know how."""
+    sh = PREREQ.get(pm)
+    return ["sh", "-c", sh] if sh else None
+
+
+def run_jobs(jobs, on_line):
+    """Run commands one after another; stop at the first failure. -> exit code of the last one run."""
+    rc = 0
+    for job in jobs:
+        rc = run_command(job, on_line)
+        if rc != 0:
+            return rc
+    return rc
+
+
+def tool_path(tool_id, where, home=None, exists=os.path.exists):
+    """The installed launcher command of a tool for this location, or None."""
+    tool = next(x for x in TOOLS if x["id"] == tool_id)
+    base = os.path.join(home or os.path.expanduser("~"), ".local") if where != "system" else SYSTEM_PREFIX
+    path = os.path.join(base, "bin", tool["cmds"][0])
+    return path if exists(path) else None
+
+
 def run_command(cmd, on_line):
     """Run and stream every output line; returns the exit code (127 when it could not start)."""
     try:
-        p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, cwd=os.path.dirname(cmd[1]) if len(cmd) > 1 else None)
+        p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, cwd=ROOT)
     except OSError:
         return 127
     with p:
@@ -312,10 +350,18 @@ class App(tk.Tk):
         if action == "uninstall" and not messagebox.askyesno(
                 t("title"), t("confirm_un", where=t("w_sys" if system else "w_user").split(" — ")[0], names=names)):
             return
+        prereq = None
         if action == "install" and "printhub" in ids:
             if not venv_ready():
-                return messagebox.showwarning(t("title"), t("venv"))
-            if not messagebox.askyesno(t("title"), t("heavy")):
+                pc = prereq_command(detect_pm())
+                if pc is None:
+                    return messagebox.showwarning(t("title"), t("venv"))
+                if not messagebox.askyesno(t("title"), t("prereq_ask", cmd=pc[-1])):
+                    return
+                prereq = elevate(pc)
+                if prereq is None:
+                    return messagebox.showwarning(t("title"), t("no_pkexec", cmd="sudo " + shell_line(pc)))
+            elif not messagebox.askyesno(t("title"), t("heavy")):
                 return
         cmd = build_command(ROOT, ids, action, self.where.get(), self.v_desk.get(), self.v_fold.get())
         shown = shell_line(cmd)
@@ -323,10 +369,15 @@ class App(tk.Tk):
             cmd = elevate(cmd)
             if cmd is None:
                 return messagebox.showwarning(t("title"), t("no_pkexec", cmd="sudo " + shown))
+        jobs = ([prereq] if prereq else []) + [cmd]
+        self.start_printhub = action == "install" and "printhub" in ids
         self.busy = True
         for b in (self.b_inst, self.b_un):
             b.state(["disabled"])
         self.lbl_status.config(text=t("running"))
+        if prereq:
+            self.say("$ " + shell_line(prereq))
+            self.say(t("prereq_run"))
         self.say("$ " + shown)
 
         def to_ui(fn, *a):
@@ -336,7 +387,7 @@ class App(tk.Tk):
                 pass
 
         def work():
-            rc = run_command(cmd, lambda ln: to_ui(self.say, ln))
+            rc = run_jobs(jobs, lambda ln: to_ui(self.say, ln))
             to_ui(self.finish, rc)
         threading.Thread(target=work, daemon=True).start()
 
@@ -347,10 +398,28 @@ class App(tk.Tk):
         self.say(t("done_ok") if rc == 0 else t("done_fail", rc=rc))
         self.lbl_status.config(text=t("done_ok") if rc == 0 else t("done_fail", rc=rc))
         self.render()
+        if rc == 0 and getattr(self, "start_printhub", False):       # "install it and it runs"
+            path = tool_path("printhub", self.where.get())
+            if path:
+                self.say(t("launching"))
+                subprocess.Popen([path], start_new_session=True)
+        self.start_printhub = False
+
+
+def main(argv):
+    if "--make-launcher" in argv:
+        print(make_launcher())
+        return
+    app = App()
+    if "--select" in argv:                       # e.g. --select printhub: open with only these programs ticked
+        ids = argv[argv.index("--select") + 1:]
+        app.pick(False)
+        for i in ids:
+            if i in app.vars:
+                app.vars[i].set(True)
+        app.sync()
+    app.mainloop()
 
 
 if __name__ == "__main__":
-    if "--make-launcher" in sys.argv:
-        print(make_launcher())
-    else:
-        App().mainloop()
+    main(sys.argv[1:])

@@ -24,7 +24,12 @@ python3 installer/installer-gui.py --make-launcher
 | **Command** | the exact `bash install.sh --prefix … TOOL…` that **Install selected** will run, shown above the buttons. Nothing is hidden. |
 
 The log shows `install.sh`'s output live. **Uninstall selected** asks first; it removes only what `install.sh` installed
-(plus the Desktop / folder launchers if those boxes are ticked). PrintHub needs PySide6, or Python's `venv`, or `pip`:
-the window checks this first and tells you the apt command instead of failing half-way.
+(plus the Desktop / folder launchers if those boxes are ticked).
+
+**PrintHub in one click.** PrintHub needs PySide6, or Python's `venv`, or `pip`. If the computer has none of them the window
+offers to install what is missing (`python3-venv` on Debian/Ubuntu/Mint, `python3-pip` on Fedora/openSUSE, `python-pip` on Arch,
+`py3-pip` on Alpine — one administrator-password prompt), then installs PrintHub and **starts it**. The same offer appears
+from Printer Setup: its *Open PrintHub* button opens this window with PrintHub pre-ticked
+(`python3 installer/installer-gui.py --select printhub`) when PrintHub is not installed yet.
 
 If `pkexec` is missing, the window shows the `sudo …` command to paste into a terminal.
