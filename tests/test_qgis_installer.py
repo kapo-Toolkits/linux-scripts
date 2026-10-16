@@ -1663,6 +1663,15 @@ class VersionsList(unittest.TestCase):
         self.assertEqual([r["commit"] for r in rows["versions"]], [COMMIT_A, COMMIT_B])
         self.assertTrue(rows["versions"][0]["version"].startswith("2026-10-13"))
         self.assertIn("zstd", rows["versions"][0]["version"])
+
+    def test_flatpak_a_commit_that_the_real_log_repeats_is_listed_once(self):
+        twice = FLAT_LOG + "
+    Commit: {a}
+   Subject: again
+      Date: 2026-10-13 23:37:12 +0000
+".format(a=COMMIT_A)
+        rows = qi.versions.available(FP_STABLE, run=answers([(["flatpak", "remote-info", "--log"], (0, twice))]))
+        self.assertEqual([r["commit"] for r in rows["versions"]], [COMMIT_A, COMMIT_B])
         self.assertEqual(rows["note"], "ver_flatpak")
 
     def test_arch_and_unknown_kinds_say_why_there_is_nothing_to_choose(self):
