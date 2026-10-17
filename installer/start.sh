@@ -68,8 +68,18 @@ ask() {   # yes/no: a window with a display, else the terminal; TOOLKIT_ASSUME_Y
   return 1
 }
 
-# python3 (+ tkinter) is all the window needs.  If the system has no Python, offer to install it and go on.
-install_python() {
+progress_start() {   # a pulsing "working..." window while the installation runs (closed by progress_stop)
+  { [ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ] && command -v zenity >/dev/null 2>&1; } || return 0
+  pf="$(mktemp -u)" && mkfifo "$pf" || return 0
+  zenity --progress --pulsate --no-cancel --auto-close --width=420 --title="Toolkit Installer" \
+    --text="$1" <"$pf" 2>/dev/null &
+  exec 3>"$pf"
+  rm -f "$pf"
+}
+progress_stop() { exec 3>&-; }   # closing the pipe ends the window (zenity --auto-close)
+
+# python3 and tkinter are all the window needs.  If either is missing: ask, install it, and carry on.
+install_python() {   # $1 = what is missing: python3 | tkinter
   for m in apt-get dnf pacman zypper apk; do command -v "$m" >/dev/null 2>&1 && pm="$m" && break; done
   case "${pm:-}" in
     apt-get) cmd="apt-get install -y python3 python3-tk || (apt-get update && apt-get install -y python3 python3-tk)" ;;
@@ -77,29 +87,53 @@ install_python() {
     pacman)  cmd="pacman -S --noconfirm python tk" ;;
     zypper)  cmd="zypper --non-interactive install python3 python3-tk" ;;
     apk)     cmd="apk add python3 python3-tkinter" ;;
-    *) say "python3 is not installed and this system's package manager is unknown. Install Python 3 with tkinter, then start this again."; return 1 ;;
+    *) say "$1 is missing and this system's package manager is unknown. Install Python 3 with tkinter, then start this again."; return 1 ;;
   esac
-  ask "Python 3 is not installed on this computer, and the installer window needs it.
+  if [ "$1" = python3 ]; then what="Python 3 is not installed on this computer, and the installer window needs it.
+Python 3 ვერ მოიძებნა; ინსტალერის ფანჯარას ის სჭირდება."
+  else what="tkinter (the window toolkit for Python) is missing.
+tkinter ვერ მოიძებნა."; fi
+  ask "$what
 
-Install it now? (administrator password)
+Install it now? (administrator password) / დავაყენო ახლა? (ადმინისტრატორის პაროლი)
 
-$cmd" || { say "Cancelled. Python 3 is needed:  $cmd"; return 1; }
+$cmd" || { say "Cancelled. It is needed:  $cmd"; return 1; }
+  progress_start "Installing... / მიმდინარეობს დაყენება... (this can take a minute)"
+  : >"$log.install"
   if [ "$(id -u)" = 0 ]; then
-    sh -c "$cmd"
+    sh -c "$cmd" >"$log.install" 2>&1
   elif [ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ] && command -v pkexec >/dev/null 2>&1; then
-    pkexec sh -c "$cmd"
+    pkexec sh -c "$cmd" >"$log.install" 2>&1
   elif command -v sudo >/dev/null 2>&1; then
-    sudo sh -c "$cmd"
+    sudo sh -c "$cmd" 2>&1 | tee "$log.install"
   else
-    say "No way to get administrator rights here. Run as root:  $cmd"; return 1
+    progress_stop; say "No way to get administrator rights here. Run as root:  $cmd"; return 1
   fi
-  command -v python3 >/dev/null 2>&1 || { say "Python 3 still is not available after the installation. Run in a terminal:  $cmd"; return 1; }
+  progress_stop
+  if command -v python3 >/dev/null 2>&1 && python3 -c 'import tkinter' 2>/dev/null; then return 0; fi
+  if grep -qiE "could not get lock|dpkg frontend lock|dpkg/lock" "$log.install" 2>/dev/null; then
+    say "Another installer or update is running right now (for example the Linux Mint installer or Update Manager).
+Wait until it finishes, then start this again.
+
+დაელოდეთ, სანამ მეორე ინსტალაცია/განახლება დასრულდება, და ისევ გაუშვით."
+  else
+    say "The installation did not work.
+
+$(tail -n 8 "$log.install" 2>/dev/null)
+
+Run in a terminal:  $cmd"
+  fi
+  return 1
 }
 
-command -v python3 >/dev/null 2>&1 || install_python || exit 1
+mkdir -p "$(dirname "$log")" 2>/dev/null
 [ -f "$here/installer-gui.py" ] || { say "installer-gui.py was not found next to start.sh ($here). Was the folder copied incompletely?"; exit 1; }
 
-mkdir -p "$(dirname "$log")" 2>/dev/null
+if ! command -v python3 >/dev/null 2>&1; then
+  install_python python3 || exit 1
+elif ! python3 -c 'import tkinter' 2>/dev/null; then
+  install_python tkinter || exit 1
+fi
 if ! python3 "$here/installer-gui.py" "$@" >"$log" 2>&1; then
   say "The installer window could not start.
 

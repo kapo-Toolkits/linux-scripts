@@ -49,6 +49,36 @@ class Common(unittest.TestCase):
         self.assertEqual(lscommon.run(["echo", "hi"]), (0, "hi"))
 
 
+class TkinterPrompt(unittest.TestCase):
+    def test_prompt_is_bilingual_only_where_it_can_be_shown(self):
+        import lscommon
+        both = lscommon.tk_prompt("python3-tk", True)
+        self.assertIn("Install python3-tk now?", both)
+        self.assertIn("ვერ მოიძებნა", both)
+        plain = lscommon.tk_prompt("python3-tk", False)                  # a terminal without UTF-8 would print ?????
+        self.assertIn("Install python3-tk now?", plain)
+        self.assertTrue(plain.isascii())
+
+    def test_a_locked_package_manager_is_explained(self):
+        import lscommon
+        for out in ("E: Could not get lock /var/lib/dpkg/lock-frontend. It is held by process 123 (ubiquity)",
+                    "E: Unable to acquire the dpkg frontend lock (/var/lib/dpkg/lock-frontend), is another process using it?"):
+            self.assertIn("Wait until it finishes", lscommon.lock_hint(out))
+        self.assertEqual(lscommon.lock_hint("E: Unable to locate package nope"), "")
+        self.assertEqual(lscommon.lock_hint(None), "")
+
+    def test_zenity_wrapper_reports_no_window_when_it_cannot_run(self):
+        import lscommon
+        boom = lambda *a, **k: (_ for _ in ()).throw(OSError("no zenity"))   # noqa: E731
+        self.assertIsNone(lscommon._zenity("question", "x", run=boom))
+        R = lambda rc: types.SimpleNamespace(returncode=rc)                  # noqa: E731
+        self.assertTrue(lscommon._zenity("question", "x", run=lambda *a, **k: R(0)))
+        self.assertFalse(lscommon._zenity("question", "x", run=lambda *a, **k: R(1)))
+        self.assertFalse(lscommon._gui_available(which=lambda c: None, env={"DISPLAY": ":0"}))
+        self.assertFalse(lscommon._gui_available(which=lambda c: "/usr/bin/zenity", env={}))
+        self.assertTrue(lscommon._gui_available(which=lambda c: "/usr/bin/zenity", env={"WAYLAND_DISPLAY": "w"}))
+
+
 class MissingTools(unittest.TestCase):
     def test_hints_per_package_manager(self):
         import lscommon

@@ -29,6 +29,14 @@ sh installer/start.sh --make-launcher --desktop
 If the window does not open, `installer/start.sh` **says why in a message window** (python3 missing, the folder was copied
 incompletely, or the last lines of the error) and keeps the full log in `~/.cache/linux-scripts/start.log`.
 
+**A double-click never has to be debugged in a terminal.** When something it needs is missing, the launcher shows a window with
+the question — *“tkinter (the window toolkit for Python) is missing. Install it now?”* (English + Georgian) — you click
+**Yes**, a graphical password prompt and a pulsing “Installing…” window follow, and the installer window opens when it is done.
+If the installation cannot run it says why in a window; the usual case on a computer that is still being set up is
+*“Another installer or update is running right now (for example the Linux Mint installer or Update Manager) — wait until it
+finishes”* (the package manager is locked). The same question appears when any other toolkit program is started from its icon
+without `tkinter`, and in a terminal it is a plain `[Y/n]` (English only when the terminal has no UTF-8, so no `????`).
+
 **No Python on the computer at all?** `start.sh` notices, **asks**, and installs it for you (`python3` + `tkinter`: `apt`
 `python3 python3-tk`, `dnf` `python3 python3-tkinter`, `pacman` `python tk`, `zypper` `python3 python3-tk`, `apk` `python3
 python3-tkinter`), with a graphical password prompt (or `sudo` in a terminal), then goes on and opens the window. The package
