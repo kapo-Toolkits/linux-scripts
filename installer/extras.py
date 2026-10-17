@@ -9,6 +9,8 @@ Other systems get the publisher's download page instead of a guess.
 
     python3 installer/extras.py etcher plan [--json]      # what would run (looks up the release, runs nothing)
     python3 installer/extras.py etcher installed          # the installed version, if any
+
+Brasero, Xfburn and K3b (CD/DVD burners) come from the distribution's own repositories: package_steps("brasero", pm).
 """
 import json
 import os
@@ -108,6 +110,42 @@ def etcher_installed(run=subprocess.run, which=shutil.which):
             if r.returncode == 0 and r.stdout.startswith("install ok installed"):
                 return r.stdout.split()[-1]
     return None
+
+
+# programs that simply come from the distribution's own repositories (no download, nothing to verify by hand)
+PACKAGE_APPS = {"brasero": {"cmd": "brasero", "name": "Brasero"},
+                "xfburn": {"cmd": "xfburn", "name": "Xfburn"},
+                "k3b": {"cmd": "k3b", "name": "K3b"}}
+_INSTALL = {"apt-get": "apt-get install -y {p}", "dnf": "dnf install -y {p}", "yum": "yum install -y {p}",
+            "pacman": "pacman -S --noconfirm {p}", "zypper": "zypper --non-interactive install {p}",
+            "apk": "apk add {p}", "xbps-install": "xbps-install -y {p}"}
+_REMOVE = {"apt-get": "apt-get remove -y {p}", "dnf": "dnf remove -y {p}", "yum": "yum remove -y {p}",
+           "pacman": "pacman -R --noconfirm {p}", "zypper": "zypper --non-interactive remove {p}",
+           "apk": "apk del {p}", "xbps-install": "xbps-remove -y {p}"}
+
+
+def package_name(app, pm):
+    """The distribution's package for this program under this package manager (lscommon.PKG_FOR), or None."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    for d in (os.path.join(here, "..", "common"), os.path.join(here, "..", "lib", "linux-scripts"),
+              "/usr/local/lib/linux-scripts", "/usr/lib/linux-scripts"):
+        if os.path.isfile(os.path.join(d, "lscommon.py")) and d not in sys.path:
+            sys.path.append(d)
+    from lscommon import PKG_FOR
+    return PKG_FOR.get(PACKAGE_APPS[app]["cmd"], {}).get(pm)
+
+
+def package_steps(app, pm, remove=False):
+    """[{'root': True, 'sh': ...}] installing (or removing) the distribution's package, [] when unknown here."""
+    pkg = package_name(app, pm)
+    fmt = (_REMOVE if remove else _INSTALL).get(pm)
+    if not pkg or not fmt:
+        return []
+    return [{"root": True, "sh": "set -eu\n" + fmt.format(p=shlex.quote(pkg)) + "\n"}]
+
+
+def package_installed(app, which=shutil.which):
+    return bool(which(PACKAGE_APPS[app]["cmd"]))
 
 
 def main(argv):
