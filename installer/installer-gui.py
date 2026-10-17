@@ -85,10 +85,11 @@ STR = {
 "en": {
  "title": "Toolkit Installer", "lang_btn": "ქართული", "head": "Tick the programs you want, choose where, then click Install",
  "c_name": "Program", "c_what": "What it does", "c_state": "Installed",
- "me": "for me", "all": "for everyone", "both": "me + everyone", "none": "—", "yes": "installed",
- "f_where": "Where", "w_user": "Only for me (~/.local) — no password needed", "w_sys": "For everyone (/usr/local) — asks for the administrator password",
- "f_opts": "Also", "o_desk": "put a launcher on the Desktop", "o_fold": "put a double-click launcher inside each program's folder",
- "o_note_sys": "(Desktop and folder launchers are only available for “Only for me”)",
+ "me": "for me", "all": "for everyone", "both": "both", "none": "—", "yes": "installed",
+ "c_tools": "Toolkit programs",
+ "f_where": "Where", "w_user": "Only for me (~/.local)", "w_user_note": "no password needed", "w_sys": "For everyone (/usr/local)", "w_sys_note": "asks for the administrator password",
+ "f_opts": "Also", "o_desk": "launcher on the Desktop", "o_fold": "launchers in the program folders",
+ "o_note_sys": "(only in “Only for me” mode)",
  "install": "Install selected", "uninstall": "Uninstall selected", "sel_all": "Select all", "sel_none": "Select none",
  "cmd": "Command:", "log": "Log", "nothing": "Tick at least one program first.",
  "running": "Working… do not close the window.", "done_ok": "Finished successfully.", "done_fail": "Failed (exit code {rc}). See the log.",
@@ -113,10 +114,11 @@ STR = {
 "ka": {
  "title": "ხელსაწყოების დამყენებელი", "lang_btn": "English", "head": "მონიშნეთ პროგრამები, აირჩიეთ სად, და დააჭირეთ „დაყენებას“",
  "c_name": "პროგრამა", "c_what": "რას აკეთებს", "c_state": "დაყენებულია",
- "me": "ჩემთვის", "all": "ყველასთვის", "both": "ჩემთვის + ყველასთვის", "none": "—", "yes": "დაყენებულია",
- "f_where": "სად", "w_user": "მხოლოდ ჩემთვის (~/.local) — პაროლი არ სჭირდება", "w_sys": "ყველასთვის (/usr/local) — ადმინისტრატორის პაროლს მოითხოვს",
- "f_opts": "ასევე", "o_desk": "იარლიყი სამუშაო მაგიდაზე", "o_fold": "ორმაგი დაწკაპების იარლიყი თითოეული პროგრამის საქაღალდეში",
- "o_note_sys": "(სამუშაო მაგიდისა და საქაღალდის იარლიყები მხოლოდ „ჩემთვის“ რეჟიმშია)",
+ "me": "ჩემთვის", "all": "ყველასთვის", "both": "ორივე", "none": "—", "yes": "დაყენებულია",
+ "c_tools": "ხელსაწყოების პროგრამები",
+ "f_where": "სად", "w_user": "მხოლოდ ჩემთვის (~/.local)", "w_user_note": "პაროლი არ სჭირდება", "w_sys": "ყველასთვის (/usr/local)", "w_sys_note": "ადმინისტრატორის პაროლს მოითხოვს",
+ "f_opts": "ასევე", "o_desk": "იარლიყი სამუშაო მაგიდაზე", "o_fold": "იარლიყები საქაღალდეებში",
+ "o_note_sys": "(მხოლოდ „ჩემთვის“ რეჟიმში)",
  "install": "მონიშნულის დაყენება", "uninstall": "მონიშნულის წაშლა", "sel_all": "ყველას მონიშვნა", "sel_none": "მონიშვნის მოხსნა",
  "cmd": "ბრძანება:", "log": "ლოგი", "nothing": "ჯერ მონიშნეთ ერთი პროგრამა მაინც.",
  "running": "მუშაობს… ფანჯარა არ დახუროთ.", "done_ok": "წარმატებით დასრულდა.", "done_fail": "ვერ მოხერხდა (კოდი {rc}). იხილეთ ლოგი.",
@@ -250,6 +252,13 @@ def run_command(cmd, on_line):
     return p.wait()
 
 
+def fit_geometry(screen_w, screen_h, want_w=1040, want_h=600):
+    """-> (width, height, min_width, min_height): the wanted size, shrunk to leave room on a small screen
+    (panel, window frame), never below a size where the three columns still read."""
+    w, h = min(want_w, screen_w - 30), min(want_h, screen_h - 80)
+    return w, h, min(760, w), min(470, h)
+
+
 def launcher_text(root):
     """A double-click launcher for this window, placed in the checkout's top folder (absolute paths: %k does not work).
     It goes through installer/start.sh, which shows a message window when the installer cannot start; `sh` means no
@@ -277,8 +286,10 @@ def make_launcher(root=ROOT):
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.geometry("760x720")
-        self.minsize(680, 640)
+        w, h, mw, mh = fit_geometry(self.winfo_screenwidth(), self.winfo_screenheight())
+        self.geometry(f"{w}x{h}")
+        self.minsize(mw, mh)
+        self.wrap = max(150, (w - 40) // 3 - 80)          # width of the grey description lines
         self.busy = False
         self.vars = {x["id"]: tk.BooleanVar(value=not x.get("heavy")) for x in TOOLS}
         self.extra_vars = {x["id"]: tk.BooleanVar(value=False) for x in EXTRAS}
@@ -286,50 +297,63 @@ class App(tk.Tk):
         self.v_desk, self.v_fold = tk.BooleanVar(value=True), tk.BooleanVar(value=False)
 
         top = ttk.Frame(self)
-        top.pack(fill="x", padx=12, pady=(10, 4))
-        self.lbl_head = ttk.Label(top, font=("", 12, "bold"), wraplength=560, justify="left")
+        top.pack(fill="x", padx=10, pady=(8, 2))
+        self.lbl_head = ttk.Label(top, font=("", 11, "bold"), wraplength=max(300, w - 160), justify="left")
         self.lbl_head.pack(side="left")
-        self.btn_lang = ttk.Button(top, width=10, command=self.toggle_lang)
+        self.btn_lang = ttk.Button(top, width=9, command=self.toggle_lang)
         self.btn_lang.pack(side="right")
 
-        self.box = ttk.Frame(self)
-        self.box.pack(fill="x", padx=12, pady=6)
+        # three columns side by side: toolkit programs | other programs | where, options, buttons
+        main = ttk.Frame(self)
+        main.pack(fill="x", padx=8)
+        main.columnconfigure(0, weight=5, uniform="col")
+        main.columnconfigure(1, weight=5, uniform="col")
+        main.columnconfigure(2, weight=5, uniform="col")
+        self.f_tools = ttk.LabelFrame(main)
+        self.f_tools.grid(row=0, column=0, sticky="nsew", padx=3, pady=3)
+        self.f_extra = ttk.LabelFrame(main)
+        self.f_extra.grid(row=0, column=1, sticky="nsew", padx=3, pady=3)
+        side = ttk.Frame(main)
+        side.grid(row=0, column=2, sticky="nsew", padx=3, pady=3)
+        self.box = self.f_tools                                 # kept for older callers
 
-        self.f_where = ttk.LabelFrame(self)
-        self.f_where.pack(fill="x", padx=12, pady=4)
+        self.f_where = ttk.LabelFrame(side)
+        self.f_where.pack(fill="x")
         self.rb_user = ttk.Radiobutton(self.f_where, variable=self.where, value="user", command=self.sync)
         self.rb_sys = ttk.Radiobutton(self.f_where, variable=self.where, value="system", command=self.sync)
-        self.rb_user.pack(anchor="w", padx=8, pady=2)
-        self.rb_sys.pack(anchor="w", padx=8, pady=2)
+        self.note_user = ttk.Label(self.f_where, foreground="#777777", font=("", 8), wraplength=250, justify="left")
+        self.note_sys = ttk.Label(self.f_where, foreground="#777777", font=("", 8), wraplength=250, justify="left")
+        self.rb_user.pack(anchor="w", padx=6, pady=(2, 0))
+        self.note_user.pack(anchor="w", padx=26)
+        self.rb_sys.pack(anchor="w", padx=6, pady=(4, 0))
+        self.note_sys.pack(anchor="w", padx=26, pady=(0, 2))
 
-        self.f_opts = ttk.LabelFrame(self)
-        self.f_opts.pack(fill="x", padx=12, pady=4)
+        self.f_opts = ttk.LabelFrame(side)
+        self.f_opts.pack(fill="x", pady=(4, 0))
         self.cb_desk = ttk.Checkbutton(self.f_opts, variable=self.v_desk, command=self.sync)
         self.cb_fold = ttk.Checkbutton(self.f_opts, variable=self.v_fold, command=self.sync)
-        self.cb_desk.pack(anchor="w", padx=8, pady=1)
-        self.cb_fold.pack(anchor="w", padx=8, pady=1)
-        self.lbl_optnote = ttk.Label(self.f_opts, foreground="#777777")
-        self.lbl_optnote.pack(anchor="w", padx=8, pady=(0, 4))
+        self.cb_desk.pack(anchor="w", padx=6, pady=0)
+        self.cb_fold.pack(anchor="w", padx=6, pady=0)
+        self.lbl_optnote = ttk.Label(self.f_opts, foreground="#777777", wraplength=200, justify="left")
+        self.lbl_optnote.pack(anchor="w", padx=6)
 
-        bar = ttk.Frame(self)
-        bar.pack(fill="x", padx=12, pady=6)
-        self.b_inst = ttk.Button(bar, command=lambda: self.go("install"))
-        self.b_un = ttk.Button(bar, command=lambda: self.go("uninstall"))
-        self.b_all = ttk.Button(bar, command=lambda: self.pick(True))
-        self.b_none = ttk.Button(bar, command=lambda: self.pick(False))
-        for b in (self.b_inst, self.b_un, self.b_all, self.b_none):
-            b.pack(side="left", padx=(0, 6))
+        self.b_inst = ttk.Button(side, command=lambda: self.go("install"))
+        self.b_un = ttk.Button(side, command=lambda: self.go("uninstall"))
+        self.b_all = ttk.Button(side, command=lambda: self.pick(True))
+        self.b_none = ttk.Button(side, command=lambda: self.pick(False))
+        self.b_inst.pack(fill="x", pady=(6, 1))
+        self.b_un.pack(fill="x", pady=1)
+        self.b_all.pack(fill="x", pady=1)
+        self.b_none.pack(fill="x", pady=1)
 
-        self.lbl_cmdh = ttk.Label(self, font=("", 9, "bold"))
-        self.lbl_cmdh.pack(anchor="w", padx=12)
-        self.lbl_cmd = ttk.Label(self, wraplength=720, justify="left", foreground="#555555", font=("TkFixedFont", 9))
-        self.lbl_cmd.pack(anchor="w", padx=12)
-        self.lbl_log = ttk.Label(self)
-        self.lbl_log.pack(anchor="w", padx=12, pady=(8, 0))
-        self.log = scrolledtext.ScrolledText(self, height=9, state="disabled", wrap="word")
-        self.log.pack(fill="both", expand=True, padx=12, pady=(0, 4))
-        self.lbl_status = ttk.Label(self, foreground="#555555")
-        self.lbl_status.pack(anchor="w", padx=12, pady=(0, 8))
+        self.lbl_cmd = ttk.Label(self, wraplength=w - 30, justify="left", foreground="#555555", font=("TkFixedFont", 8))
+        self.lbl_cmd.pack(anchor="w", padx=12, pady=(2, 0))
+        self.lbl_log = ttk.Label(self)                           # (heading kept for older callers; the log has no caption)
+        # the status line is packed first, from the bottom, so a small window shortens the log and never cuts the status
+        self.lbl_status = ttk.Label(self, foreground="#555555", wraplength=w - 30)
+        self.lbl_status.pack(side="bottom", anchor="w", padx=12, pady=(0, 6))
+        self.log = scrolledtext.ScrolledText(self, height=3, state="disabled", wrap="word", font=("TkFixedFont", 9))
+        self.log.pack(fill="both", expand=True, padx=10, pady=(2, 2))
         self.apply_lang()
 
     # ---- UI helpers
@@ -337,9 +361,13 @@ class App(tk.Tk):
         self.title(t("title"))
         self.lbl_head.config(text=t("head"))
         self.btn_lang.config(text=t("lang_btn"))
+        self.f_tools.config(text=t("c_tools"))
+        self.f_extra.config(text=t("c_other"))
         self.f_where.config(text=t("f_where"))
         self.rb_user.config(text=t("w_user"))
         self.rb_sys.config(text=t("w_sys"))
+        self.note_user.config(text=t("w_user_note"))
+        self.note_sys.config(text=t("w_sys_note"))
         self.f_opts.config(text=t("f_opts"))
         self.cb_desk.config(text=t("o_desk"))
         self.cb_fold.config(text=t("o_fold"))
@@ -347,37 +375,35 @@ class App(tk.Tk):
         self.b_un.config(text=t("uninstall"))
         self.b_all.config(text=t("sel_all"))
         self.b_none.config(text=t("sel_none"))
-        self.lbl_cmdh.config(text=t("cmd"))
-        self.lbl_log.config(text=t("log"))
         self.lbl_status.config(text=t("note"))
         self.render()
         self.sync()
 
+    def item_row(self, parent, r, var, title, info, state, good):
+        """Two lines per program: [checkbox] name ... state / grey description. Narrow enough for three columns."""
+        parent.columnconfigure(0, weight=1)
+        ttk.Checkbutton(parent, text=title, variable=var, command=self.sync).grid(row=2 * r, column=0, sticky="w", padx=(4, 0))
+        ttk.Label(parent, text=state, foreground="#1a7f37" if good else "#888888", font=("", 8)).grid(
+            row=2 * r, column=1, sticky="e", padx=(4, 6))
+        ttk.Label(parent, text=info, foreground="#666666", font=("", 8), wraplength=self.wrap, justify="left").grid(
+            row=2 * r + 1, column=0, columnspan=2, sticky="w", padx=(24, 4), pady=(0, 2))
+
     def render(self):
-        for w in self.box.winfo_children():
-            w.destroy()
-        for i, h in enumerate((t("c_name"), t("c_what"), t("c_state"))):
-            ttk.Label(self.box, text=h, font=("", 9, "bold")).grid(row=0, column=i + 1, sticky="w", padx=8, pady=(0, 3))
-        for r, tool in enumerate(TOOLS, start=1):
+        for frame in (self.f_tools, self.f_extra):
+            for w in frame.winfo_children():
+                w.destroy()
+        for r, tool in enumerate(TOOLS):
             where = installed_where(tool)
             state = t("both") if where == {"user", "system"} else t("me") if where == {"user"} else t("all") if where else t("none")
-            ttk.Checkbutton(self.box, variable=self.vars[tool["id"]], command=self.sync).grid(row=r, column=0, sticky="w", pady=1)
-            ttk.Label(self.box, text=tool["name"][LANG]).grid(row=r, column=1, sticky="w", padx=8)
-            ttk.Label(self.box, text=tool["info"][LANG], foreground="#555555").grid(row=r, column=2, sticky="w", padx=8)
-            ttk.Label(self.box, text=state, foreground="#1a7f37" if where else "#888888").grid(row=r, column=3, sticky="w", padx=8)
-        r = len(TOOLS) + 1
-        ttk.Label(self.box, text=t("c_other"), font=("", 9, "bold")).grid(row=r, column=1, columnspan=3, sticky="w", padx=8, pady=(8, 2))
-        for r, ex in enumerate(EXTRAS, start=r + 1):
+            self.item_row(self.f_tools, r, self.vars[tool["id"]], tool["name"][LANG], tool["info"][LANG], state, bool(where))
+        for r, ex in enumerate(EXTRAS):
             if ex["id"] == "etcher":
                 ver = extras.etcher_installed()
             elif ex["id"] == "brave":
                 ver = t("yes") if extras.brave_installed() else None
             else:
                 ver = t("yes") if extras.package_installed(ex["id"]) else None
-            ttk.Checkbutton(self.box, variable=self.extra_vars[ex["id"]], command=self.sync).grid(row=r, column=0, sticky="w", pady=1)
-            ttk.Label(self.box, text=ex["name"][LANG]).grid(row=r, column=1, sticky="w", padx=8)
-            ttk.Label(self.box, text=ex["info"][LANG], foreground="#555555").grid(row=r, column=2, sticky="w", padx=8)
-            ttk.Label(self.box, text=(ver or t("none")), foreground="#1a7f37" if ver else "#888888").grid(row=r, column=3, sticky="w", padx=8)
+            self.item_row(self.f_extra, r, self.extra_vars[ex["id"]], ex["name"][LANG], ex["info"][LANG], ver or t("none"), bool(ver))
 
     def sync(self):
         system = self.where.get() == "system"
@@ -433,7 +459,7 @@ class App(tk.Tk):
             if ex["id"] in extra_ids:
                 names += ("\n" if names else "") + "• " + ex["name"][LANG]
         if action == "uninstall" and not messagebox.askyesno(
-                t("title"), t("confirm_un", where=t("w_sys" if system else "w_user").split(" — ")[0], names=names)):
+                t("title"), t("confirm_un", where=t("w_sys" if system else "w_user").split("\n")[0], names=names)):
             return
         prereq = None
         if action == "install" and "printhub" in ids:

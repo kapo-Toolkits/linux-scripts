@@ -36,7 +36,9 @@ names are checked against each distribution's repositories in CI (`tests/pkgname
 If the file manager shows “untrusted launcher”: right-click the icon → *Allow Launching* (or `chmod +x` it), and a copied
 icon from another computer points to the OLD path - make a new one with the command above.
 
-## The window
+## The window (three columns, fits a small screen)
+
+The window is laid out **side by side**: *Toolkit programs* | *Other programs (from their publishers)* | *Where / Also / buttons*. Each program is two lines (name and state, then a short grey description), the size is shrunk to the screen (a 1024×600 laptop still shows everything; the log gives way first), and the status line is never cut off. Georgian and English were checked at 1024×600 and 1366×768.
 
 | | |
 |---|---|

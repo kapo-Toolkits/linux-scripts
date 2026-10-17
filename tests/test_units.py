@@ -443,6 +443,18 @@ class Installer(unittest.TestCase):
         self.assertIn(["apk", "add"], [c for m, c, _ in lscommon.TK_PACKAGES if m == "apk"])
         self.assertEqual([p for m, _, p in lscommon.TK_PACKAGES if m == "apk"], ["python3-tkinter"])   # not the old wrong name
 
+    def test_window_size_fits_small_screens(self):
+        f = self.m.fit_geometry
+        self.assertEqual(f(1920, 1080), (1040, 600, 760, 470))                   # a big screen gets the wanted size
+        self.assertEqual(f(1366, 768), (1040, 600, 760, 470))
+        w, h, mw, mh = f(1024, 600)
+        self.assertLessEqual(w, 1024 - 30)
+        self.assertLessEqual(h, 600 - 80)                                       # room for the panel and the title bar
+        self.assertLessEqual(mw, w)
+        self.assertLessEqual(mh, h)
+        w, h, mw, mh = f(800, 480)                                              # tiny: it still fits, minimums follow
+        self.assertTrue(w <= 770 and h <= 400 and mw <= w and mh <= h)
+
     def test_prerequisite_commands_per_package_manager(self):
         self.assertEqual(self.m.prereq_command("apt-get")[:2], ["sh", "-c"])
         self.assertIn("python3-venv", self.m.prereq_command("apt-get")[2])
