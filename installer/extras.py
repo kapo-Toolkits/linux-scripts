@@ -159,6 +159,53 @@ def brave_installed(which=shutil.which):
     return bool(which("brave-browser") or which("brave"))
 
 
+# ---- Claude Desktop (beta) for Debian-based Linux: Anthropic's own apt repository ----
+# https://code.claude.com/docs/en/desktop-linux  (Ubuntu 22.04+ / Debian 12+, x86_64 or arm64)
+CLAUDE_PAGE = "https://code.claude.com/docs/en/desktop-linux"
+CLAUDE_KEY_URL = "https://downloads.claude.ai/claude-desktop/key.asc"
+CLAUDE_FPR = "31DDDE24DDFAB679F42D7BD2BAA929FF1A7ECACE"          # printed by `gpg --show-keys` in the vendor's instructions
+CLAUDE_KEYRING = "/usr/share/keyrings/claude-desktop-archive-keyring.asc"
+CLAUDE_LIST = "/etc/apt/sources.list.d/claude-desktop.list"
+CLAUDE_REPO = "https://downloads.claude.ai/claude-desktop/apt/stable stable main"
+CLAUDE_NOTES = ("Sign in with your claude.ai account (not an API key). For Cowork: turn on hardware virtualization in the "
+                "firmware, then add your user to the kvm group:  sudo usermod -aG kvm $USER  and log out and in.")
+
+
+def claude_steps(pm, arch, proto="=https", keyring=None, listfile=None, fpr=None, url=None):
+    """One administrator step: the key is downloaded, its fingerprint is compared with the one Anthropic publishes (abort on
+    a mismatch, nothing is written), the repository is registered, then apt installs claude-desktop.
+    -> (steps, info); steps is [] with info['manual'] when this system is not Debian-based x86_64 / arm64."""
+    if pm != "apt-get" or arch not in ("amd64", "arm64", "x86_64", "aarch64"):
+        return [], {"manual": CLAUDE_PAGE}
+    q = shlex.quote
+    keyring, listfile, fpr, url = keyring or CLAUDE_KEYRING, listfile or CLAUDE_LIST, fpr or CLAUDE_FPR, url or CLAUDE_KEY_URL
+    line = f"deb [arch=amd64,arm64 signed-by={keyring}] {CLAUDE_REPO}"
+    sh = f"""set -eu
+export DEBIAN_FRONTEND=noninteractive
+apt-get install -y curl gnupg ca-certificates || (apt-get update && apt-get install -y curl gnupg ca-certificates)
+TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
+curl -fsSL --proto '{proto}' --tlsv1.2 -o "$TMP/key.asc" {q(url)}
+mkdir -m700 "$TMP/gnupg"
+FPR=$(gpg --homedir "$TMP/gnupg" --show-keys --with-colons "$TMP/key.asc" | awk -F: '$1=="fpr"{{print $10; exit}}')
+if [ "$FPR" != "{fpr}" ]; then echo "KEY FINGERPRINT MISMATCH: $FPR - nothing was installed" >&2; exit 1; fi
+echo "Key fingerprint OK: $FPR"
+install -D -m644 "$TMP/key.asc" {q(keyring)}
+printf '%s\\n' {q(line)} > {q(listfile)}
+apt-get update
+apt-get install -y claude-desktop
+"""
+    return [{"root": True, "sh": sh}], {"fingerprint": fpr, "url": url, "repo": line, "key": keyring}
+
+
+def claude_remove_steps(pm):
+    """The package's own removal also drops the repository entry and key it registered (vendor docs)."""
+    return [{"root": True, "sh": "set -u\napt-get remove -y claude-desktop\n"}] if pm == "apt-get" else []
+
+
+def claude_installed(which=shutil.which):
+    return bool(which("claude-desktop"))
+
+
 # programs that simply come from the distribution's own repositories (no download, nothing to verify by hand)
 PACKAGE_APPS = {"brasero": {"cmd": "brasero", "name": "Brasero"},
                 "xfburn": {"cmd": "xfburn", "name": "Xfburn"},
