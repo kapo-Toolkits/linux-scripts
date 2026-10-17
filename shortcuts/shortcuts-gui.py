@@ -77,7 +77,7 @@ TOOLS = [
     {"id": "artcraft", "cmd": "artcraft-launcher", "script": "", "file": "artcraft-launcher.desktop",
      "name": {"en": "ArtCraft Launcher", "ka": "ArtCraft Launcher"},
      "comment": {"en": "ArtCraft launcher", "ka": "ArtCraft-ის გამშვები"},
-     "icon": "artcraft-launcher", "cats": "Graphics;"},
+     "icon": "ai.storyteller.artcraft-launcher", "cats": "Graphics;"},
     {"id": "brave", "cmd": "brave-browser", "script": "", "file": "brave-browser.desktop",
      "name": {"en": "Brave Browser", "ka": "Brave Browser"},
      "comment": {"en": "Web browser", "ka": "ბრაუზერი"},

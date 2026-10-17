@@ -92,6 +92,14 @@ jobs:
       - uses: actions/checkout@v4
       - run: tests/retry-on-network.sh tests/run-recipes-containers.sh
 
+  real-install:
+    # the "other programs" recipes against the real publishers in a throwaway Ubuntu: Claude Desktop and VS Code repositories
+    # (key fingerprint, apt offers the package, removal takes the entry away), ArtCraft real download + SHA-256 + install + purge
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: tests/retry-on-network.sh tests/run-real-install.sh
+
   guide-drift:
     # weekly: has the QGIS installation guide moved on (new release, LTR, Ubuntu/Debian codename, signing key)?
     # A red run means qgis_installer/system.py needs updating; it never changes anything by itself.

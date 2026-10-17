@@ -68,7 +68,7 @@ command -v sha256sum >/dev/null 2>&1 || {{ echo "sha256sum is not installed (pac
 mkdir -p {q(d)}
 cd {q(d)}
 trap 'rm -f {q(name)}.part' EXIT
-curl -fL --proto '{proto}' --tlsv1.2 -o {q(name)}.part {q(asset['url'])}
+curl -fL --progress-bar --proto '{proto}' --tlsv1.2 -o {q(name)}.part {q(asset['url'])}
 echo "{asset['sha256']}  {name}.part" | sha256sum -c - >/dev/null || {{ echo "CHECKSUM MISMATCH - the download is not what the publisher published; nothing was installed" >&2; exit 1; }}
 echo "SHA-256 verified: {asset['sha256']}"
 mv {q(name)}.part {q(name)}
@@ -93,7 +93,7 @@ def etcher_steps(release, pm, arch, cache_dir=None):
 
 
 def etcher_remove_steps(pm):
-    cmd = {"apt-get": f"apt-get remove -y {ETCHER_PACKAGE}", "dnf": f"dnf remove -y {ETCHER_PACKAGE}",
+    cmd = {"apt-get": f"apt-get purge -y {ETCHER_PACKAGE}", "dnf": f"dnf remove -y {ETCHER_PACKAGE}",
            "zypper": f"zypper --non-interactive remove {ETCHER_PACKAGE}"}.get(pm)
     return [{"root": True, "sh": f"set -u\n{cmd}\n"}] if cmd else []
 
@@ -146,8 +146,8 @@ def brave_steps(script_path):
 
 def brave_remove_steps(pm):
     """Package plus the repository files the script added (apt); rpm distributions keep their repo file."""
-    cmds = {"apt-get": "apt-get remove -y brave-browser\nrm -f /etc/apt/sources.list.d/brave-browser-release.sources "
-                       "/usr/share/keyrings/brave-browser-archive-keyring.gpg\napt-get update",
+    cmds = {"apt-get": "apt-get purge -y brave-browser\nrm -f /etc/apt/sources.list.d/brave-browser-release.sources "
+                       "/usr/share/keyrings/brave-browser-archive-keyring.gpg\napt-get update || true",
             "dnf": "dnf remove -y brave-browser", "yum": "yum remove -y brave-browser",
             "zypper": "zypper --non-interactive remove brave-browser",
             "pacman": "pacman -R --noconfirm brave-browser || pacman -R --noconfirm brave-bin"}
@@ -197,9 +197,14 @@ apt-get install -y claude-desktop
     return [{"root": True, "sh": sh}], {"fingerprint": fpr, "url": url, "repo": line, "key": keyring}
 
 
-def claude_remove_steps(pm):
-    """The package's own removal also drops the repository entry and key it registered (vendor docs)."""
-    return [{"root": True, "sh": "set -u\napt-get remove -y claude-desktop\n"}] if pm == "apt-get" else []
+def claude_remove_steps(pm, keyring=None, listfile=None):
+    """Purge the package, then drop the repository entry and key this installer registered (the package's own removal does
+    the same per the vendor docs; removing the files again is harmless)."""
+    if pm != "apt-get":
+        return []
+    q = shlex.quote
+    return [{"root": True, "sh": f"set -u\napt-get purge -y claude-desktop\nrm -f {q(listfile or CLAUDE_LIST)} {q(keyring or CLAUDE_KEYRING)}\n"
+                                 "apt-get update || true\n"}]
 
 
 def claude_installed(which=shutil.which):
@@ -307,7 +312,7 @@ def outdated(installed=installed_version, github=None, etcher=None):
 
 
 def apt_remove_steps(package, pm):
-    return [{"root": True, "sh": f"set -u\napt-get remove -y {package}\n"}] if pm == "apt-get" else []
+    return [{"root": True, "sh": f"set -u\napt-get purge -y {package}\n"}] if pm == "apt-get" else []
 
 
 # ---- Visual Studio Code: Microsoft's apt repository, key fingerprint checked ----
@@ -347,6 +352,89 @@ apt-get install -y code
 """
     return [{"root": True, "sh": sh}], {"fingerprint": fpr, "url": url, "key": keyring}
 
+def vscode_remove_steps(pm, sources_dir="/etc/apt/sources.list.d", keyring=None, listfile=None):
+    """Purge `code`, then remove Microsoft's source file for it (and the key when nothing else in apt's sources uses it):
+    a system without VS Code should not keep checking Microsoft's repository."""
+    if pm != "apt-get":
+        return []
+    q = shlex.quote
+    keyring, listfile = keyring or VSCODE_KEYRING, listfile or VSCODE_LIST
+    sh = f"""set -u
+apt-get purge -y code
+if ! dpkg -s code-insiders >/dev/null 2>&1; then
+  rm -f {q(listfile)} {q(sources_dir)}/vscode.list
+  if ! grep -rqs {q(os.path.basename(keyring))} {q(sources_dir)} /etc/apt/sources.list 2>/dev/null; then rm -f {q(keyring)}; fi
+fi
+apt-get update || true
+"""
+    return [{"root": True, "sh": sh}]
+
+# ---- the user's own data of these programs: only ever offered, never removed silently ----
+DATA_DIRS = {
+    "claude": ["~/.config/Claude", "~/.cache/Claude"],
+    "vscode": ["~/.config/Code", "~/.vscode", "~/.vscode-shared", "~/.cache/Code"],
+    "discord": ["~/.config/discord"],
+    "rustdesk": ["~/.config/rustdesk", "~/.local/share/logs/RustDesk"],
+    "tabby": ["~/.config/tabby"],
+    "winboat": ["~/.config/winboat", "~/.winboat"],
+    "artcraft": ["~/.local/share/ai.storyteller.artcraft-launcher", "~/.config/ai.storyteller.artcraft-launcher",
+                 "~/.cache/ai.storyteller.artcraft-launcher"],
+    "etcher": ["~/.config/balenaEtcher"],
+    "brave": ["~/.config/BraveSoftware", "~/.cache/BraveSoftware"],
+    "brasero": ["~/.config/brasero"],
+    "xfburn": ["~/.config/xfburn"],
+    "k3b": ["~/.config/k3brc", "~/.local/share/k3b"],
+}
+
+
+def _size(path):
+    total = 0
+    for dirpath, _dirs, files in os.walk(path):
+        for f in files:
+            try:
+                total += os.lstat(os.path.join(dirpath, f)).st_size
+            except OSError:
+                pass
+    return total
+
+
+def data_paths(app_ids, home=None):
+    """-> [(path, bytes)]: the folders / files of these programs that really exist in the home folder (nothing is touched)."""
+    home = os.path.realpath(home or os.path.expanduser("~"))
+    out, seen = [], set()
+    for app_id in app_ids:
+        flatpak_data = [f"~/.var/app/{FLATPAK_IDS[app_id]}"] if app_id in FLATPAK_IDS else []
+        for p in DATA_DIRS.get(app_id, []) + flatpak_data:
+            path = os.path.join(home, p[2:])
+            if path in seen or not os.path.lexists(path):
+                continue
+            seen.add(path)
+            out.append((path, os.lstat(path).st_size if os.path.isfile(path) or os.path.islink(path) else _size(path)))
+    return out
+
+
+def remove_data(paths, home=None):
+    """Delete the given paths, but only those that lie inside the home folder (a symlink is removed itself, never followed).
+    -> (removed, [(path, error)])"""
+    home = os.path.realpath(home or os.path.expanduser("~"))
+    done, failed = [], []
+    for path in paths:
+        parent = os.path.realpath(os.path.dirname(path))
+        if not (parent == home or parent.startswith(home + os.sep)):      # inside the home folder only (so never the folder itself)
+            failed.append((path, "outside the home folder - not touched"))
+            continue
+        try:
+            if os.path.islink(path) or os.path.isfile(path):
+                os.unlink(path)
+            elif os.path.isdir(path):
+                shutil.rmtree(path)
+            else:
+                continue
+            done.append(path)
+        except OSError as e:
+            failed.append((path, str(e)))
+    return done, failed
+
 
 # ---- Discord: the publisher's own .deb (https://discord.com/download).  Discord publishes no checksum, so only HTTPS protects it ----
 DISCORD_URL = "https://discord.com/api/download?platform=linux&format=deb"
@@ -363,7 +451,7 @@ def discord_steps(pm, arch, cache_dir=None, proto="=https", url=None):
 command -v curl >/dev/null 2>&1 || {{ echo "curl is not installed (Debian/Ubuntu: sudo apt install curl)" >&2; exit 1; }}
 mkdir -p {q(d)}
 trap 'rm -f {q(path)}.part' EXIT
-curl -fL --proto '{proto}' --proto-redir '{proto}' --tlsv1.2 -o {q(path)}.part {q(url or DISCORD_URL)}
+curl -fL --progress-bar --proto '{proto}' --proto-redir '{proto}' --tlsv1.2 -o {q(path)}.part {q(url or DISCORD_URL)}
 dpkg-deb -f {q(path)}.part Package | grep -qx discord || {{ echo "the download is not the Discord package - nothing was installed" >&2; exit 1; }}
 mv {q(path)}.part {q(path)}
 """
@@ -379,7 +467,7 @@ PACKAGE_APPS = {"brasero": {"cmd": "brasero", "name": "Brasero"},
 _INSTALL = {"apt-get": "apt-get install -y {p}", "dnf": "dnf install -y {p}", "yum": "yum install -y {p}",
             "pacman": "pacman -S --noconfirm {p}", "zypper": "zypper --non-interactive install {p}",
             "apk": "apk add {p}", "xbps-install": "xbps-install -y {p}"}
-_REMOVE = {"apt-get": "apt-get remove -y {p}", "dnf": "dnf remove -y {p}", "yum": "yum remove -y {p}",
+_REMOVE = {"apt-get": "apt-get purge -y {p}", "dnf": "dnf remove -y {p}", "yum": "yum remove -y {p}",
            "pacman": "pacman -R --noconfirm {p}", "zypper": "zypper --non-interactive remove {p}",
            "apk": "apk del {p}", "xbps-install": "xbps-remove -y {p}"}
 
@@ -406,6 +494,55 @@ def package_steps(app, pm, remove=False):
 
 def package_installed(app, which=shutil.which):
     return bool(which(PACKAGE_APPS[app]["cmd"]))
+
+
+# ---- Flatpak (Flathub) for systems where the publisher's .deb / apt repository does not apply (Fedora, openSUSE, Arch ...) ----
+# Flathub's own signed remote; installed for the user (no administrator password) once flatpak itself is there.
+FLATPAK_IDS = {"discord": "com.discordapp.Discord", "rustdesk": "com.rustdesk.RustDesk",
+               "vscode": "com.visualstudio.code", "brave": "com.brave.Browser"}
+FLATHUB_REPO = "https://dl.flathub.org/repo/flathub.flatpakrepo"
+FLATPAK_SETUP = "https://flatpak.org/setup/"
+
+
+def flatpak_scopes(app_id, run=subprocess.run, which=shutil.which):
+    """{'user', 'system'}: where this program is installed as a flatpak (empty when not, or when flatpak is missing)."""
+    fid = FLATPAK_IDS.get(app_id)
+    if not fid or not which("flatpak"):
+        return set()
+    out = set()
+    for scope in ("user", "system"):
+        try:
+            if run(["flatpak", "info", f"--{scope}", fid], capture_output=True, text=True, timeout=30).returncode == 0:
+                out.add(scope)
+        except Exception:  # noqa: BLE001
+            pass
+    return out
+
+
+def flatpak_steps(app_id, pm, have_flatpak, remove_scopes=None):
+    """-> (steps, info). Install: [flatpak from the system's own repositories if missing (administrator)] + add Flathub for
+    the user + install for the user.  Remove (remove_scopes given): uninstall in each scope it is installed in.
+    steps is [] with info['manual'] when this program has no Flathub entry or flatpak cannot be installed here."""
+    fid = FLATPAK_IDS.get(app_id)
+    if not fid:
+        return [], {"manual": FLATPAK_SETUP}
+    q = shlex.quote
+    if remove_scopes is not None:
+        steps = []
+        if "user" in remove_scopes:
+            steps.append({"root": False, "sh": f"set -u\nflatpak uninstall -y --user {q(fid)}\n"})
+        if "system" in remove_scopes:
+            steps.append({"root": True, "sh": f"set -u\nflatpak uninstall -y --system {q(fid)}\n"})
+        return steps, {"id": fid}
+    steps = []
+    if not have_flatpak:
+        cmd = _INSTALL.get(pm)
+        if not cmd:
+            return [], {"manual": FLATPAK_SETUP}
+        steps.append({"root": True, "sh": "set -eu\n" + cmd.format(p="flatpak") + "\n"})
+    steps.append({"root": False, "sh": f"set -eu\nflatpak remote-add --user --if-not-exists flathub {q(FLATHUB_REPO)}\n"
+                                       f"flatpak install -y --user flathub {q(fid)}\n"})
+    return steps, {"id": fid, "needs_flatpak": not have_flatpak, "source": "flathub.org"}
 
 
 def main(argv):

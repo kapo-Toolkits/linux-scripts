@@ -535,7 +535,7 @@ class Installer(unittest.TestCase):
         calls = {"jobs": None, "asked": [], "popen": []}
         patches = dict(venv_ready=lambda *a, **k: False, detect_pm=lambda: "apt-get",
                        elevate=lambda c, **k: ["pkexec"] + list(c),
-                       run_jobs=lambda jobs, on_line: calls.__setitem__("jobs", jobs) or 0,
+                       run_jobs=lambda jobs, on_line, ctl=None: calls.__setitem__("jobs", jobs) or 0,
                        tool_path=lambda *a, **k: "/h/.local/bin/printhub")
         class FakeApp:                                     # only what go() touches, no display needed
             pass
@@ -557,6 +557,9 @@ class Installer(unittest.TestCase):
             app.lbl_status = types.SimpleNamespace(config=lambda **k: None)
             app.say = lambda *a: None
             app.render = lambda: None
+            quiet = types.SimpleNamespace(pack=lambda **k: None, pack_forget=lambda: None, config=lambda **k: None,
+                                          start=lambda *a: None, stop=lambda: None, state=lambda *a: None)
+            app.runbar, app.prog, app.b_cancel = quiet, quiet, quiet
             app.finish = lambda rc: m.App.finish(app, rc)
             app.after = lambda ms, fn, *a: fn(*a)           # run the "UI" hand-off inline
             m.threading = types.SimpleNamespace(Thread=lambda target, daemon: types.SimpleNamespace(start=target))
@@ -658,7 +661,7 @@ class Extras(unittest.TestCase):
         self.assertEqual(self.ex.etcher_installed(run=lambda *a, **k: R("install ok installed 2.1.7"), which=lambda c: "/x"), "2.1.7")
         self.assertIsNone(self.ex.etcher_installed(run=lambda *a, **k: R("", 1), which=lambda c: "/x"))
         self.assertIsNone(self.ex.etcher_installed(run=lambda *a, **k: R("install ok installed 1"), which=lambda c: None))
-        self.assertIn("apt-get remove -y balena-etcher", self.ex.etcher_remove_steps("apt-get")[0]["sh"])
+        self.assertIn("apt-get purge -y balena-etcher", self.ex.etcher_remove_steps("apt-get")[0]["sh"])
         self.assertEqual(self.ex.etcher_remove_steps("pacman"), [])
 
     def test_window_asks_before_downloading_then_runs_download_install_cleanup(self):
@@ -1024,7 +1027,7 @@ class VendorPrograms(unittest.TestCase):
         self.assertTrue(self.ex.deb_installed("code", run=lambda *a, **k: ok, which=lambda c: "/x"))
         self.assertFalse(self.ex.deb_installed("code", run=lambda *a, **k: gone, which=lambda c: "/x" if c == "dpkg-query" else None))
         self.assertTrue(self.ex.deb_installed("code", "code", run=lambda *a, **k: gone, which=lambda c: "/x"))
-        self.assertIn("apt-get remove -y rustdesk", self.ex.apt_remove_steps("rustdesk", "apt-get")[0]["sh"])
+        self.assertIn("apt-get purge -y rustdesk", self.ex.apt_remove_steps("rustdesk", "apt-get")[0]["sh"])
         self.assertEqual(self.ex.apt_remove_steps("rustdesk", "dnf"), [])
 
     def test_every_new_program_is_in_the_window_and_the_shortcuts(self):
@@ -1069,6 +1072,285 @@ class ProgramUpdates(unittest.TestCase):
         self.assertIsNone(self.ex.installed_version("x", run=lambda *a, **k: ok, which=lambda c: None))
 
 
+class FullRemoval(unittest.TestCase):
+    """Uninstall takes the program AND what the installer added to apt (repository entry, key) off the system."""
+    ex = Installer.m.extras
+
+    def fake_bin(self, d, insiders=False):
+        b = os.path.join(d, "bin")
+        os.makedirs(b)
+        log = os.path.join(d, "log")
+        with open(os.path.join(b, "apt-get"), "w") as f:
+            f.write(f'#!/bin/sh\necho "apt-get $*" >> {log}\n')
+        with open(os.path.join(b, "dpkg"), "w") as f:
+            f.write(f'#!/bin/sh\nexit {0 if insiders else 1}\n')
+        for n in ("apt-get", "dpkg"):
+            os.chmod(os.path.join(b, n), 0o755)
+        return b, log
+
+    def run_sh(self, sh, bindir):
+        return subprocess.run(["sh", "-c", sh], capture_output=True, text=True, env=dict(os.environ, PATH=bindir + ":" + os.environ["PATH"]))
+
+    def test_vscode_repository_and_key_go_with_the_program(self):
+        with tempfile.TemporaryDirectory() as d:
+            b, log = self.fake_bin(d)
+            src = os.path.join(d, "sources.list.d")
+            os.makedirs(src)
+            key, lst = os.path.join(d, "microsoft.gpg"), os.path.join(src, "vscode.sources")
+            for f in (key, lst):
+                open(f, "w").close()
+            sh = self.ex.vscode_remove_steps("apt-get", sources_dir=src, keyring=key, listfile=lst)[0]["sh"]
+            r = self.run_sh(sh, b)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertFalse(os.path.exists(lst))
+            self.assertFalse(os.path.exists(key))
+            self.assertIn("apt-get purge -y code", open(log).read())
+
+    def test_vscode_key_stays_when_another_source_uses_it(self):
+        with tempfile.TemporaryDirectory() as d:
+            b, log = self.fake_bin(d)
+            src = os.path.join(d, "sources.list.d")
+            os.makedirs(src)
+            key, lst = os.path.join(d, "microsoft.gpg"), os.path.join(src, "vscode.sources")
+            open(key, "w").close()
+            open(lst, "w").close()
+            with open(os.path.join(src, "edge.sources"), "w") as f:
+                f.write("Signed-By: /usr/share/keyrings/microsoft.gpg\n")
+            self.run_sh(self.ex.vscode_remove_steps("apt-get", sources_dir=src, keyring=key, listfile=lst)[0]["sh"], b)
+            self.assertFalse(os.path.exists(lst))
+            self.assertTrue(os.path.exists(key))
+
+    def test_vscode_repository_stays_when_insiders_is_installed(self):
+        with tempfile.TemporaryDirectory() as d:
+            b, log = self.fake_bin(d, insiders=True)
+            src = os.path.join(d, "s")
+            os.makedirs(src)
+            key, lst = os.path.join(d, "microsoft.gpg"), os.path.join(src, "vscode.sources")
+            open(key, "w").close()
+            open(lst, "w").close()
+            self.run_sh(self.ex.vscode_remove_steps("apt-get", sources_dir=src, keyring=key, listfile=lst)[0]["sh"], b)
+            self.assertTrue(os.path.exists(lst) and os.path.exists(key))
+
+    def test_claude_files_are_removed(self):
+        with tempfile.TemporaryDirectory() as d:
+            b, log = self.fake_bin(d)
+            key, lst = os.path.join(d, "k.asc"), os.path.join(d, "c.list")
+            open(key, "w").close()
+            open(lst, "w").close()
+            self.run_sh(self.ex.claude_remove_steps("apt-get", keyring=key, listfile=lst)[0]["sh"], b)
+            self.assertFalse(os.path.exists(key) or os.path.exists(lst))
+            self.assertIn("apt-get purge -y claude-desktop", open(log).read())
+
+    def test_every_removal_on_apt_is_a_purge_and_others_stay_possible(self):
+        for sh in (self.ex.etcher_remove_steps("apt-get")[0]["sh"], self.ex.brave_remove_steps("apt-get")[0]["sh"],
+                   self.ex.apt_remove_steps("x", "apt-get")[0]["sh"], self.ex.package_steps("k3b", "apt-get", remove=True)[0]["sh"]):
+            self.assertIn("apt-get purge -y", sh)
+            self.assertNotIn("apt-get remove", sh)
+        self.assertEqual(self.ex.vscode_remove_steps("dnf"), [])
+        self.assertIn("dnf remove", self.ex.etcher_remove_steps("dnf")[0]["sh"])
+
+
+class PersonalData(unittest.TestCase):
+    ex = Installer.m.extras
+
+    def home(self, d):
+        h = os.path.join(d, "home")
+        for p in (".config/Code/User", ".vscode/extensions", ".config/discord", ".config/keepme"):
+            os.makedirs(os.path.join(h, p))
+        for p in (".config/Code/User/settings.json", ".config/discord/x", ".config/keepme/y"):
+            with open(os.path.join(h, p), "w") as f:
+                f.write("data")
+        return h
+
+    def test_only_existing_data_of_the_selected_programs_is_listed(self):
+        with tempfile.TemporaryDirectory() as d:
+            h = self.home(d)
+            found = self.ex.data_paths(["vscode", "winboat"], home=h)
+            names = sorted(os.path.relpath(p, os.path.realpath(h)) for p, _n in found)
+            self.assertEqual(names, [".config/Code", ".vscode"])          # discord not selected, winboat has nothing
+            self.assertEqual(dict(found)[os.path.join(os.path.realpath(h), ".config/Code")], 4)
+
+    def test_remove_deletes_only_what_it_was_given(self):
+        with tempfile.TemporaryDirectory() as d:
+            h = self.home(d)
+            paths = [p for p, _n in self.ex.data_paths(["vscode", "discord"], home=h)]
+            done, failed = self.ex.remove_data(paths, home=h)
+            self.assertEqual((len(done), failed), (3, []))
+            self.assertFalse(os.path.exists(os.path.join(h, ".config/Code")))
+            self.assertFalse(os.path.exists(os.path.join(h, ".config/discord")))
+            self.assertTrue(os.path.exists(os.path.join(h, ".config/keepme/y")))
+
+    def test_it_refuses_the_home_folder_and_anything_outside_it(self):
+        with tempfile.TemporaryDirectory() as d:
+            h = self.home(d)
+            outside = os.path.join(d, "outside")
+            os.makedirs(outside)
+            done, failed = self.ex.remove_data([h, outside, "/etc", os.path.join(h, ".config")], home=h)
+            self.assertTrue(os.path.isdir(h) and os.path.isdir(outside) and os.path.isdir("/etc"))
+            self.assertEqual(len(failed), 3)                              # home itself, outside, /etc
+            self.assertEqual(done, [os.path.join(h, ".config")])        # a real folder inside home is allowed
+
+    def test_a_symlink_is_removed_but_never_followed(self):
+        with tempfile.TemporaryDirectory() as d:
+            h = self.home(d)
+            target = os.path.join(d, "precious")
+            os.makedirs(target)
+            with open(os.path.join(target, "f"), "w") as f:
+                f.write("x")
+            link = os.path.join(h, ".config", "discord_link")
+            os.symlink(target, link)
+            done, failed = self.ex.remove_data([link], home=h)
+            self.assertEqual((done, failed), ([link], []))
+            self.assertTrue(os.path.exists(os.path.join(target, "f")))
+
+    def test_every_program_with_data_is_known_to_the_window(self):
+        ids = {x["id"] for x in Installer.m.EXTRAS}
+        self.assertEqual(set(self.ex.DATA_DIRS), ids)
+        for paths in self.ex.DATA_DIRS.values():
+            for p in paths:
+                self.assertTrue(p.startswith("~/") and ".." not in p)
+
+
+class FlatpakRoute(unittest.TestCase):
+    ex = Installer.m.extras
+    App = Installer.m.App
+
+    def test_install_steps(self):
+        steps, info = self.ex.flatpak_steps("discord", "dnf", False)
+        self.assertEqual([x["root"] for x in steps], [True, False])
+        self.assertIn("dnf install -y flatpak", steps[0]["sh"])
+        self.assertIn("flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo", steps[1]["sh"])
+        self.assertIn("flatpak install -y --user flathub com.discordapp.Discord", steps[1]["sh"])
+        self.assertTrue(info["needs_flatpak"])
+        steps, info = self.ex.flatpak_steps("vscode", "pacman", True)
+        self.assertEqual([x["root"] for x in steps], [False])               # no administrator password at all
+        for st in steps:
+            self.assertEqual(subprocess.run(["sh", "-n", "-c", st["sh"]], capture_output=True).returncode, 0)
+
+    def test_no_flathub_entry_or_no_way_to_get_flatpak_means_the_manual_page(self):
+        self.assertEqual(self.ex.flatpak_steps("winboat", "dnf", True)[0], [])
+        self.assertEqual(self.ex.flatpak_steps("discord", "unknown-pm", False)[0], [])
+        self.assertEqual(self.ex.flatpak_steps("discord", "unknown-pm", False)[1]["manual"], self.ex.FLATPAK_SETUP)
+
+    def test_remove_steps_follow_the_scope(self):
+        steps, _ = self.ex.flatpak_steps("rustdesk", "dnf", True, remove_scopes={"user"})
+        self.assertEqual([x["root"] for x in steps], [False])
+        steps, _ = self.ex.flatpak_steps("rustdesk", "dnf", True, remove_scopes={"user", "system"})
+        self.assertEqual([x["root"] for x in steps], [False, True])
+
+    def test_scopes_come_from_flatpak_info(self):
+        def run(cmd, **k):
+            return types.SimpleNamespace(returncode=0 if "--user" in cmd else 1)
+        self.assertEqual(self.ex.flatpak_scopes("discord", run=run, which=lambda c: "/x"), {"user"})
+        self.assertEqual(self.ex.flatpak_scopes("discord", run=run, which=lambda c: None), set())
+        self.assertEqual(self.ex.flatpak_scopes("winboat", run=run, which=lambda c: "/x"), set())
+
+    def test_every_flatpak_program_is_known_and_has_its_data_folder_listed(self):
+        ids = {x["id"] for x in Installer.m.EXTRAS}
+        self.assertTrue(set(self.ex.FLATPAK_IDS) <= ids)
+        with tempfile.TemporaryDirectory() as d:
+            os.makedirs(os.path.join(d, ".var/app/com.discordapp.Discord/config"))
+            found = [os.path.relpath(p, os.path.realpath(d)) for p, _n in self.ex.data_paths(["discord"], home=d)]
+            self.assertEqual(found, [".var/app/com.discordapp.Discord"])
+
+    def fake_app(self, native, scopes, pm, asked=True):
+        app = types.SimpleNamespace()
+        app.ex_native_state = lambda i: "yes" if native else None
+        app.steps_to_jobs = lambda steps: [["job"] for _ in steps]
+        m = Installer.m
+        return app, mock.patch.multiple(m, detect_pm=lambda: pm, messagebox=mock.Mock(askyesno=lambda *a, **k: asked, showinfo=mock.Mock()),
+                                        t=lambda k, **kw: k), mock.patch.object(self.ex, "flatpak_scopes", lambda i: scopes)
+
+    def test_routing(self):
+        with mock.patch("platform.machine", return_value="x86_64"):
+            app, p1, p2 = self.fake_app(False, set(), "apt-get")
+            with p1, p2:
+                self.assertEqual(self.App.flatpak_jobs(app, "install", "discord"), (False, []))        # apt: the normal route
+            app, p1, p2 = self.fake_app(False, set(), "dnf")
+            with p1, p2, mock.patch("shutil.which", return_value="/usr/bin/flatpak"):
+                handled, jobs = self.App.flatpak_jobs(app, "install", "discord")
+                self.assertTrue(handled)
+                self.assertEqual(len(jobs), 1)
+            app, p1, p2 = self.fake_app(False, set(), "dnf", asked=False)
+            with p1, p2, mock.patch("shutil.which", return_value="/usr/bin/flatpak"):
+                self.assertEqual(self.App.flatpak_jobs(app, "install", "discord"), (True, None))       # declined
+            app, p1, p2 = self.fake_app(False, {"user"}, "dnf")
+            with p1, p2:
+                self.assertEqual(self.App.flatpak_jobs(app, "uninstall", "discord")[0], True)           # flatpak only: that is all
+            app, p1, p2 = self.fake_app(True, {"user"}, "apt-get")
+            with p1, p2:
+                handled, jobs = self.App.flatpak_jobs(app, "uninstall", "discord")
+                self.assertEqual((handled, len(jobs)), (False, 1))                                      # both: flatpak + the normal route
+            app, p1, p2 = self.fake_app(True, set(), "apt-get")
+            with p1, p2:
+                self.assertEqual(self.App.flatpak_jobs(app, "uninstall", "discord"), (False, []))
+            with p1, p2:
+                self.assertEqual(self.App.flatpak_jobs(app, "install", "claude"), (False, []))          # no flatpak for it
+
+
+class RunControl(unittest.TestCase):
+    m = Installer.m
+
+    def test_curl_progress_lines_become_percentages(self):
+        f = self.m.progress_percent
+        self.assertEqual(f("######                                                     10.5%\n"), 10.5)
+        self.assertEqual(f("#################################################### 100.0%"), 100.0)
+        self.assertIsNone(f("SHA-256 verified: 5ea2"))
+        self.assertIsNone(f("Reading package lists... 100%"))            # not curl's bar (no '#')
+        self.assertIsNone(f(""))
+
+    def test_cancel_stops_a_user_command_and_the_next_steps(self):
+        import threading
+        import time as _t
+        ctl = {"cancel": False}
+        lines = []
+        threading.Timer(0.6, lambda: (ctl.update(cancel=True), self.m.stop_process(ctl["proc"]))).start()
+        t0 = _t.time()
+        rc = self.m.run_jobs([["sh", "-c", "echo start; sleep 30"], ["sh", "-c", "echo SHOULD-NOT-RUN"]], lines.append, ctl)
+        self.assertLess(_t.time() - t0, 10)
+        self.assertEqual(rc, 130)
+        self.assertIn("start\n", lines)
+        self.assertNotIn("SHOULD-NOT-RUN\n", lines)
+
+    def test_cancel_between_steps(self):
+        ctl = {"cancel": True}
+        lines = []
+        self.assertEqual(self.m.run_jobs([["sh", "-c", "echo no"]], lines.append, ctl), 130)
+        self.assertEqual(lines, [])
+
+    def test_an_elevated_command_is_not_killed(self):
+        ctl = {"cancel": True}
+        lines = []
+        with mock.patch.object(self.m, "ROOT", "/"):
+            rc = self.m.run_command(["sh", "-c", "echo done"], lines.append, dict(ctl, elevated=False))
+        self.assertEqual(lines, ["done\n"])
+        # a command named pkexec / sudo sets ctl["elevated"], so the cancel flag never terminates it
+        fake = os.path.join(tempfile.mkdtemp(), "sudo")
+        with open(fake, "w") as f:
+            f.write("#!/bin/sh\nsleep 1\necho finished\n")
+        os.chmod(fake, 0o755)
+        ctl2 = {"cancel": True}
+        lines2 = []
+        rc2 = self.m.run_command([fake], lines2.append, ctl2)
+        self.assertEqual((rc2, lines2), (0, ["finished\n"]))
+
+
+class AutoApply(unittest.TestCase):
+    f = staticmethod(Installer.m.should_auto_apply)
+
+    def test_it_is_opt_in_and_only_for_clear_cases(self):
+        git = {"mode": "git", "behind": 2, "local": {"dirty": []}}
+        self.assertFalse(self.f(git, {}))                                       # off by default
+        self.assertTrue(self.f(git, {"auto_apply_update": True}))
+        self.assertFalse(self.f(dict(git, local={"dirty": ["install.sh"]}), {"auto_apply_update": True}))   # local changes
+        self.assertFalse(self.f(dict(git, ahead=1), {"auto_apply_update": True}))                           # local commits
+        self.assertFalse(self.f(dict(git, behind=0), {"auto_apply_update": True}))
+        self.assertTrue(self.f({"mode": "archive", "behind": 3, "local": {}}, {"auto_apply_update": True}))
+        self.assertFalse(self.f({"mode": "archive", "behind": None, "local": {}}, {"auto_apply_update": True}))  # unknown: show list first
+        self.assertFalse(self.f({"mode": "adopt", "behind": None, "local": {}}, {"auto_apply_update": True}))
+        self.assertFalse(self.f(None, {"auto_apply_update": True}))
+
+
 class ClaudeDesktop(unittest.TestCase):
     ex = Installer.m.extras
 
@@ -1093,7 +1375,7 @@ class ClaudeDesktop(unittest.TestCase):
                       "https://downloads.claude.ai/claude-desktop/apt/stable stable main", sh)
         self.assertIn("/etc/apt/sources.list.d/claude-desktop.list", sh)
         self.assertTrue(sh.rstrip().endswith("apt-get install -y claude-desktop"))
-        self.assertIn("apt-get remove -y claude-desktop", self.ex.claude_remove_steps("apt-get")[0]["sh"])
+        self.assertIn("apt-get purge -y claude-desktop", self.ex.claude_remove_steps("apt-get")[0]["sh"])
         self.assertEqual(self.ex.claude_remove_steps("dnf"), [])
         self.assertTrue(self.ex.claude_installed(which=lambda c: "/usr/bin/claude-desktop"))
         self.assertFalse(self.ex.claude_installed(which=lambda c: None))
@@ -1268,7 +1550,7 @@ class Brave(unittest.TestCase):
 
     def test_remove_steps(self):
         apt = self.ex.brave_remove_steps("apt-get")[0]["sh"]
-        self.assertIn("apt-get remove -y brave-browser", apt)
+        self.assertIn("apt-get purge -y brave-browser", apt)
         self.assertIn("brave-browser-release.sources", apt)                         # the repository the script added
         self.assertIn("brave-browser-archive-keyring.gpg", apt)
         self.assertIn("dnf remove -y brave-browser", self.ex.brave_remove_steps("dnf")[0]["sh"])
@@ -1325,7 +1607,7 @@ class PackagePrograms(unittest.TestCase):
         self.assertEqual(set(self.ex.PACKAGE_APPS), {"brasero", "xfburn", "k3b"})
         self.assertEqual({x["id"] for x in Installer.m.EXTRAS}, set(self.ex.PACKAGE_APPS) | {"etcher", "brave", "claude", "vscode", "discord"} | set(self.ex.GITHUB_APPS))   # window and logic agree
         self.assertEqual({x["id"] for x in Shortcuts.m.TOOLS} >= set(self.ex.PACKAGE_APPS), True)       # and shortcuts know them
-        self.assertIn("apt-get remove -y brasero", self.ex.package_steps("brasero", "apt-get", remove=True)[0]["sh"])
+        self.assertIn("apt-get purge -y brasero", self.ex.package_steps("brasero", "apt-get", remove=True)[0]["sh"])
         self.assertIn("pacman -R --noconfirm brasero", self.ex.package_steps("brasero", "pacman", remove=True)[0]["sh"])
         self.assertEqual(self.ex.package_steps("brasero", "unknown-pm"), [])
         self.assertEqual(self.ex.package_steps("brasero", ""), [])
@@ -1356,7 +1638,7 @@ class PackagePrograms(unittest.TestCase):
             self.assertIn("No known Brasero package", asked[-1])
             m.detect_pm = lambda: "apt-get"
             removal = m.App.package_jobs(object(), "uninstall", "brasero")                 # removal is confirmed by the window
-            self.assertIn("apt-get remove -y brasero", removal[0][3])
+            self.assertIn("apt-get purge -y brasero", removal[0][3])
         finally:
             for k, v in saved.items():
                 setattr(m, k, v)
