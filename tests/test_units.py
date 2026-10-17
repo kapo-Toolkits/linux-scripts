@@ -906,6 +906,21 @@ class UpdaterWithoutGit(unittest.TestCase):
             ok, msg = self.u.update_archive(d, self.SHA2)                # no install.sh there
             self.assertFalse(ok)
 
+    def test_preview_lists_what_would_change_and_touches_nothing(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = self.folder(d)
+            snap = self.snapshot(d, {"ls-main/install.sh": b"new\n", "ls-main/a/b.py": b"x\n", "ls-main/same.txt": b"s\n"})
+            with open(os.path.join(root, "same.txt"), "w") as f:
+                f.write("s\n")
+            ok, files = self.u.preview_archive(root, self.SHA2, opener=lambda req, timeout=0: snap)
+            self.assertTrue(ok, files)
+            self.assertEqual(files, [("changed", "install.sh"), ("new", "a/b.py")])
+            with open(os.path.join(root, "install.sh")) as f:
+                self.assertEqual(f.read(), "old\n")
+            self.assertFalse(os.path.exists(os.path.join(root, ".installed-sha")))
+            ok, msg = self.u.preview_archive(root, "zz")
+            self.assertFalse(ok)
+
     def test_settings_has_a_github_button(self):
         self.assertEqual(self.u.REPO_PAGE, "https://github.com/kapo-Toolkits/linux-scripts")
         self.assertEqual(self.u.REPO_URL, self.u.REPO_PAGE + ".git")
@@ -1006,6 +1021,40 @@ class VendorPrograms(unittest.TestCase):
         for i in ("vscode", "discord", *self.ex.GITHUB_APPS):
             self.assertIn(i, ids)
             self.assertIn(i, sc)
+
+
+class ProgramUpdates(unittest.TestCase):
+    ex = Installer.m.extras
+
+    def test_version_compare(self):
+        k = self.ex.version_key
+        self.assertEqual(k("1:2.1.7-3"), (2, 1, 7))
+        self.assertEqual(k("v0.4.1"), (0, 4, 1))
+        self.assertEqual(k("1.0.161"), (1, 0, 161))
+        self.assertGreater(k("1.0.238"), k("1.0.99"))            # numbers, not text
+        self.assertGreater(k("0.4.1"), k("0.3.2-1"))
+        self.assertEqual(k("1.142.0-1792035033"), (1, 142, 0))
+
+    def test_only_installed_and_older_ones_are_reported(self):
+        have = {"rustdesk": "1.4.0", "tabby-terminal": "1.0.238", "balena-etcher": "2.1.7"}
+        rel = {"rustdesk": "1.5.0", "tabby": "1.0.238", "winboat": "9.9.9", "artcraft": "9.9.9"}
+        found, failed = self.ex.outdated(installed=have.get, github=lambda i: {"version": rel[i]},
+                                         etcher=lambda: {"version": "2.1.8"})
+        self.assertEqual({x["id"] for x in found}, {"rustdesk", "etcher"})      # winboat/artcraft not installed, tabby current
+        self.assertEqual(failed, [])
+        r = next(x for x in found if x["id"] == "rustdesk")
+        self.assertEqual((r["installed"], r["latest"]), ("1.4.0", "1.5.0"))
+
+    def test_a_failed_lookup_is_named_not_guessed(self):
+        def boom(i):
+            raise OSError("offline")
+        found, failed = self.ex.outdated(installed=lambda p: "1.0" if p == "rustdesk" else None, github=boom)
+        self.assertEqual((found, failed), ([], ["rustdesk"]))
+
+    def test_installed_version(self):
+        ok = types.SimpleNamespace(returncode=0, stdout="install ok installed 1.5.0")
+        self.assertEqual(self.ex.installed_version("x", run=lambda *a, **k: ok, which=lambda c: "/x"), "1.5.0")
+        self.assertIsNone(self.ex.installed_version("x", run=lambda *a, **k: ok, which=lambda c: None))
 
 
 class ClaudeDesktop(unittest.TestCase):

@@ -138,17 +138,24 @@ STR = {
  "claude_ask": "Install Claude Desktop (beta)?\n\nFrom Anthropic's apt repository:\n{repo}\n\nThe signing key is downloaded and its fingerprint must equal the one Anthropic publishes:\n{fpr}\nIf it does not, nothing is installed.\n\nThen: apt install claude-desktop (administrator password).\n\n{notes}",
  "claude_manual": "Claude Desktop (beta) is published only for Debian-based Linux (Ubuntu 22.04+, Debian 12+, Linux Mint) on x86-64 / arm64.\n\nSee {url}\nOn other systems the vendor points to the Claude Code command line.",
  "settings": "Settings", "set_close": "Close", "upd_head": "Updates from GitHub",
- "upd_current": "This copy: {short} ({branch}, {date})\nFolder: {folder}", "upd_plain": "This folder is a plain copy (it has no link to GitHub).",
+ "upd_current": "This copy: {short} ({branch}, {date})\nFolder: {folder}", "upd_plain": "Version of this copy: not recorded yet (no link to GitHub).",
  "upd_check": "Check for updates", "upd_now": "Update now", "upd_checking": "Looking at GitHub…", "upd_none": "Up to date.",
  "upd_behind": "{n} new change(s) on GitHub:", "upd_ahead": "(this copy also has {a} change(s) that GitHub does not)",
  "upd_error": "Could not check: {e}", "upd_auto": "Check for updates when the installer starts (at most every 6 hours)",
  "upd_reinstall": "After updating, reinstall the programs I have installed (for me)",
  "upd_adopt_ask": "This folder is a plain copy. Connect it to GitHub and bring it to the latest version?\n\nFiles that git tracks here are replaced by the latest ones; other files (like start-installer.desktop) stay.",
  "upd_done": "Updated. The installer restarts now.", "upd_failed": "Not updated:\n{e}",
+ "upd_unknown": "This copy's version is not known yet. {n} file(s) differ from GitHub's latest (list below; replaced files are saved first).",
+ "upd_unknown_same": "This copy is identical to GitHub's latest version.",
+ "upd_archive_ask": "Download the latest version from GitHub and replace the files listed?\n\nThe old copies are saved to ~/.cache/linux-scripts/update-backup/ first. Your other files stay.",
+ "prog_check": "Check programs for updates", "prog_checking": "Asking GitHub about your installed programs…",
+ "prog_none": "All programs installed from GitHub are up to date.", "prog_found": "{n} program(s) have a newer version:",
+ "prog_fail": "Could not look up: {ids}", "prog_tick": "Tick them in the main window",
+ "prog_ticked": "Ticked. Press “Install selected” in the main window to update them.",
  "repo_url": "Could not open a browser. The project page:\n{url}",
  "upd_nogit": "git is not installed on this computer: updating works without it (Python downloads GitHub's snapshot).",
  "upd_archive": "This copy: GitHub commit {short} (updated without git)\nFolder: {folder}",
- "upd_banner": "{n} new change(s) on GitHub", "upd_banner_plain": "This folder is a plain copy. Connect it to GitHub to get updates.",
+ "upd_banner": "{n} new change(s) on GitHub", "upd_banner_plain": "This copy has not been compared with GitHub yet. Open Settings to see what is new.",
  "upd_banner_btn": "Update…", "upd_later": "Later", "upd_working": "Updating…",
  "brave_title": "Brave Browser — review the script before it runs",
  "brave_head": "Brave's official install script ({kb} KB, SHA-256 {sha}) from {url}\nwill run as the ADMINISTRATOR. Source: {src}\nIt adds Brave's package repository (signing key + source file) and installs brave-browser.",
@@ -187,17 +194,24 @@ STR = {
  "claude_ask": "დავაყენო Claude Desktop (ბეტა)?\n\nAnthropic-ის apt რეპოზიტორიიდან:\n{repo}\n\nჩამოიტვირთება ხელმოწერის გასაღები და მისი თითის ანაბეჭდი უნდა ემთხვეოდეს იმას, რასაც Anthropic აქვეყნებს:\n{fpr}\nთუ არ ემთხვევა, არაფერი დაყენდება.\n\nშემდეგ: apt install claude-desktop (ადმინისტრატორის პაროლი).\n\n{notes}",
  "claude_manual": "Claude Desktop (ბეტა) ქვეყნდება მხოლოდ Debian-ზე დაფუძნებული Linux-ისთვის (Ubuntu 22.04+, Debian 12+, Linux Mint), x86-64 / arm64.\n\nიხილეთ {url}\nსხვა სისტემებისთვის მწარმოებელი Claude Code-ის ბრძანების ხაზის ვერსიას გვთავაზობს.",
  "settings": "პარამეტრები", "set_close": "დახურვა", "upd_head": "განახლებები GitHub-იდან",
- "upd_current": "ეს ასლი: {short} ({branch}, {date})\nსაქაღალდე: {folder}", "upd_plain": "ეს საქაღალდე უბრალო ასლია (GitHub-თან კავშირი არ აქვს).",
+ "upd_current": "ეს ასლი: {short} ({branch}, {date})\nსაქაღალდე: {folder}", "upd_plain": "ამ ასლის ვერსია ჯერ არ არის ჩაწერილი (GitHub-თან კავშირი არ აქვს).",
  "upd_check": "განახლებების შემოწმება", "upd_now": "ახლავე განახლება", "upd_checking": "ვუყურებ GitHub-ს…", "upd_none": "ყველაფერი ახალია.",
  "upd_behind": "GitHub-ზე {n} ახალი ცვლილებაა:", "upd_ahead": "(ამ ასლს {a} ისეთი ცვლილებაც აქვს, რაც GitHub-ზე არ არის)",
  "upd_error": "შემოწმება ვერ მოხერხდა: {e}", "upd_auto": "განახლებების შემოწმება ინსტალერის გახსნისას (არაუმეტეს 6 საათში ერთხელ)",
  "upd_reinstall": "განახლების შემდეგ ხელახლა დავაყენო ჩემთვის დაყენებული პროგრამები",
  "upd_adopt_ask": "ეს საქაღალდე უბრალო ასლია. მივაერთო GitHub-ს და გავაახლო ბოლო ვერსიამდე?\n\nფაილები, რასაც git აკონტროლებს, ჩანაცვლდება უახლესით; სხვა ფაილები (მაგ. start-installer.desktop) დარჩება.",
  "upd_done": "განახლდა. ინსტალერი ახლა თავიდან გაიხსნება.", "upd_failed": "ვერ განახლდა:\n{e}",
+ "upd_unknown": "ამ ასლის ვერსია ჯერ უცნობია. GitHub-ის უახლესისგან {n} ფაილით განსხვავდება (სია ქვემოთაა; ჩანაცვლებულ ფაილებს წინასწარ ვინახავ).",
+ "upd_unknown_same": "ეს ასლი GitHub-ის უახლესი ვერსიის იდენტურია.",
+ "upd_archive_ask": "ჩამოვტვირთო GitHub-იდან უახლესი ვერსია და ჩავანაცვლო ჩამოთვლილი ფაილები?\n\nძველი ასლები წინასწარ შეინახება ~/.cache/linux-scripts/update-backup/-ში. თქვენი სხვა ფაილები არ შეიცვლება.",
+ "prog_check": "პროგრამების განახლების შემოწმება", "prog_checking": "ვეკითხები GitHub-ს თქვენს დაყენებულ პროგრამებზე…",
+ "prog_none": "GitHub-იდან დაყენებული ყველა პროგრამა ახალია.", "prog_found": "{n} პროგრამას ახალი ვერსია აქვს:",
+ "prog_fail": "ვერ შევამოწმე: {ids}", "prog_tick": "მონიშნე მთავარ ფანჯარაში",
+ "prog_ticked": "მონიშნულია. განახლებისთვის მთავარ ფანჯარაში დააჭირეთ „მონიშნულის დაყენებას“.",
  "repo_url": "ბრაუზერის გახსნა ვერ მოხერხდა. პროექტის გვერდი:\n{url}",
  "upd_nogit": "ამ კომპიუტერზე git დაყენებული არ არის: განახლება მის გარეშეც მუშაობს (Python ჩამოტვირთავს GitHub-ის ასლს).",
  "upd_archive": "ეს ასლი: GitHub-ის კომიტი {short} (განახლებულია git-ის გარეშე)\nსაქაღალდე: {folder}",
- "upd_banner": "GitHub-ზე {n} ახალი ცვლილებაა", "upd_banner_plain": "ეს საქაღალდე უბრალო ასლია. მიაერთეთ GitHub-ს, რომ განახლებები მიიღოთ.",
+ "upd_banner": "GitHub-ზე {n} ახალი ცვლილებაა", "upd_banner_plain": "ეს ასლი GitHub-თან ჯერ შედარებული არ არის. გახსენით პარამეტრები და ნახეთ, რა არის ახალი.",
  "upd_banner_btn": "განახლება…", "upd_later": "მოგვიანებით", "upd_working": "ვაახლებ…",
  "brave_title": "Brave Browser — გადახედეთ სკრიპტს გაშვებამდე",
  "brave_head": "Brave-ის ოფიციალური ინსტალაციის სკრიპტი ({kb} KB, SHA-256 {sha}) მისამართიდან {url}\nგაეშვება ადმინისტრატორის უფლებით. წყარო: {src}\nის ამატებს Brave-ის პაკეტების რეპოზიტორიას (ხელმოწერის გასაღები + წყაროს ფაილი) და აყენებს brave-browser-ს.",
@@ -784,7 +798,7 @@ class App(tk.Tk):
     def open_settings(self):
         win = tk.Toplevel(self)
         win.title(t("settings"))
-        win.geometry("560x520")
+        win.geometry("580x600")
         win.transient(self)
         ttk.Label(win, text=t("upd_head"), font=("", 11, "bold")).pack(anchor="w", padx=12, pady=(12, 4))
         lbl_cur = ttk.Label(win, justify="left", wraplength=520)
@@ -805,11 +819,17 @@ class App(tk.Tk):
         ttk.Checkbutton(win, text=t("upd_reinstall"), variable=v_re, command=persist).pack(anchor="w", padx=12)
         ttk.Button(win, text="GitHub ↗  " + updater.REPO_PAGE.split("://", 1)[1], command=self.open_repo).pack(anchor="w", padx=12, pady=(6, 0))
         bar = ttk.Frame(win)
-        bar.pack(fill="x", padx=12, pady=10)
+        bar.pack(fill="x", padx=12, pady=(10, 4))
         b_check = ttk.Button(bar, text=t("upd_check"))
         b_now = ttk.Button(bar, text=t("upd_now"), state="disabled")
         b_check.pack(side="left")
         b_now.pack(side="left", padx=8)
+        bar2 = ttk.Frame(win)
+        bar2.pack(fill="x", padx=12)
+        b_prog = ttk.Button(bar2, text=t("prog_check"))
+        b_tick = ttk.Button(bar2, text=t("prog_tick"), state="disabled")
+        b_prog.pack(side="left")
+        b_tick.pack(side="left", padx=8)
         ttk.Button(bar, text=t("set_close"), command=win.destroy).pack(side="right")
         state = {"res": None}
 
@@ -823,6 +843,10 @@ class App(tk.Tk):
             lines, can = [], False
             if res["mode"] == "error":
                 lbl_res.config(text=t("upd_error", e=res["error"]))
+            elif res["mode"] == "archive" and res["behind"] is None and res.get("files") is not None:
+                lines = [("~ " if k == "changed" else "+ ") + path for k, path in res["files"]]
+                lbl_res.config(text=t("upd_unknown", n=len(lines)) if lines else t("upd_unknown_same"))
+                can = True
             elif res["mode"] == "adopt" or (res["mode"] == "archive" and res["behind"] is None):
                 lbl_res.config(text=t("upd_banner_plain"))
                 can = True
@@ -846,15 +870,52 @@ class App(tk.Tk):
 
             def work():
                 res = updater.check(ROOT)
+                if res["mode"] == "archive" and res["behind"] is None:      # commit unknown: show what would change first
+                    ok, files = updater.preview_archive(ROOT, res.get("latest"))
+                    res["files"] = files if ok else None
                 st = updater.load_settings()
                 st["last_update_check"] = time.time()
                 updater.save_settings(st)
                 self.ui(show, res)
             threading.Thread(target=work, daemon=True).start()
 
+        found = {"ids": []}
+
+        def show_programs(items, failed):
+            found["ids"] = [x["id"] for x in items]
+            lines = [f"{x['name']}: {x['installed']} → {x['latest']}" for x in items]
+            msg = t("prog_found", n=len(items)) if items else t("prog_none")
+            if failed:
+                msg += "\n" + t("prog_fail", ids=", ".join(failed))
+            lbl_res.config(text=msg)
+            box.config(state="normal")
+            box.delete("1.0", "end")
+            box.insert("end", "\n".join(lines))
+            box.config(state="disabled")
+            b_prog.config(state="normal")
+            b_tick.config(state="normal" if items else "disabled")
+
+        def do_programs():
+            lbl_res.config(text=t("prog_checking"))
+            b_prog.config(state="disabled")
+            b_tick.config(state="disabled")
+            threading.Thread(target=lambda: self.ui(show_programs, *extras.outdated()), daemon=True).start()
+
+        def do_tick():
+            for i in found["ids"]:
+                if i in self.extra_vars:
+                    self.extra_vars[i].set(True)
+            self.sync()
+            win.destroy()
+            self.lbl_status.config(text=t("prog_ticked"))
+            messagebox.showinfo(t("title"), t("prog_ticked"))
+        b_prog.config(command=do_programs)
+        b_tick.config(command=do_tick)
+
         def do_now():
             res = state["res"]
-            if not res or (res["mode"] in ("adopt", "archive") and res.get("behind") is None and not messagebox.askyesno(t("settings"), t("upd_adopt_ask"), parent=win)):
+            if not res or (res["mode"] in ("adopt", "archive") and res.get("behind") is None and not messagebox.askyesno(
+                    t("settings"), t("upd_archive_ask" if res["mode"] == "archive" else "upd_adopt_ask"), parent=win)):
                 return
             lbl_res.config(text=t("upd_working"))
             b_now.config(state="disabled")
