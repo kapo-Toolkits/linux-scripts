@@ -68,7 +68,7 @@ command -v sha256sum >/dev/null 2>&1 || {{ echo "sha256sum is not installed (pac
 mkdir -p {q(d)}
 cd {q(d)}
 trap 'rm -f {q(name)}.part' EXIT
-curl -fL --proto '{proto}' --tlsv1.2 -o {q(name)}.part {q(asset['url'])}
+curl -fL --progress-bar --proto '{proto}' --tlsv1.2 -o {q(name)}.part {q(asset['url'])}
 echo "{asset['sha256']}  {name}.part" | sha256sum -c - >/dev/null || {{ echo "CHECKSUM MISMATCH - the download is not what the publisher published; nothing was installed" >&2; exit 1; }}
 echo "SHA-256 verified: {asset['sha256']}"
 mv {q(name)}.part {q(name)}
@@ -451,7 +451,7 @@ def discord_steps(pm, arch, cache_dir=None, proto="=https", url=None):
 command -v curl >/dev/null 2>&1 || {{ echo "curl is not installed (Debian/Ubuntu: sudo apt install curl)" >&2; exit 1; }}
 mkdir -p {q(d)}
 trap 'rm -f {q(path)}.part' EXIT
-curl -fL --proto '{proto}' --proto-redir '{proto}' --tlsv1.2 -o {q(path)}.part {q(url or DISCORD_URL)}
+curl -fL --progress-bar --proto '{proto}' --proto-redir '{proto}' --tlsv1.2 -o {q(path)}.part {q(url or DISCORD_URL)}
 dpkg-deb -f {q(path)}.part Package | grep -qx discord || {{ echo "the download is not the Discord package - nothing was installed" >&2; exit 1; }}
 mv {q(path)}.part {q(path)}
 """

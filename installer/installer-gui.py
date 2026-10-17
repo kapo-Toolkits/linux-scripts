@@ -6,7 +6,9 @@ so nothing is hidden.  For yourself (~/.local) no password is needed; for everyo
 administrator password through pkexec.
 """
 import os
+import re
 import shutil
+import signal
 import subprocess
 import sys
 import threading
@@ -160,6 +162,7 @@ STR = {
  "data_done": "Personal data removed: {n} item(s).", "data_fail": "Could not remove: {p} ({e})",
  "flatpak_ask": "Install {name} as a Flatpak?\n\nFrom Flathub ({source}), id {fid}. Installed for you only, no administrator password.{extra}",
  "flatpak_need": "\n\nFlatpak itself is not installed yet: it is installed first from your distribution's repositories (administrator password).",
+ "cancel": "Cancel", "cancelling": "Cancelling…", "cancelled": "Cancelled. Nothing further was run.", "downloading": "Downloading… {pct}%",
  "repo_url": "Could not open a browser. The project page:\n{url}",
  "upd_nogit": "git is not installed on this computer: updating works without it (Python downloads GitHub's snapshot).",
  "upd_archive": "This copy: GitHub commit {short} (updated without git)\nFolder: {folder}",
@@ -222,6 +225,7 @@ STR = {
  "data_done": "პირადი მონაცემები წაიშალა: {n}.", "data_fail": "ვერ წავშალე: {p} ({e})",
  "flatpak_ask": "დავაყენო {name} Flatpak-ად?\n\nFlathub-იდან ({source}), id {fid}. დაყენდება მხოლოდ თქვენთვის, ადმინისტრატორის პაროლის გარეშე.{extra}",
  "flatpak_need": "\n\nთვით Flatpak ჯერ დაყენებული არ არის: ჯერ დაგენდება თქვენი დისტრიბუციის რეპოზიტორიიდან (ადმინისტრატორის პაროლი).",
+ "cancel": "გაუქმება", "cancelling": "ვაუქმებ…", "cancelled": "გაუქმდა. მეტი არაფერი გაშვებულა.", "downloading": "მიმდინარეობს ჩამოტვირთვა… {pct}%",
  "repo_url": "ბრაუზერის გახსნა ვერ მოხერხდა. პროექტის გვერდი:\n{url}",
  "upd_nogit": "ამ კომპიუტერზე git დაყენებული არ არის: განახლება მის გარეშეც მუშაობს (Python ჩამოტვირთავს GitHub-ის ასლს).",
  "upd_archive": "ეს ასლი: GitHub-ის კომიტი {short} (განახლებულია git-ის გარეშე)\nსაქაღალდე: {folder}",
@@ -318,14 +322,23 @@ def prereq_command(pm):
     return ["sh", "-c", sh] if sh else None
 
 
-def run_jobs(jobs, on_line):
-    """Run commands one after another; stop at the first failure. -> exit code of the last one run."""
+def run_jobs(jobs, on_line, ctl=None):
+    """Run commands one after another; stop at the first failure or when the user cancelled (ctl["cancel"]).
+    -> exit code of the last one run (130 = cancelled)."""
     rc = 0
     for job in jobs:
-        rc = run_command(job, on_line)
+        if ctl and ctl.get("cancel"):
+            return 130
+        rc = run_command(job, on_line, ctl)
         if rc != 0:
             return rc
     return rc
+
+
+def progress_percent(line):
+    """curl's --progress-bar line ('######## 45.3%') -> 45.3, anything else -> None."""
+    m = re.search(r"#.*?(\d{1,3}(?:\.\d)?)%\s*$", line)
+    return min(100.0, float(m.group(1))) if m else None
 
 
 def tool_path(tool_id, where, home=None, exists=os.path.exists):
@@ -336,16 +349,38 @@ def tool_path(tool_id, where, home=None, exists=os.path.exists):
     return path if exists(path) else None
 
 
-def run_command(cmd, on_line):
-    """Run and stream every output line; returns the exit code (127 when it could not start)."""
+def stop_process(p):
+    """End a command and everything it started (a download is a child of the shell that runs it)."""
     try:
-        p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, cwd=ROOT)
+        os.killpg(os.getpgid(p.pid), signal.SIGTERM)
+    except (OSError, ProcessLookupError):
+        try:
+            p.terminate()
+        except OSError:
+            pass
+
+
+def run_command(cmd, on_line, ctl=None):
+    """Run and stream every output line; returns the exit code (127 when it could not start, 130 when cancelled).
+    ctl is the window's control dict: ctl["cancel"] stops a command that runs as the user (never one that runs through
+    pkexec / sudo: killing only the wrapper would leave the administrator's command running half-way)."""
+    try:
+        p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, cwd=ROOT, start_new_session=True)
     except OSError:
         return 127
+    if ctl is not None:
+        ctl["proc"], ctl["elevated"] = p, os.path.basename(cmd[0]) in ("pkexec", "sudo")
+    cancelled = False
     with p:
         for line in p.stdout:
             on_line(line)
-    return p.wait()
+            if ctl and ctl.get("cancel") and not ctl.get("elevated") and not cancelled:
+                cancelled = True
+                stop_process(p)
+    rc = p.wait()
+    if ctl is not None:
+        ctl["proc"] = None
+    return 130 if (cancelled or (ctl and ctl.get("cancel") and not ctl.get("elevated") and rc != 0)) else rc
 
 
 def banner_for(res, settings, now):
@@ -497,6 +532,12 @@ class App(tk.Tk):
         # the status line is packed first, from the bottom, so a small window shortens the log and never cuts the status
         self.lbl_status = ttk.Label(self, foreground="#555555", wraplength=w - 30)
         self.lbl_status.pack(side="bottom", anchor="w", padx=12, pady=(0, 6))
+        self.runbar = ttk.Frame(self)                            # shown only while something runs: progress + cancel
+        self.prog = ttk.Progressbar(self.runbar, mode="indeterminate")
+        self.prog.pack(side="left", fill="x", expand=True)
+        self.b_cancel = ttk.Button(self.runbar, command=self.cancel_run)
+        self.b_cancel.pack(side="left", padx=(8, 0))
+        self.run_ctl = {}
         self.log = scrolledtext.ScrolledText(self, height=2, state="disabled", wrap="word", font=("TkFixedFont", 9))
         self.log.pack(fill="both", expand=True, padx=10, pady=(2, 2))
         self.apply_lang()
@@ -512,6 +553,7 @@ class App(tk.Tk):
         self.f_tools.config(text=t("c_tools"))
         self.f_extra_box.config(text=t("c_other"))
         self.lbl_search.config(text=t("search"))
+        self.b_cancel.config(text=t("cancel"))
         self.f_where.config(text=t("f_where"))
         self.rb_user.config(text=t("w_user"))
         self.rb_sys.config(text=t("w_sys"))
@@ -753,10 +795,38 @@ class App(tk.Tk):
             except (RuntimeError, tk.TclError):       # the window was closed while the install was still running
                 pass
 
+        self.run_ctl = {"cancel": False}
+        self.runbar.pack(side="bottom", fill="x", padx=10, pady=(0, 2), before=self.lbl_status)
+        self.prog.config(mode="indeterminate")
+        self.prog.start(12)
+
+        def on_line(ln):
+            pct = progress_percent(ln)
+            if pct is None:
+                to_ui(self.say, ln)
+            else:
+                to_ui(self.show_progress, pct)
+
         def work():
-            rc = run_jobs(jobs, lambda ln: to_ui(self.say, ln))
+            rc = run_jobs(jobs, on_line, self.run_ctl)
             to_ui(self.finish, rc)
         threading.Thread(target=work, daemon=True).start()
+
+    def show_progress(self, pct):
+        """A download is running: the bar becomes a percentage."""
+        self.prog.stop()
+        self.prog.config(mode="determinate", value=pct)
+        self.lbl_status.config(text=t("downloading", pct=round(pct)))
+
+    def cancel_run(self):
+        """Stop at once what runs as the user (a download), and before the next step; an administrator step in progress
+        is allowed to finish (it is never killed half-way)."""
+        self.run_ctl["cancel"] = True
+        self.b_cancel.state(["disabled"])
+        self.lbl_status.config(text=t("cancelling"))
+        proc = self.run_ctl.get("proc")
+        if proc and not self.run_ctl.get("elevated"):
+            stop_process(proc)
 
     def confirm_script(self, info):
         """Show the downloaded script in full and ask. True = run it. (A window of its own: nothing runs unseen.)"""
@@ -1184,8 +1254,12 @@ class App(tk.Tk):
         self.busy = False
         for b in (self.b_inst, self.b_un):
             b.state(["!disabled"])
-        self.say(t("done_ok") if rc == 0 else t("done_fail", rc=rc))
-        self.lbl_status.config(text=t("done_ok") if rc == 0 else t("done_fail", rc=rc))
+        self.prog.stop()
+        self.runbar.pack_forget()
+        self.b_cancel.state(["!disabled"])
+        done = t("done_ok") if rc == 0 else t("cancelled") if rc == 130 else t("done_fail", rc=rc)
+        self.say(done)
+        self.lbl_status.config(text=done)
         if rc == 0 and getattr(self, "pending_data", None):           # only after the programs themselves went away
             done, failed = extras.remove_data(self.pending_data)
             if done:

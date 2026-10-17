@@ -535,7 +535,7 @@ class Installer(unittest.TestCase):
         calls = {"jobs": None, "asked": [], "popen": []}
         patches = dict(venv_ready=lambda *a, **k: False, detect_pm=lambda: "apt-get",
                        elevate=lambda c, **k: ["pkexec"] + list(c),
-                       run_jobs=lambda jobs, on_line: calls.__setitem__("jobs", jobs) or 0,
+                       run_jobs=lambda jobs, on_line, ctl=None: calls.__setitem__("jobs", jobs) or 0,
                        tool_path=lambda *a, **k: "/h/.local/bin/printhub")
         class FakeApp:                                     # only what go() touches, no display needed
             pass
@@ -557,6 +557,9 @@ class Installer(unittest.TestCase):
             app.lbl_status = types.SimpleNamespace(config=lambda **k: None)
             app.say = lambda *a: None
             app.render = lambda: None
+            quiet = types.SimpleNamespace(pack=lambda **k: None, pack_forget=lambda: None, config=lambda **k: None,
+                                          start=lambda *a: None, stop=lambda: None, state=lambda *a: None)
+            app.runbar, app.prog, app.b_cancel = quiet, quiet, quiet
             app.finish = lambda rc: m.App.finish(app, rc)
             app.after = lambda ms, fn, *a: fn(*a)           # run the "UI" hand-off inline
             m.threading = types.SimpleNamespace(Thread=lambda target, daemon: types.SimpleNamespace(start=target))
@@ -1283,6 +1286,53 @@ class FlatpakRoute(unittest.TestCase):
                 self.assertEqual(self.App.flatpak_jobs(app, "uninstall", "discord"), (False, []))
             with p1, p2:
                 self.assertEqual(self.App.flatpak_jobs(app, "install", "claude"), (False, []))          # no flatpak for it
+
+
+class RunControl(unittest.TestCase):
+    m = Installer.m
+
+    def test_curl_progress_lines_become_percentages(self):
+        f = self.m.progress_percent
+        self.assertEqual(f("######                                                     10.5%\n"), 10.5)
+        self.assertEqual(f("#################################################### 100.0%"), 100.0)
+        self.assertIsNone(f("SHA-256 verified: 5ea2"))
+        self.assertIsNone(f("Reading package lists... 100%"))            # not curl's bar (no '#')
+        self.assertIsNone(f(""))
+
+    def test_cancel_stops_a_user_command_and_the_next_steps(self):
+        import threading
+        import time as _t
+        ctl = {"cancel": False}
+        lines = []
+        threading.Timer(0.6, lambda: (ctl.update(cancel=True), self.m.stop_process(ctl["proc"]))).start()
+        t0 = _t.time()
+        rc = self.m.run_jobs([["sh", "-c", "echo start; sleep 30"], ["sh", "-c", "echo SHOULD-NOT-RUN"]], lines.append, ctl)
+        self.assertLess(_t.time() - t0, 10)
+        self.assertEqual(rc, 130)
+        self.assertIn("start\n", lines)
+        self.assertNotIn("SHOULD-NOT-RUN\n", lines)
+
+    def test_cancel_between_steps(self):
+        ctl = {"cancel": True}
+        lines = []
+        self.assertEqual(self.m.run_jobs([["sh", "-c", "echo no"]], lines.append, ctl), 130)
+        self.assertEqual(lines, [])
+
+    def test_an_elevated_command_is_not_killed(self):
+        ctl = {"cancel": True}
+        lines = []
+        with mock.patch.object(self.m, "ROOT", "/"):
+            rc = self.m.run_command(["sh", "-c", "echo done"], lines.append, dict(ctl, elevated=False))
+        self.assertEqual(lines, ["done\n"])
+        # a command named pkexec / sudo sets ctl["elevated"], so the cancel flag never terminates it
+        fake = os.path.join(tempfile.mkdtemp(), "sudo")
+        with open(fake, "w") as f:
+            f.write("#!/bin/sh\nsleep 1\necho finished\n")
+        os.chmod(fake, 0o755)
+        ctl2 = {"cancel": True}
+        lines2 = []
+        rc2 = self.m.run_command([fake], lines2.append, ctl2)
+        self.assertEqual((rc2, lines2), (0, ["finished\n"]))
 
 
 class ClaudeDesktop(unittest.TestCase):
