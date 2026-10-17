@@ -61,6 +61,8 @@ def download_script(asset, cache_dir=None, proto="=https"):
     q = shlex.quote
     name = asset["name"]
     return f"""set -eu
+command -v curl >/dev/null 2>&1 || {{ echo "curl is not installed (Debian/Ubuntu: sudo apt install curl)" >&2; exit 1; }}
+command -v sha256sum >/dev/null 2>&1 || {{ echo "sha256sum is not installed (package coreutils)" >&2; exit 1; }}
 mkdir -p {q(d)}
 cd {q(d)}
 trap 'rm -f {q(name)}.part' EXIT

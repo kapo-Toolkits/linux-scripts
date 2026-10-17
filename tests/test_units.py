@@ -3,6 +3,7 @@
 import importlib.util
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -539,6 +540,14 @@ class Extras(unittest.TestCase):
         self.assertEqual(steps, [])
         self.assertEqual(info["manual"], self.ex.ETCHER_PAGE)
 
+    def test_download_step_says_so_when_curl_is_missing(self):
+        asset = {"name": "x.deb", "url": "https://example.invalid/x.deb", "sha256": "0" * 64}
+        r = subprocess.run(["/bin/sh", "-c", self.ex.download_script(asset, "/tmp/never-created")], capture_output=True,
+                           text=True, env={"PATH": "/nonexistent"})
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("curl is not installed", r.stderr)
+
+    @unittest.skipUnless(shutil.which("curl") and shutil.which("sha256sum"), "needs curl and sha256sum")
     def test_download_step_verifies_the_checksum_for_real(self):
         import hashlib
         with tempfile.TemporaryDirectory() as d:
