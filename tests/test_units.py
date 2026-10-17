@@ -416,7 +416,7 @@ class Installer(unittest.TestCase):
 
     def test_launcher_text(self):
         txt = self.m.launcher_text("/r")
-        self.assertIn("Exec=python3 /r/installer/installer-gui.py", txt)
+        self.assertIn('Exec=sh "/r/installer/start.sh"', txt)
         self.assertIn("Path=/r", txt)
         self.assertIn("Name[ka]=", txt)
 
