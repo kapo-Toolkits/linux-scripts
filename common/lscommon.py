@@ -55,29 +55,79 @@ def run(cmd, timeout=None):
         return 1, str(e)
 
 
+def tk_prompt(pkg, utf8=True):
+    """The question shown to the user. Georgian only where the output can show it (a terminal without UTF-8 prints '???')."""
+    en = f"tkinter (the window toolkit for Python) is missing. Install {pkg} now?"
+    return en + (f"\ntkinter ვერ მოიძებნა. დავაყენო {pkg} ახლა?" if utf8 else "")
+
+
+def _gui_available(which=shutil.which, env=os.environ):
+    return bool(env.get("DISPLAY") or env.get("WAYLAND_DISPLAY")) and bool(which("zenity"))
+
+
+def _zenity(kind, text, run=subprocess.run):
+    """Show a window; returns True/False for a question, None when no window could be shown."""
+    try:
+        r = run(["zenity", f"--{kind}", "--no-markup", "--width=520", "--title=Toolkit", f"--text={text}"],
+                capture_output=True, timeout=600)
+    except Exception:  # noqa: BLE001
+        return None
+    return r.returncode == 0
+
+
+def lock_hint(output):
+    """When the package manager is blocked by another installer (a Linux Mint installation, Update Manager ...)."""
+    low = (output or "").lower()
+    if "could not get lock" in low or "unable to acquire the dpkg frontend lock" in low or "dpkg/lock" in low:
+        return ("Another installer or update is running right now (for example the Linux Mint installer or Update Manager). "
+                "Wait until it finishes, then start this again.")
+    return ""
+
+
 def ensure_tkinter():
-    """If tkinter is missing, ask, install it with the system package manager and restart the program."""
+    """If tkinter is missing, ask (in a window when started from a menu / icon), install it with the system package
+    manager and restart the program. A failure is shown in a window too, not only on the invisible stderr."""
     try:
         import tkinter  # noqa: F401
         return
     except ImportError:
         pass
+    gui = _gui_available()
+    utf8 = (getattr(sys.stdout, "encoding", "") or "").lower().replace("-", "") == "utf8" or gui
     for mgr, cmd, pkg in TK_PACKAGES:
         if shutil.which(mgr):
             break
     else:
-        sys.exit("tkinter is missing and no known package manager was found. Install: "
-                 "python3-tk / python3-tkinter / tk\n"
-                 "tkinter ვერ მოიძებნა; დააყენეთ ხელით: python3-tk / python3-tkinter / tk")
+        msg = "tkinter is missing and no known package manager was found. Install: python3-tk / python3-tkinter / tk"
+        if gui:
+            _zenity("error", msg)
+        sys.exit(msg)
     if sys.stdin.isatty():
-        if input(f"tkinter is missing. Install {pkg}? / დავაყენო {pkg}? [Y/n] ").strip().lower() not in ("", "y", "yes"):
-            sys.exit("Cancelled. / გაუქმდა.")
-    # graphical password prompt when launched from a menu, sudo in a terminal
-    elevate = ["pkexec"] if shutil.which("pkexec") and os.environ.get("DISPLAY") else ["sudo"]
-    if mgr == "apt-get":
-        subprocess.run(elevate + ["apt-get", "update"])
-    if subprocess.run(elevate + cmd + [pkg]).returncode != 0:
-        sys.exit(f"Could not install {pkg}. / {pkg}-ის დაყენება ვერ მოხერხდა.")
+        if input(tk_prompt(pkg, utf8) + " [Y/n] ").strip().lower() not in ("", "y", "yes"):
+            sys.exit("Cancelled.")
+    elif gui and _zenity("question", tk_prompt(pkg, True)) is False:
+        sys.exit("Cancelled.")
+    # administrator: nothing to add when already root, a graphical password prompt from a menu / icon, sudo in a terminal
+    if hasattr(os, "geteuid") and os.geteuid() == 0:
+        elevate = []
+    elif shutil.which("pkexec") and os.environ.get("DISPLAY"):
+        elevate = ["pkexec"]
+    elif shutil.which("sudo"):
+        elevate = ["sudo"]
+    else:
+        sys.exit("No way to get administrator rights. Run as root:  " + " ".join(cmd + [pkg]))
+    out = ""
+    ok = True
+    steps = ([elevate + ["apt-get", "update"]] if mgr == "apt-get" else []) + [elevate + cmd + [pkg]]
+    for step in steps:
+        r = subprocess.run(step, capture_output=not sys.stdin.isatty(), text=True)
+        out += (r.stdout or "") + (r.stderr or "")
+        ok = r.returncode == 0
+    if not ok:
+        msg = f"Could not install {pkg}." + ("\n" + lock_hint(out) if lock_hint(out) else "")
+        if gui:
+            _zenity("error", msg + "\n\n" + out[-600:])
+        sys.exit(msg)
     os.execv(sys.executable, [sys.executable] + sys.argv)
 
 
