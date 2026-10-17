@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
 """Fast offline unit tests (no root, no network, no display). Run: python3 tests/test_units.py"""
 import importlib.util
+import json
 import os
+import shutil
+import subprocess
 import sys
 import tempfile
 import types
 import unittest
+from unittest import mock
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "common"))
@@ -281,6 +285,8 @@ class Shortcuts(unittest.TestCase):
     def make_root(self, d):
         root = os.path.join(d, "checkout")
         for x in self.m.TOOLS:
+            if not x["script"]:                                  # installed by a package, nothing in the checkout
+                continue
             os.makedirs(os.path.dirname(os.path.join(root, x["script"])), exist_ok=True)
             open(os.path.join(root, x["script"]), "w").close()
         open(os.path.join(root, "install.sh"), "w").close()
@@ -290,8 +296,9 @@ class Shortcuts(unittest.TestCase):
         ids = [x["id"] for x in self.m.TOOLS]
         self.assertEqual(len(ids), len(set(ids)))
         for x in self.m.TOOLS:
-            for k in ("cmd", "script", "file", "icon", "cats"):
+            for k in ("cmd", "file", "icon", "cats"):
                 self.assertTrue(x[k], (x["id"], k))
+            self.assertIn("script", x)                                    # may be "" for programs installed by a package
             self.assertTrue(x["file"].endswith(".desktop"))
             self.assertEqual(set(x["name"]), {"en", "ka"})
             self.assertEqual(set(x["comment"]), {"en", "ka"})
@@ -459,6 +466,7 @@ class Installer(unittest.TestCase):
             app.busy, app.where = False, types.SimpleNamespace(get=lambda: "user")
             app.v_desk = app.v_fold = types.SimpleNamespace(get=lambda: False)
             app.selected_ids = lambda: ["printhub"]
+            app.selected_extras = lambda: []
             app.b_inst = app.b_un = types.SimpleNamespace(state=lambda *a: None)
             app.lbl_status = types.SimpleNamespace(config=lambda **k: None)
             app.say = lambda *a: None
@@ -487,6 +495,116 @@ class Installer(unittest.TestCase):
         self.assertFalse(self.m.venv_ready(run=lambda *a, **k: R()))
         R.returncode = 0
         self.assertTrue(self.m.venv_ready(run=lambda *a, **k: R()))
+
+
+class Extras(unittest.TestCase):
+    ex = Installer.m.extras
+    fx = os.path.join(ROOT, "tests", "fixtures", "etcher_release.json")
+
+    def release(self):
+        with open(self.fx) as f:
+            data = json.load(f)
+        return self.ex.etcher_release(fetch=lambda url: data)
+
+    def test_release_parsing_uses_githubs_per_asset_digest(self):
+        r = self.release()
+        self.assertEqual((r["tag"], r["version"]), ("v2.1.7", "2.1.7"))
+        deb = r["assets"]["balena-etcher_2.1.7_amd64.deb"]
+        self.assertEqual(deb["sha256"], "9dbea6165ddee1ec1f1b7a38fe92f0d2c54c6217710438a7af6752c267d19395")
+        self.assertEqual(r["assets"]["npm-sbom.json"]["sha256"], "")          # no digest -> never offered as a package
+
+    def test_package_choice_per_system(self):
+        r = self.release()
+        pick = lambda pm, arch="amd64": (self.ex.etcher_asset(r, pm, arch) or {}).get("name")   # noqa: E731
+        self.assertEqual(pick("apt-get"), "balena-etcher_2.1.7_amd64.deb")
+        self.assertEqual(pick("dnf", "x86_64"), "balena-etcher-2.1.7-1.x86_64.rpm")
+        self.assertEqual(pick("zypper", "x86_64"), "balena-etcher-2.1.7-1.x86_64.rpm")
+        self.assertIsNone(pick("pacman"))                      # no official package: the page is offered, not a guess
+        self.assertIsNone(pick("apt-get", "arm64"))            # the publisher ships x86-64 Linux packages only
+        self.assertIsNone(pick(""))
+
+    def test_steps_apt_and_rpm_parse_and_install_what_was_verified(self):
+        r = self.release()
+        for pm, arch, installer in (("apt-get", "amd64", "apt-get install -y"), ("dnf", "x86_64", "dnf install -y"),
+                                    ("zypper", "x86_64", "--allow-unsigned-rpm")):
+            steps, info = self.ex.etcher_steps(r, pm, arch, cache_dir="/tmp/cache with space")
+            self.assertEqual([x["root"] for x in steps], [False, True, False])
+            self.assertIn(installer, steps[1]["sh"])
+            self.assertIn(info["sha256"], steps[0]["sh"])
+            self.assertIn("--proto '=https'", steps[0]["sh"])
+            self.assertIn("'/tmp/cache with space/", steps[1]["sh"])               # quoted: spaces survive
+            self.assertEqual(info["source"], "github.com/balena-io/etcher")
+            for st in steps:
+                self.assertEqual(subprocess.run(["sh", "-n", "-c", st["sh"]], capture_output=True).returncode, 0)
+        steps, info = self.ex.etcher_steps(r, "pacman", "x86_64")
+        self.assertEqual(steps, [])
+        self.assertEqual(info["manual"], self.ex.ETCHER_PAGE)
+
+    def test_download_step_says_so_when_curl_is_missing(self):
+        asset = {"name": "x.deb", "url": "https://example.invalid/x.deb", "sha256": "0" * 64}
+        r = subprocess.run(["/bin/sh", "-c", self.ex.download_script(asset, "/tmp/never-created")], capture_output=True,
+                           text=True, env={"PATH": "/nonexistent"})
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("curl is not installed", r.stderr)
+
+    @unittest.skipUnless(shutil.which("curl") and shutil.which("sha256sum"), "needs curl and sha256sum")
+    def test_download_step_verifies_the_checksum_for_real(self):
+        import hashlib
+        with tempfile.TemporaryDirectory() as d:
+            src = os.path.join(d, "pkg.deb")
+            with open(src, "wb") as f:
+                f.write(b"the package bytes")
+            good = hashlib.sha256(b"the package bytes").hexdigest()
+            cache = os.path.join(d, "cache")
+            run = lambda sha: subprocess.run(["sh", "-c", self.ex.download_script(       # noqa: E731
+                {"name": "pkg.deb", "url": "file://" + src, "sha256": sha}, cache, proto="=file")], capture_output=True, text=True)
+            ok = run(good)
+            self.assertEqual(ok.returncode, 0, ok.stderr)
+            self.assertTrue(os.path.exists(os.path.join(cache, "pkg.deb")))
+            os.remove(os.path.join(cache, "pkg.deb"))
+            bad = run("0" * 64)                                                           # tampered / wrong -> refuse
+            self.assertNotEqual(bad.returncode, 0)
+            self.assertIn("CHECKSUM MISMATCH", bad.stderr)
+            self.assertEqual(os.listdir(cache), [])                                        # nothing left behind, not even .part
+
+    def test_installed_and_remove(self):
+        R = lambda out, rc=0: types.SimpleNamespace(returncode=rc, stdout=out)             # noqa: E731
+        self.assertEqual(self.ex.etcher_installed(run=lambda *a, **k: R("install ok installed 2.1.7"), which=lambda c: "/x"), "2.1.7")
+        self.assertIsNone(self.ex.etcher_installed(run=lambda *a, **k: R("", 1), which=lambda c: "/x"))
+        self.assertIsNone(self.ex.etcher_installed(run=lambda *a, **k: R("install ok installed 1"), which=lambda c: None))
+        self.assertIn("apt-get remove -y balena-etcher", self.ex.etcher_remove_steps("apt-get")[0]["sh"])
+        self.assertEqual(self.ex.etcher_remove_steps("pacman"), [])
+
+    def test_window_asks_before_downloading_then_runs_download_install_cleanup(self):
+        m = Installer.m
+        calls = {"asked": []}
+        saved = {k: getattr(m, k) for k in ("detect_pm", "elevate")}
+        saved_rel, saved_mb = m.extras.etcher_release, m.messagebox
+        release = self.release()                       # built before the lookup is replaced below
+        try:
+            m.detect_pm = lambda: "apt-get"
+            m.elevate = lambda c, **k: ["pkexec"] + list(c)
+            m.extras.etcher_release = lambda *a, **k: release
+            answers = [True]
+            m.messagebox = types.SimpleNamespace(askyesno=lambda t_, msg: calls["asked"].append(msg) or answers.pop(0),
+                                                 showinfo=lambda *a: None, showwarning=lambda *a: None)
+            app = types.SimpleNamespace(lbl_status=types.SimpleNamespace(config=lambda **k: None), update_idletasks=lambda: None)
+            with mock.patch("platform.machine", return_value="x86_64"):
+                jobs = m.App.etcher_jobs(app, "install")
+            self.assertEqual(len(calls["asked"]), 1)
+            self.assertIn("9dbea6165ddee1ec1f1b7a38fe92f0d2c54c6217710438a7af6752c267d19395", calls["asked"][0])
+            self.assertIn("balena-etcher_2.1.7_amd64.deb (118 MB)", calls["asked"][0])
+            self.assertEqual([j[0] for j in jobs], ["sh", "pkexec", "sh"])             # user, administrator, user
+            answers.append(False)                                                      # the user says no -> nothing runs
+            with mock.patch("platform.machine", return_value="x86_64"):
+                self.assertIsNone(m.App.etcher_jobs(app, "install"))
+            m.extras.etcher_release = lambda *a, **k: (_ for _ in ()).throw(OSError("offline"))
+            answers.append(True)                                                       # offline -> a message, no crash
+            self.assertIsNone(m.App.etcher_jobs(app, "install"))
+        finally:
+            for k, v in saved.items():
+                setattr(m, k, v)
+            m.extras.etcher_release, m.messagebox = saved_rel, saved_mb
 
 
 class Usb(unittest.TestCase):

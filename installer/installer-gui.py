@@ -17,6 +17,9 @@ for _p in reversed((os.path.join(_here, "..", "common"), os.path.join(_here, "..
     if os.path.isdir(_p):
         sys.path.insert(0, _p)
 from lscommon import detect_pm, ensure_tkinter, load_lang, save_lang  # noqa: E402
+if _here not in sys.path:
+    sys.path.insert(0, _here)
+import extras  # noqa: E402  (programs installed from their publishers, see extras.py)
 
 ensure_tkinter()
 
@@ -51,6 +54,14 @@ TOOLS = [
      "info": {"en": "print PDFs, images, Office files (downloads ~200 MB)", "ka": "PDF, სურათები, Office ფაილები (ჩამოტვირთავს ~200 MB)"}},
 ]
 
+# installed from the publisher (not by install.sh): shown in their own block, never ticked by default
+EXTRAS = [
+    {"id": "etcher",
+     "name": {"en": "balenaEtcher", "ka": "balenaEtcher"},
+     "info": {"en": "write an OS image to a USB stick / SD card (downloads ~120 MB from the publisher)",
+              "ka": "OS-ის იმიჯის ჩაწერა USB ფლეშკაზე / SD ბარათზე (ჩამოტვირთავს ~120 MB გამომცემლისგან)"}},
+]
+
 USER_PREFIX = os.path.join(os.path.expanduser("~"), ".local")
 SYSTEM_PREFIX = "/usr/local"
 
@@ -68,6 +79,11 @@ STR = {
  "confirm_un": "Remove the selected programs ({where})?\n\n{names}", "no_pkexec": "pkexec is not available. Run this in a terminal instead:\n\n{cmd}",
  "venv": "PrintHub needs the Python ‘venv’ package (or pip), and neither is installed.\n\nInstall it first:\n\n  sudo apt install python3-venv\n\nthen click Install again.",
  "heavy": "PrintHub downloads about 200 MB (PySide6). Continue?",
+ "c_other": "Other programs (from their publishers)", "looking": "Looking up the latest balenaEtcher…",
+ "lookup_fail": "Could not look up balenaEtcher (no internet, or GitHub is unreachable):\n{e}",
+ "etcher_ask": "Install balenaEtcher {version}?\n\nDownload: {file} ({mb} MB)\nFrom: {source}\nChecked with SHA-256 before installing:\n{sha}\n\nThen installed with the system package manager (administrator password).",
+ "etcher_manual": "balenaEtcher has no official package for this system here.\n\nGet it from the publisher:\n{url}",
+ "etcher_un": "balenaEtcher",
  "prereq_ask": "PrintHub needs Python's venv / pip, which this computer does not have yet.\n\nInstall it now, then PrintHub, and start PrintHub?\n(asks for the administrator password; command: {cmd})",
  "prereq_run": "Installing what PrintHub needs…", "launching": "Starting PrintHub…",
  "note": "This window only runs ./install.sh for you — the command is shown above the buttons.",
@@ -86,6 +102,11 @@ STR = {
  "no_pkexec": "pkexec არ არის. გაუშვით ტერმინალში:\n\n{cmd}".replace("\\\n", "\n"),
  "venv": "PrintHub-ს სჭირდება Python-ის ‘venv’ პაკეტი (ან pip), მაგრამ არცერთი არ არის დაყენებული.\n\nჯერ დააყენეთ:\n\n  sudo apt install python3-venv\n\nმერე ისევ დააჭირეთ „დაყენებას“.".replace("\\\n", "\n"),
  "heavy": "PrintHub-ი დაახლოებით 200 MB-ს ჩამოტვირთავს (PySide6). გავაგრძელო?",
+ "c_other": "სხვა პროგრამები (გამომცემლისგან)", "looking": "ვეძებ balenaEtcher-ის უახლეს ვერსიას…",
+ "lookup_fail": "balenaEtcher-ის მოძებნა ვერ მოხერხდა (ინტერნეტი არ არის ან GitHub მიუწვდომელია):\n{e}",
+ "etcher_ask": "დავაყენო balenaEtcher {version}?\n\nჩამოტვირთვა: {file} ({mb} MB)\nსაიდან: {source}\nდაყენებამდე შემოწმდება SHA-256-ით:\n{sha}\n\nმერე დაყენდება სისტემის პაკეტ-მენეჯერით (ადმინისტრატორის პაროლი).",
+ "etcher_manual": "balenaEtcher-ს ამ სისტემისთვის ოფიციალური პაკეტი აქ არ აქვს.\n\nაიღეთ გამომცემლის გვერდიდან:\n{url}",
+ "etcher_un": "balenaEtcher",
  "prereq_ask": "PrintHub-ს სჭირდება Python-ის venv / pip, რაც ამ კომპიუტერზე ჯერ არ არის.\n\nდავაყენო ახლა, მერე PrintHub და გავუშვა PrintHub?\n(ადმინისტრატორის პაროლს მოითხოვს; ბრძანება: {cmd})",
  "prereq_run": "ვაყენებ იმას, რაც PrintHub-ს სჭირდება…", "launching": "ვუშვებ PrintHub-ს…",
  "note": "ეს ფანჯარა მხოლოდ ./install.sh-ს უშვებს თქვენთვის — ბრძანება ღილაკების ზემოთ ჩანს.",
@@ -137,6 +158,11 @@ def elevate(cmd, which=shutil.which, euid=None):
 def shell_line(cmd):
     import shlex
     return " ".join(shlex.quote(c) for c in cmd)
+
+
+def shlex_quote(text):
+    import shlex
+    return shlex.quote(text)
 
 
 def venv_ready(which=shutil.which, run=subprocess.run):
@@ -225,6 +251,7 @@ class App(tk.Tk):
         self.minsize(680, 640)
         self.busy = False
         self.vars = {x["id"]: tk.BooleanVar(value=not x.get("heavy")) for x in TOOLS}
+        self.extra_vars = {x["id"]: tk.BooleanVar(value=False) for x in EXTRAS}
         self.where = tk.StringVar(value="user")
         self.v_desk, self.v_fold = tk.BooleanVar(value=True), tk.BooleanVar(value=False)
 
@@ -308,6 +335,14 @@ class App(tk.Tk):
             ttk.Label(self.box, text=tool["name"][LANG]).grid(row=r, column=1, sticky="w", padx=8)
             ttk.Label(self.box, text=tool["info"][LANG], foreground="#555555").grid(row=r, column=2, sticky="w", padx=8)
             ttk.Label(self.box, text=state, foreground="#1a7f37" if where else "#888888").grid(row=r, column=3, sticky="w", padx=8)
+        r = len(TOOLS) + 1
+        ttk.Label(self.box, text=t("c_other"), font=("", 9, "bold")).grid(row=r, column=1, columnspan=3, sticky="w", padx=8, pady=(8, 2))
+        for r, ex in enumerate(EXTRAS, start=r + 1):
+            ver = extras.etcher_installed() if ex["id"] == "etcher" else None
+            ttk.Checkbutton(self.box, variable=self.extra_vars[ex["id"]], command=self.sync).grid(row=r, column=0, sticky="w", pady=1)
+            ttk.Label(self.box, text=ex["name"][LANG]).grid(row=r, column=1, sticky="w", padx=8)
+            ttk.Label(self.box, text=ex["info"][LANG], foreground="#555555").grid(row=r, column=2, sticky="w", padx=8)
+            ttk.Label(self.box, text=(ver or t("none")), foreground="#1a7f37" if ver else "#888888").grid(row=r, column=3, sticky="w", padx=8)
 
     def sync(self):
         system = self.where.get() == "system"
@@ -315,8 +350,11 @@ class App(tk.Tk):
             cb.state(["disabled"] if system else ["!disabled"])
         self.lbl_optnote.config(text=t("o_note_sys") if system else "")
         ids = self.selected_ids()
-        self.lbl_cmd.config(text=shell_line(build_command(ROOT, ids or ["…"], "install", self.where.get(),
-                                                          self.v_desk.get(), self.v_fold.get())))
+        shown = shell_line(build_command(ROOT, ids or ["…"], "install", self.where.get(),
+                                         self.v_desk.get(), self.v_fold.get())) if ids or not self.selected_extras() else ""
+        if self.selected_extras():
+            shown = (shown + "\n" if shown else "") + "balenaEtcher: curl (HTTPS) → sha256sum -c → apt/dnf install (shown in full before it runs)"
+        self.lbl_cmd.config(text=shown)
 
     def toggle_lang(self):
         global LANG
@@ -327,10 +365,15 @@ class App(tk.Tk):
     def pick(self, value):
         for v in self.vars.values():
             v.set(value)
+        for v in self.extra_vars.values():
+            v.set(False)                          # the publisher's programs are never ticked by "select all"
         self.sync()
 
     def selected_ids(self):
         return [x["id"] for x in TOOLS if self.vars[x["id"]].get()]
+
+    def selected_extras(self):
+        return [x["id"] for x in EXTRAS if self.extra_vars[x["id"]].get()]
 
     def say(self, text):
         self.log.config(state="normal")
@@ -343,10 +386,13 @@ class App(tk.Tk):
         if self.busy:
             return
         ids = self.selected_ids()
-        if not ids:
+        want_etcher = "etcher" in self.selected_extras()
+        if not ids and not want_etcher:
             return messagebox.showinfo(t("title"), t("nothing"))
         system = self.where.get() == "system"
         names = "\n".join("• " + x["name"][LANG] for x in TOOLS if x["id"] in ids)
+        if want_etcher:
+            names += ("\n" if names else "") + "• " + t("etcher_un")
         if action == "uninstall" and not messagebox.askyesno(
                 t("title"), t("confirm_un", where=t("w_sys" if system else "w_user").split(" — ")[0], names=names)):
             return
@@ -363,13 +409,20 @@ class App(tk.Tk):
                     return messagebox.showwarning(t("title"), t("no_pkexec", cmd="sudo " + shell_line(pc)))
             elif not messagebox.askyesno(t("title"), t("heavy")):
                 return
-        cmd = build_command(ROOT, ids, action, self.where.get(), self.v_desk.get(), self.v_fold.get())
-        shown = shell_line(cmd)
-        if system:
-            cmd = elevate(cmd)
-            if cmd is None:
-                return messagebox.showwarning(t("title"), t("no_pkexec", cmd="sudo " + shown))
-        jobs = ([prereq] if prereq else []) + [cmd]
+        extra_jobs = []
+        if want_etcher:
+            extra_jobs = self.etcher_jobs(action)
+            if extra_jobs is None:
+                return
+        cmd, shown = None, ""
+        if ids:
+            cmd = build_command(ROOT, ids, action, self.where.get(), self.v_desk.get(), self.v_fold.get())
+            shown = shell_line(cmd)
+            if system:
+                cmd = elevate(cmd)
+                if cmd is None:
+                    return messagebox.showwarning(t("title"), t("no_pkexec", cmd="sudo " + shown))
+        jobs = ([prereq] if prereq else []) + ([cmd] if cmd else []) + extra_jobs
         self.start_printhub = action == "install" and "printhub" in ids
         self.busy = True
         for b in (self.b_inst, self.b_un):
@@ -378,7 +431,8 @@ class App(tk.Tk):
         if prereq:
             self.say("$ " + shell_line(prereq))
             self.say(t("prereq_run"))
-        self.say("$ " + shown)
+        if shown:
+            self.say("$ " + shown)
 
         def to_ui(fn, *a):
             try:
@@ -390,6 +444,43 @@ class App(tk.Tk):
             rc = run_jobs(jobs, lambda ln: to_ui(self.say, ln))
             to_ui(self.finish, rc)
         threading.Thread(target=work, daemon=True).start()
+
+    def etcher_jobs(self, action):
+        """Commands for balenaEtcher, or None when the user cancelled / it cannot be done (a message was shown)."""
+        import platform
+        pm = detect_pm()
+        if action == "uninstall":
+            steps = extras.etcher_remove_steps(pm)
+            if not steps:
+                messagebox.showinfo(t("title"), t("etcher_manual", url=extras.ETCHER_PAGE))
+                return None
+        else:
+            self.lbl_status.config(text=t("looking"))
+            self.update_idletasks()
+            try:
+                release = extras.etcher_release()
+            except Exception as e:  # noqa: BLE001 - offline, rate limit, changed API: say it, do not crash
+                self.lbl_status.config(text=t("note"))
+                messagebox.showwarning(t("title"), t("lookup_fail", e=e))
+                return None
+            self.lbl_status.config(text=t("note"))
+            steps, info = extras.etcher_steps(release, pm, platform.machine())
+            if not steps:
+                messagebox.showinfo(t("title"), t("etcher_manual", url=info["manual"]))
+                return None
+            if not messagebox.askyesno(t("title"), t("etcher_ask", version=info["version"], file=info["file"], mb=info["mb"],
+                                                      source=info["source"], sha=info["sha256"])):
+                return None
+        jobs = []
+        for st in steps:
+            job = ["sh", "-c", st["sh"]]
+            if st["root"]:
+                job = elevate(job)
+                if job is None:
+                    messagebox.showwarning(t("title"), t("no_pkexec", cmd="sudo sh -c " + shlex_quote(st["sh"])))
+                    return None
+            jobs.append(job)
+        return jobs
 
     def finish(self, rc):
         self.busy = False

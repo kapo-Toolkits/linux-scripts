@@ -1,0 +1,28 @@
+{
+ "tag_name": "v2.1.7",
+ "assets": [
+  {
+   "name": "balena-etcher_2.1.7_amd64.deb",
+   "size": 123731968,
+   "browser_download_url": "https://github.com/balena-io/etcher/releases/download/v2.1.7/balena-etcher_2.1.7_amd64.deb",
+   "digest": "sha256:9dbea6165ddee1ec1f1b7a38fe92f0d2c54c6217710438a7af6752c267d19395"
+  },
+  {
+   "name": "balena-etcher-2.1.7-1.x86_64.rpm",
+   "size": 126877696,
+   "browser_download_url": "https://github.com/balena-io/etcher/releases/download/v2.1.7/balena-etcher-2.1.7-1.x86_64.rpm",
+   "digest": "sha256:f8678185cbc76e51bc465607e001147a7c7239f31d21f2712fcc6e372bc29809"
+  },
+  {
+   "name": "balenaEtcher-linux-x64-2.1.7.zip",
+   "size": 162529280,
+   "browser_download_url": "https://github.com/balena-io/etcher/releases/download/v2.1.7/balenaEtcher-linux-x64-2.1.7.zip",
+   "digest": "sha256:6602dc2195f422daf7c5bc3eaf0eaff1def7ccd8aba0cd9b36e8966b4e0e6d16"
+  },
+  {
+   "name": "npm-sbom.json",
+   "size": 3145728,
+   "browser_download_url": "https://github.com/balena-io/etcher/releases/download/v2.1.7/npm-sbom.json"
+  }
+ ]
+}
