@@ -1351,6 +1351,40 @@ class AutoApply(unittest.TestCase):
         self.assertFalse(self.f(None, {"auto_apply_update": True}))
 
 
+class InstallerLog(unittest.TestCase):
+    m = Installer.m
+
+    def test_lines_are_appended_old_files_are_pruned(self):
+        with tempfile.TemporaryDirectory() as d:
+            for i in range(14):
+                with open(os.path.join(d, f"installer-202601{i + 10:02d}.log"), "w") as f:
+                    f.write("old\n")
+            path = os.path.join(d, "installer-20260201.log")
+            self.assertTrue(self.m.log_line("first", path))
+            self.assertTrue(self.m.log_line("second\n", path))
+            text = self.m.read_log(path)
+            self.assertIn("first\n", text)
+            self.assertTrue(text.splitlines()[1].endswith(" second"))
+            self.assertEqual(len([x for x in os.listdir(d) if x.endswith(".log")]), self.m.LOG_KEEP)
+            self.assertTrue(os.path.exists(path))                            # the newest survives
+
+    def test_it_never_raises(self):
+        self.assertFalse(self.m.log_line("x", "/proc/nope/installer-1.log"))
+        self.assertEqual(self.m.read_log("/nonexistent/installer.log"), "")
+
+    def test_read_log_returns_only_the_tail(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "installer-x.log")
+            with open(path, "w") as f:
+                f.write("".join(f"line{i}\n" for i in range(1000)))
+            tail = self.m.read_log(path, max_lines=5)
+            self.assertEqual(tail.splitlines(), [f"line{i}" for i in range(995, 1000)])
+
+    def test_log_dir_honours_xdg_cache(self):
+        with mock.patch.dict(os.environ, {"XDG_CACHE_HOME": "/x/cache"}):
+            self.assertEqual(self.m.log_dir(), "/x/cache/linux-scripts/logs")
+
+
 class ClaudeDesktop(unittest.TestCase):
     ex = Installer.m.extras
 
