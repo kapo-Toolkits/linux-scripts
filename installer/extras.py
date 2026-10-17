@@ -10,7 +10,7 @@ Other systems get the publisher's download page instead of a guess.
     python3 installer/extras.py etcher plan [--json]      # what would run (looks up the release, runs nothing)
     python3 installer/extras.py etcher installed          # the installed version, if any
 
-Brasero (CD/DVD burner) comes from the distribution's own repositories: package_steps("brasero", pm).
+Brasero, Xfburn and K3b (CD/DVD burners) come from the distribution's own repositories: package_steps("brasero", pm).
 """
 import json
 import os
@@ -113,7 +113,9 @@ def etcher_installed(run=subprocess.run, which=shutil.which):
 
 
 # programs that simply come from the distribution's own repositories (no download, nothing to verify by hand)
-PACKAGE_APPS = {"brasero": {"cmd": "brasero", "name": "Brasero"}}
+PACKAGE_APPS = {"brasero": {"cmd": "brasero", "name": "Brasero"},
+                "xfburn": {"cmd": "xfburn", "name": "Xfburn"},
+                "k3b": {"cmd": "k3b", "name": "K3b"}}
 _INSTALL = {"apt-get": "apt-get install -y {p}", "dnf": "dnf install -y {p}", "yum": "yum install -y {p}",
             "pacman": "pacman -S --noconfirm {p}", "zypper": "zypper --non-interactive install {p}",
             "apk": "apk add {p}", "xbps-install": "xbps-install -y {p}"}

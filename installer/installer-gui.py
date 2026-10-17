@@ -64,6 +64,14 @@ EXTRAS = [
      "name": {"en": "Brasero", "ka": "Brasero"},
      "info": {"en": "burn CDs and DVDs (from your distribution's repositories)",
               "ka": "CD და DVD დისკების ჩაწერა (თქვენი დისტრიბუციის რეპოზიტორიიდან)"}},
+    {"id": "xfburn",
+     "name": {"en": "Xfburn", "ka": "Xfburn"},
+     "info": {"en": "light CD/DVD burner (Xfce); from your distribution's repositories",
+              "ka": "მსუბუქი CD/DVD ჩამწერი (Xfce); თქვენი დისტრიბუციის რეპოზიტორიიდან"}},
+    {"id": "k3b",
+     "name": {"en": "K3b", "ka": "K3b"},
+     "info": {"en": "full CD/DVD/Blu-ray burner (KDE, brings many KDE libraries); from your distribution's repositories",
+              "ka": "სრული CD/DVD/Blu-ray ჩამწერი (KDE, ბევრ KDE ბიბლიოთეკას მოიტანს); თქვენი დისტრიბუციის რეპოზიტორიიდან"}},
 ]
 
 USER_PREFIX = os.path.join(os.path.expanduser("~"), ".local")

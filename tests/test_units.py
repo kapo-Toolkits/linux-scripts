@@ -620,14 +620,18 @@ class PackagePrograms(unittest.TestCase):
     ex = Installer.m.extras
 
     def test_steps_per_package_manager_and_names(self):
-        want = {"apt-get": "apt-get install -y brasero", "dnf": "dnf install -y brasero", "pacman": "pacman -S --noconfirm brasero",
-                "zypper": "zypper --non-interactive install brasero", "apk": "apk add brasero"}
-        for pm, cmd in want.items():
-            steps = self.ex.package_steps("brasero", pm)
-            self.assertEqual([x["root"] for x in steps], [True])
-            self.assertIn(cmd + "\n", steps[0]["sh"])
-            self.assertEqual(subprocess.run(["sh", "-n", "-c", steps[0]["sh"]], capture_output=True).returncode, 0)
-            self.assertEqual(self.ex.package_name("brasero", pm), "brasero")
+        want = {"apt-get": "apt-get install -y {}", "dnf": "dnf install -y {}", "pacman": "pacman -S --noconfirm {}",
+                "zypper": "zypper --non-interactive install {}", "apk": "apk add {}"}
+        for app in ("brasero", "xfburn", "k3b"):
+            for pm, cmd in want.items():
+                steps = self.ex.package_steps(app, pm)
+                self.assertEqual([x["root"] for x in steps], [True], (app, pm))
+                self.assertIn(cmd.format(app) + "\n", steps[0]["sh"])
+                self.assertEqual(subprocess.run(["sh", "-n", "-c", steps[0]["sh"]], capture_output=True).returncode, 0)
+                self.assertEqual(self.ex.package_name(app, pm), app)
+        self.assertEqual(set(self.ex.PACKAGE_APPS), {"brasero", "xfburn", "k3b"})
+        self.assertEqual({x["id"] for x in Installer.m.EXTRAS}, set(self.ex.PACKAGE_APPS) | {"etcher"})   # window and logic agree
+        self.assertEqual({x["id"] for x in Shortcuts.m.TOOLS} >= set(self.ex.PACKAGE_APPS), True)       # and shortcuts know them
         self.assertIn("apt-get remove -y brasero", self.ex.package_steps("brasero", "apt-get", remove=True)[0]["sh"])
         self.assertIn("pacman -R --noconfirm brasero", self.ex.package_steps("brasero", "pacman", remove=True)[0]["sh"])
         self.assertEqual(self.ex.package_steps("brasero", "unknown-pm"), [])
