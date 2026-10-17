@@ -145,6 +145,8 @@ STR = {
  "upd_reinstall": "After updating, reinstall the programs I have installed (for me)",
  "upd_adopt_ask": "This folder is a plain copy. Connect it to GitHub and bring it to the latest version?\n\nFiles that git tracks here are replaced by the latest ones; other files (like start-installer.desktop) stay.",
  "upd_done": "Updated. The installer restarts now.", "upd_failed": "Not updated:\n{e}",
+ "upd_nogit": "git is not installed on this computer: updating works without it (Python downloads GitHub's snapshot).",
+ "upd_archive": "This copy: GitHub commit {short} (updated without git)\nFolder: {folder}",
  "upd_banner": "{n} new change(s) on GitHub", "upd_banner_plain": "This folder is a plain copy. Connect it to GitHub to get updates.",
  "upd_banner_btn": "Update…", "upd_later": "Later", "upd_working": "Updating…",
  "brave_title": "Brave Browser — review the script before it runs",
@@ -191,6 +193,8 @@ STR = {
  "upd_reinstall": "განახლების შემდეგ ხელახლა დავაყენო ჩემთვის დაყენებული პროგრამები",
  "upd_adopt_ask": "ეს საქაღალდე უბრალო ასლია. მივაერთო GitHub-ს და გავაახლო ბოლო ვერსიამდე?\n\nფაილები, რასაც git აკონტროლებს, ჩანაცვლდება უახლესით; სხვა ფაილები (მაგ. start-installer.desktop) დარჩება.",
  "upd_done": "განახლდა. ინსტალერი ახლა თავიდან გაიხსნება.", "upd_failed": "ვერ განახლდა:\n{e}",
+ "upd_nogit": "ამ კომპიუტერზე git დაყენებული არ არის: განახლება მის გარეშეც მუშაობს (Python ჩამოტვირთავს GitHub-ის ასლს).",
+ "upd_archive": "ეს ასლი: GitHub-ის კომიტი {short} (განახლებულია git-ის გარეშე)\nსაქაღალდე: {folder}",
  "upd_banner": "GitHub-ზე {n} ახალი ცვლილებაა", "upd_banner_plain": "ეს საქაღალდე უბრალო ასლია. მიაერთეთ GitHub-ს, რომ განახლებები მიიღოთ.",
  "upd_banner_btn": "განახლება…", "upd_later": "მოგვიანებით", "upd_working": "ვაახლებ…",
  "brave_title": "Brave Browser — გადახედეთ სკრიპტს გაშვებამდე",
@@ -319,7 +323,9 @@ def banner_for(res, settings, now):
     copied folder that is not linked to GitHub (unless snoozed with "Later"), else None."""
     if not res or res.get("mode") == "error":
         return None
-    if res["mode"] == "git":
+    if res["mode"] in ("git", "archive"):
+        if res["mode"] == "archive" and res.get("behind") is None:      # commit unknown (first time without git)
+            return ("plain", None) if float(settings.get("update_snooze_until", 0) or 0) <= now else None
         return ("behind", res["behind"]) if res.get("behind") else None
     if res["mode"] == "adopt" and float(settings.get("update_snooze_until", 0) or 0) <= now:
         return ("plain", None)
@@ -808,11 +814,13 @@ class App(tk.Tk):
             state["res"] = res
             info = res.get("local", {})
             lbl_cur.config(text=t("upd_current", short=info.get("short", "?"), branch=info.get("branch", "?"),
-                                  date=info.get("date", "?"), folder=ROOT) if info.get("git") else t("upd_plain") + "\n" + ROOT)
+                                  date=info.get("date", "?"), folder=ROOT) if info.get("git") else
+                           (t("upd_nogit") + "\n" if info.get("git_missing") else "") +
+                           (t("upd_archive", short=info["short"], folder=ROOT) if info.get("short") else t("upd_plain") + "\n" + ROOT))
             lines, can = [], False
             if res["mode"] == "error":
                 lbl_res.config(text=t("upd_error", e=res["error"]))
-            elif res["mode"] == "adopt":
+            elif res["mode"] == "adopt" or (res["mode"] == "archive" and res["behind"] is None):
                 lbl_res.config(text=t("upd_banner_plain"))
                 can = True
             elif res["behind"]:
@@ -843,7 +851,7 @@ class App(tk.Tk):
 
         def do_now():
             res = state["res"]
-            if not res or (res["mode"] == "adopt" and not messagebox.askyesno(t("settings"), t("upd_adopt_ask"), parent=win)):
+            if not res or (res["mode"] in ("adopt", "archive") and res.get("behind") is None and not messagebox.askyesno(t("settings"), t("upd_adopt_ask"), parent=win)):
                 return
             lbl_res.config(text=t("upd_working"))
             b_now.config(state="disabled")
@@ -858,7 +866,7 @@ class App(tk.Tk):
 
     def do_update(self, res, reinstall):
         """Worker thread: update (or adopt), reinstall the installed programs, then restart. Every UI touch goes through ui()."""
-        ok, msg = updater.adopt(ROOT) if res["mode"] == "adopt" else updater.update(ROOT)
+        ok, msg = updater.apply(ROOT, res)
         say = lambda text: self.ui(self.say, text)    # noqa: E731
         if not ok:
             self.ui(self.update_failed, msg)

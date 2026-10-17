@@ -3,6 +3,9 @@
 
 A computer that got the folder by copying (USB stick, zip) has no link to GitHub; one that was cloned has. Both are handled:
   - a git checkout:  `git fetch` + compare, then `git pull --ff-only` (refuses when tracked files were changed here);
+  - no git at all:   "archive" mode, Python only - ask GitHub's API for the newest commit of main, download that exact
+                     snapshot over HTTPS and copy its files over this folder (replaced files are backed up first);
+                     the commit id is remembered in .installed-sha.  Also used when git is not installed.
   - a plain copy:    "adopt" it - `git init`, add the GitHub remote, fetch, check out main over the tracked files
                      (files git does not track, like start-installer.desktop, are left alone), after which it is a checkout.
 
@@ -11,12 +14,19 @@ A computer that got the folder by copying (USB stick, zip) has no link to GitHub
 """
 import json
 import os
+import shutil
 import subprocess
 import sys
+import tarfile
+import tempfile
 import time
+import urllib.request
 
 REPO_URL = "https://github.com/kapo-Toolkits/linux-scripts.git"
 BRANCH = "main"
+API = "https://api.github.com/repos/kapo-Toolkits/linux-scripts"
+ARCHIVE = "https://codeload.github.com/kapo-Toolkits/linux-scripts/tar.gz/"      # + commit id
+MARKER = ".installed-sha"          # written by archive updates: which GitHub commit this folder holds
 CHECK_INTERVAL = 6 * 3600          # the quiet check at start-up runs at most this often
 
 
@@ -76,14 +86,14 @@ def local_info(root, run=subprocess.run):
             "dirty": [ln[3:] for ln in _git(root, "status", "--porcelain", "--untracked-files=no", run=run, raw=True)[1].splitlines()]}
 
 
-def check(root, remote="origin", branch=BRANCH, run=subprocess.run):
+def check(root, remote="origin", branch=BRANCH, run=subprocess.run, fetch=None):
     """-> {'mode': 'git'|'adopt'|'error', 'behind': n, 'commits': [(sha, title)], 'local': info, 'error': str}"""
     info = local_info(root, run)
     if not info["git"]:
         if info.get("nested_in"):
             return {"mode": "error", "local": info, "error": f"this folder lies inside another git repository ({info['nested_in']})"}
         if info.get("error"):
-            return {"mode": "error", "local": info, "error": info["error"]}
+            return check_archive(root, info, fetch=fetch or _get_json)                  # no git here: Python alone can still do it
         return {"mode": "adopt", "local": info, "behind": None, "commits": []}
     rc, out = _git(root, "fetch", "--quiet", remote, branch, run=run, timeout=120)
     if rc != 0:
@@ -94,6 +104,112 @@ def check(root, remote="origin", branch=BRANCH, run=subprocess.run):
     log = _git(root, "log", "--format=%h\\t%s", "-n", "30", f"HEAD..{target}", run=run)[1]
     commits = [tuple(ln.split("\\t", 1)) for ln in log.splitlines() if "\\t" in ln]
     return {"mode": "git", "local": info, "behind": behind, "ahead": ahead, "commits": commits}
+
+
+def _get_json(url, timeout=20, opener=urllib.request.urlopen):
+    req = urllib.request.Request(url, headers={"User-Agent": "linux-scripts-installer", "Accept": "application/vnd.github+json"})
+    with opener(req, timeout=timeout) as r:
+        return json.loads(r.read().decode("utf-8"))
+
+
+def archive_local(root):
+    """{'git': False, 'sha', 'short'} - the commit this folder was last brought to by an archive update ('' if never)."""
+    try:
+        with open(os.path.join(root, MARKER)) as f:
+            sha = f.read().strip()
+    except OSError:
+        sha = ""
+    ok = len(sha) == 40 and all(c in "0123456789abcdef" for c in sha)
+    return {"git": False, "archive": True, "sha": sha if ok else "", "short": sha[:7] if ok else "", "branch": BRANCH, "date": ""}
+
+
+def check_archive(root, info=None, branch=BRANCH, fetch=_get_json):
+    """Without git: -> {'mode': 'archive', 'behind': n | None, 'commits': [(sha, title)], 'latest': sha, 'local': info}.
+    behind is None when this folder has never been updated this way (its commit is unknown: updating is still possible)."""
+    local = archive_local(root)
+    local["git_missing"] = bool(info and info.get("error"))
+    try:
+        latest = fetch(f"{API}/commits/{branch}")
+        sha = latest["sha"]
+    except Exception as e:  # noqa: BLE001 - offline, rate limit, changed API
+        return {"mode": "error", "local": local, "error": str(e)}
+    res = {"mode": "archive", "local": local, "latest": sha, "behind": None, "commits": []}
+    if not local["sha"]:
+        return res
+    if local["sha"] == sha:
+        res["behind"] = 0
+        return res
+    try:
+        cmp_ = fetch(f"{API}/compare/{local['sha']}...{sha}")
+        res["behind"] = int(cmp_.get("ahead_by", 0))
+        res["commits"] = [(c["sha"][:7], c["commit"]["message"].splitlines()[0]) for c in reversed(cmp_.get("commits", []))][:30]
+    except Exception:  # noqa: BLE001 - e.g. the old commit is gone: it is still "different"
+        res["behind"] = 1
+    return res
+
+
+def _safe_members(tar):
+    """Regular files and folders only, nothing outside the archive's own top folder, no links, no '..'."""
+    out = []
+    for m in tar.getmembers():
+        parts = m.name.split("/")
+        if m.name.startswith("/") or ".." in parts or not (m.isfile() or m.isdir()):
+            continue
+        out.append(m)
+    return out
+
+
+def update_archive(root, sha=None, fetch=_get_json, opener=urllib.request.urlopen, backup_dir=None):
+    """Download GitHub's snapshot of `sha` (default: newest main) and copy it over `root`. -> (ok, message).
+    Files that differ are copied to a backup folder first; files that are not in the snapshot are left alone."""
+    if not os.path.isfile(os.path.join(root, "install.sh")):
+        return False, "this does not look like the linux-scripts folder (no install.sh)"
+    try:
+        sha = sha or fetch(f"{API}/commits/{BRANCH}")["sha"]
+        if not (len(sha) == 40 and all(c in "0123456789abcdef" for c in sha)):
+            return False, "GitHub returned an unexpected commit id"
+        backup = backup_dir or os.path.join(os.path.expanduser("~/.cache/linux-scripts/update-backup"), time.strftime("%Y%m%d-%H%M%S"))
+        with tempfile.TemporaryDirectory() as tmp:
+            tgz = os.path.join(tmp, "snapshot.tar.gz")
+            req = urllib.request.Request(ARCHIVE + sha, headers={"User-Agent": "linux-scripts-installer"})
+            with opener(req, timeout=60) as r, open(tgz, "wb") as f:
+                shutil.copyfileobj(r, f)
+            with tarfile.open(tgz) as tar:
+                members = _safe_members(tar)
+                top = members[0].name.split("/")[0] if members else ""
+                if not top or not any(m.name == f"{top}/install.sh" for m in members):
+                    return False, "the downloaded snapshot does not look like the linux-scripts repository"
+                tar.extractall(tmp, members=members)
+            src = os.path.join(tmp, top)
+            changed = 0
+            for dirpath, _dirs, files in os.walk(src):
+                rel = os.path.relpath(dirpath, src)
+                for name in files:
+                    a, b = os.path.join(dirpath, name), os.path.normpath(os.path.join(root, rel, name))
+                    if os.path.isfile(b):
+                        with open(a, "rb") as fa, open(b, "rb") as fb:
+                            if fa.read() == fb.read():
+                                continue
+                        os.makedirs(os.path.dirname(os.path.join(backup, rel, name)), exist_ok=True)
+                        shutil.copy2(b, os.path.join(backup, rel, name))
+                    os.makedirs(os.path.dirname(b), exist_ok=True)
+                    shutil.copy2(a, b)                       # keeps the executable bit
+                    changed += 1
+        with open(os.path.join(root, MARKER), "w") as f:
+            f.write(sha + "\n")
+    except Exception as e:  # noqa: BLE001
+        return False, str(e)
+    return True, f"updated to {sha[:7]} ({changed} file(s) replaced" + (f", the old ones are in {backup}" if changed and os.path.isdir(backup) else "") + ")"
+
+
+def apply(root, res):
+    """Do what check() found: archive update (no git), adopt (plain copy) or fast-forward (git checkout). -> (ok, message)"""
+    if res["mode"] == "archive":
+        return update_archive(root, res.get("latest"))
+    if res["mode"] == "adopt":
+        ok, msg = adopt(root)
+        return (ok, msg) if ok or "git is not installed" not in msg else update_archive(root)
+    return update(root)
 
 
 def update(root, remote="origin", branch=BRANCH, run=subprocess.run):
@@ -140,6 +256,13 @@ def main(argv):
         if res["mode"] == "error":
             print("error:", res["error"])
             return 1
+        if res["mode"] == "archive":
+            n = res["behind"]
+            print("no git here (Python-only update): " + ("version unknown, `update` fetches the latest" if n is None
+                  else "up to date" if n == 0 else f"{n} new on GitHub"))
+            for sha, title in res["commits"]:
+                print(f"  {sha}  {title}")
+            return 0
         if res["mode"] == "adopt":
             print("plain copy (no link to GitHub): run `update` to connect it and get the latest")
             return 0
@@ -150,7 +273,7 @@ def main(argv):
     if res["mode"] == "error":
         print("error:", res["error"])
         return 1
-    ok, msg = adopt(root) if res["mode"] == "adopt" else update(root)
+    ok, msg = apply(root, res)
     print(("updated: " if ok else "not updated: ") + msg)
     return 0 if ok else 1
 

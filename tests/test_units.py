@@ -796,6 +796,116 @@ class Updater(unittest.TestCase):
         self.assertTrue(self.up.should_check({"last_update_check": 1000}, now=1000 + self.up.CHECK_INTERVAL))
 
 
+class UpdaterWithoutGit(unittest.TestCase):
+    """No git on the computer: GitHub's API + snapshot download, Python only."""
+    u = load("installer/updater.py")
+    SHA1, SHA2 = "a" * 40, "b" * 40
+
+    def no_git(self, *a, **k):
+        raise FileNotFoundError("git")
+
+    def snapshot(self, d, files, extra=None):
+        import io
+        import tarfile
+        buf = io.BytesIO()
+        with tarfile.open(fileobj=buf, mode="w:gz") as tar:
+            for name, data in dict(files, **(extra or {})).items():
+                ti = tarfile.TarInfo(name)
+                ti.size = len(data)
+                ti.mode = 0o755 if name.endswith(".sh") else 0o644
+                tar.addfile(ti, io.BytesIO(data))
+        return io.BytesIO(buf.getvalue())
+
+    def folder(self, d):
+        root = os.path.join(d, "ls")
+        os.makedirs(root)
+        with open(os.path.join(root, "install.sh"), "w") as f:
+            f.write("old\n")
+        with open(os.path.join(root, "mine.txt"), "w") as f:
+            f.write("keep\n")
+        return root
+
+    def test_missing_git_switches_to_archive_mode(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = self.folder(d)
+            calls = []
+
+            def fetch(url):
+                calls.append(url)
+                return {"sha": self.SHA2}
+            res = self.u.check(root, run=self.no_git, fetch=fetch)
+            self.assertEqual(res["mode"], "archive")
+            self.assertIsNone(res["behind"])                         # commit unknown the first time
+            self.assertTrue(res["local"]["git_missing"])
+            self.assertEqual(res["latest"], self.SHA2)
+
+    def test_behind_uses_the_compare_api_and_marker(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = self.folder(d)
+            with open(os.path.join(root, ".installed-sha"), "w") as f:
+                f.write(self.SHA1 + "\n")
+
+            def fetch(url):
+                if url.endswith("/commits/main"):
+                    return {"sha": self.SHA2}
+                self.assertIn(f"compare/{self.SHA1}...{self.SHA2}", url)
+                return {"ahead_by": 2, "commits": [{"sha": "1" * 40, "commit": {"message": "first\n\nbody"}},
+                                                    {"sha": "2" * 40, "commit": {"message": "second"}}]}
+            res = self.u.check(root, run=self.no_git, fetch=fetch)
+            self.assertEqual((res["mode"], res["behind"]), ("archive", 2))
+            self.assertEqual(res["commits"][0], ("2222222", "second"))        # newest first
+            with open(os.path.join(root, ".installed-sha"), "w") as f:
+                f.write(self.SHA2 + "\n")
+            self.assertEqual(self.u.check(root, run=self.no_git, fetch=fetch)["behind"], 0)
+
+    def test_offline_is_an_error_not_a_crash(self):
+        with tempfile.TemporaryDirectory() as d:
+            def boom(url):
+                raise OSError("offline")
+            res = self.u.check(self.folder(d), run=self.no_git, fetch=boom)
+            self.assertEqual(res["mode"], "error")
+            self.assertIn("offline", res["error"])
+
+    def test_update_replaces_changed_files_backs_up_and_keeps_the_rest(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = self.folder(d)
+            snap = self.snapshot(d, {"ls-main/install.sh": b"new\n", "ls-main/installer/new.py": b"x\n", "ls-main/run.sh": b"#!/bin/sh\n"})
+            ok, msg = self.u.update_archive(root, self.SHA2, opener=lambda req, timeout=0: snap, backup_dir=os.path.join(d, "bak"))
+            self.assertTrue(ok, msg)
+            self.assertEqual(open(os.path.join(root, "install.sh")).read(), "new\n")
+            self.assertEqual(open(os.path.join(root, "mine.txt")).read(), "keep\n")
+            self.assertTrue(os.path.exists(os.path.join(root, "installer", "new.py")))
+            self.assertEqual(open(os.path.join(d, "bak", "install.sh")).read(), "old\n")
+            self.assertTrue(os.access(os.path.join(root, "run.sh"), os.X_OK))
+            self.assertEqual(open(os.path.join(root, ".installed-sha")).read().strip(), self.SHA2)
+
+    def test_hostile_or_wrong_archives_are_refused(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = self.folder(d)
+            evil = self.snapshot(d, {"x/install.sh": b"n\n"}, {"x/../../escape.txt": b"boom"})
+            ok, msg = self.u.update_archive(root, self.SHA2, opener=lambda req, timeout=0: evil, backup_dir=os.path.join(d, "b"))
+            self.assertTrue(ok, msg)
+            self.assertFalse(os.path.exists(os.path.join(d, "escape.txt")))
+            self.assertFalse(os.path.exists(os.path.join(os.path.dirname(root), "escape.txt")))
+            wrong = self.snapshot(d, {"x/readme": b"n\n"})
+            ok, msg = self.u.update_archive(root, self.SHA2, opener=lambda req, timeout=0: wrong)
+            self.assertFalse(ok)
+            ok, msg = self.u.update_archive(root, "not-a-sha")
+            self.assertFalse(ok)
+            ok, msg = self.u.update_archive(d, self.SHA2)                # no install.sh there
+            self.assertFalse(ok)
+
+    def test_apply_dispatches_and_banner(self):
+        with mock.patch.object(self.u, "update_archive", return_value=(True, "ok")) as ua:
+            self.assertEqual(self.u.apply("/x", {"mode": "archive", "latest": self.SHA2}), (True, "ok"))
+            ua.assert_called_once_with("/x", self.SHA2)
+        b = Installer.m.banner_for
+        self.assertEqual(b({"mode": "archive", "behind": 3}, {}, 1000), ("behind", 3))
+        self.assertIsNone(b({"mode": "archive", "behind": 0}, {}, 1000))
+        self.assertEqual(b({"mode": "archive", "behind": None}, {}, 1000), ("plain", None))
+        self.assertIsNone(b({"mode": "archive", "behind": None}, {"update_snooze_until": 5000}, 1000))
+
+
 class VendorPrograms(unittest.TestCase):
     """VS Code, Discord, RustDesk, Tabby, WinBoat, ArtCraft: how they are fetched and verified."""
     ex = Installer.m.extras
