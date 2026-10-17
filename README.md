@@ -21,6 +21,13 @@ for your package manager. `tkinter` is installed automatically on first run. The
 repository only on Debian/Ubuntu-based systems and Flatpak or the distribution package everywhere else.
 Still Linux-specific by nature: Hotspot needs NetworkManager + `iw`, USB eject needs `udisks2`, printer setup needs CUPS.
 
+## New computer
+
+```bash
+git clone https://github.com/kapo-Toolkits/linux-scripts.git && cd linux-scripts
+sh installer/start.sh      # the installer window: tick programs, click Install
+```
+
 ## Install / uninstall
 
 ```bash
