@@ -40,6 +40,8 @@ Below the toolkit's own programs the window has a block for programs that are **
 |---|---|
 | **balenaEtcher** ([etcher.balena.io](https://etcher.balena.io), Apache-2.0) — writes an OS image to a USB stick / SD card | The window looks up the **latest release** on `github.com/balena-io/etcher`, shows the file, size, source and its **SHA-256**, and asks. Then (as you) it downloads the publisher's `.deb` / `.rpm` over HTTPS, **refuses to go on unless the SHA-256 matches the digest GitHub publishes for that exact file**, and installs it with `apt` / `dnf` / `zypper` (administrator password); the cached download is deleted afterwards. Other systems (Arch, Alpine, ARM…) get the publisher's download page instead of a guess. |
 
+| **Brasero** — burns CDs and DVDs | Comes from your **distribution's own repositories**: `apt install brasero` / `dnf install brasero` / `pacman -S brasero` / `zypper install brasero` / `apk add brasero`. The window shows the package and asks; uninstall removes it the same way. The package names are checked against each distribution's repositories by `tests/pkgnames_check.py` (CI). |
+
 Nothing is bundled in this repository. These programs are never ticked by *Select all*. The same logic runs without a window:
 `python3 installer/extras.py etcher plan` prints what would run (it looks the release up, downloads nothing).
 Writing an image is destructive for the target drive: Etcher asks you to pick it, and `usb-eject` is the tool for removing the stick safely afterwards.

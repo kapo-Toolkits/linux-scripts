@@ -374,6 +374,15 @@ class Shortcuts(unittest.TestCase):
 class Installer(unittest.TestCase):
     m = load("installer/installer-gui.py")
 
+    def test_every_text_key_used_by_the_window_exists_in_both_languages(self):
+        import re
+        with open(os.path.join(ROOT, "installer", "installer-gui.py")) as f:
+            src = f.read()
+        used = set(re.findall(r'\bt\("([a-z_0-9]+)"', src))
+        self.assertTrue(used)
+        for lang in ("en", "ka"):
+            self.assertEqual(sorted(used - set(self.m.STR[lang])), [], lang)
+
     def test_every_tool_is_one_install_sh_knows(self):
         with open(os.path.join(ROOT, "install.sh")) as f:
             src = f.read()
@@ -605,6 +614,56 @@ class Extras(unittest.TestCase):
             for k, v in saved.items():
                 setattr(m, k, v)
             m.extras.etcher_release, m.messagebox = saved_rel, saved_mb
+
+
+class PackagePrograms(unittest.TestCase):
+    ex = Installer.m.extras
+
+    def test_steps_per_package_manager_and_names(self):
+        want = {"apt-get": "apt-get install -y brasero", "dnf": "dnf install -y brasero", "pacman": "pacman -S --noconfirm brasero",
+                "zypper": "zypper --non-interactive install brasero", "apk": "apk add brasero"}
+        for pm, cmd in want.items():
+            steps = self.ex.package_steps("brasero", pm)
+            self.assertEqual([x["root"] for x in steps], [True])
+            self.assertIn(cmd + "\n", steps[0]["sh"])
+            self.assertEqual(subprocess.run(["sh", "-n", "-c", steps[0]["sh"]], capture_output=True).returncode, 0)
+            self.assertEqual(self.ex.package_name("brasero", pm), "brasero")
+        self.assertIn("apt-get remove -y brasero", self.ex.package_steps("brasero", "apt-get", remove=True)[0]["sh"])
+        self.assertIn("pacman -R --noconfirm brasero", self.ex.package_steps("brasero", "pacman", remove=True)[0]["sh"])
+        self.assertEqual(self.ex.package_steps("brasero", "unknown-pm"), [])
+        self.assertEqual(self.ex.package_steps("brasero", ""), [])
+
+    def test_installed_means_the_command_is_on_the_path(self):
+        self.assertTrue(self.ex.package_installed("brasero", which=lambda c: "/usr/bin/" + c))
+        self.assertFalse(self.ex.package_installed("brasero", which=lambda c: None))
+
+    def test_window_asks_then_installs_with_administrator_rights(self):
+        m = Installer.m
+        asked = []
+        saved = {k: getattr(m, k) for k in ("detect_pm", "elevate", "LANG")}
+        saved_mb = m.messagebox
+        try:
+            m.LANG = "en"                          # the user's saved language must not change the assertions
+            m.detect_pm = lambda: "apt-get"
+            m.elevate = lambda c, **k: ["pkexec"] + list(c)
+            answers = [True, False]
+            m.messagebox = types.SimpleNamespace(askyesno=lambda t_, msg: asked.append(msg) or answers.pop(0),
+                                                 showinfo=lambda *a: asked.append(a[1]), showwarning=lambda *a: None)
+            jobs = m.App.package_jobs(object(), "install", "brasero")
+            self.assertEqual(jobs[0][:3], ["pkexec", "sh", "-c"])
+            self.assertIn("apt-get install -y brasero", jobs[0][3])
+            self.assertIn("Package: brasero  (apt-get)", asked[0])
+            self.assertIsNone(m.App.package_jobs(object(), "install", "brasero"))          # "no" -> nothing runs
+            m.detect_pm = lambda: "unknown-pm"
+            self.assertIsNone(m.App.package_jobs(object(), "install", "brasero"))          # unknown manager -> a message
+            self.assertIn("No known Brasero package", asked[-1])
+            m.detect_pm = lambda: "apt-get"
+            removal = m.App.package_jobs(object(), "uninstall", "brasero")                 # removal is confirmed by the window
+            self.assertIn("apt-get remove -y brasero", removal[0][3])
+        finally:
+            for k, v in saved.items():
+                setattr(m, k, v)
+            m.messagebox = saved_mb
 
 
 class Usb(unittest.TestCase):

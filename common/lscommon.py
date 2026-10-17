@@ -133,3 +133,4 @@ def warn_missing(cmds, lang, title):
     return True
 PKG_FOR["bluetoothctl"] = {"apt-get": "bluez", "dnf": "bluez", "yum": "bluez", "pacman": "bluez-utils",
                            "zypper": "bluez", "apk": "bluez", "xbps-install": "bluez"}
+PKG_FOR["brasero"] = _ALL("brasero")          # CD/DVD burner, in every major distribution's own repositories

@@ -60,6 +60,10 @@ EXTRAS = [
      "name": {"en": "balenaEtcher", "ka": "balenaEtcher"},
      "info": {"en": "write an OS image to a USB stick / SD card (downloads ~120 MB from the publisher)",
               "ka": "OS-ის იმიჯის ჩაწერა USB ფლეშკაზე / SD ბარათზე (ჩამოტვირთავს ~120 MB გამომცემლისგან)"}},
+    {"id": "brasero",
+     "name": {"en": "Brasero", "ka": "Brasero"},
+     "info": {"en": "burn CDs and DVDs (from your distribution's repositories)",
+              "ka": "CD და DVD დისკების ჩაწერა (თქვენი დისტრიბუციის რეპოზიტორიიდან)"}},
 ]
 
 USER_PREFIX = os.path.join(os.path.expanduser("~"), ".local")
@@ -69,7 +73,7 @@ STR = {
 "en": {
  "title": "Toolkit Installer", "lang_btn": "ქართული", "head": "Tick the programs you want, choose where, then click Install",
  "c_name": "Program", "c_what": "What it does", "c_state": "Installed",
- "me": "for me", "all": "for everyone", "both": "me + everyone", "none": "—",
+ "me": "for me", "all": "for everyone", "both": "me + everyone", "none": "—", "yes": "installed",
  "f_where": "Where", "w_user": "Only for me (~/.local) — no password needed", "w_sys": "For everyone (/usr/local) — asks for the administrator password",
  "f_opts": "Also", "o_desk": "put a launcher on the Desktop", "o_fold": "put a double-click launcher inside each program's folder",
  "o_note_sys": "(Desktop and folder launchers are only available for “Only for me”)",
@@ -84,6 +88,8 @@ STR = {
  "etcher_ask": "Install balenaEtcher {version}?\n\nDownload: {file} ({mb} MB)\nFrom: {source}\nChecked with SHA-256 before installing:\n{sha}\n\nThen installed with the system package manager (administrator password).",
  "etcher_manual": "balenaEtcher has no official package for this system here.\n\nGet it from the publisher:\n{url}",
  "etcher_un": "balenaEtcher",
+ "pkg_ask": "Install {name} from your distribution's repositories?\n\nPackage: {pkg}  ({pm})\n(administrator password)",
+ "pkg_unknown": "No known {name} package for this system's package manager ({pm}).",
  "prereq_ask": "PrintHub needs Python's venv / pip, which this computer does not have yet.\n\nInstall it now, then PrintHub, and start PrintHub?\n(asks for the administrator password; command: {cmd})",
  "prereq_run": "Installing what PrintHub needs…", "launching": "Starting PrintHub…",
  "note": "This window only runs ./install.sh for you — the command is shown above the buttons.",
@@ -91,7 +97,7 @@ STR = {
 "ka": {
  "title": "ხელსაწყოების დამყენებელი", "lang_btn": "English", "head": "მონიშნეთ პროგრამები, აირჩიეთ სად, და დააჭირეთ „დაყენებას“",
  "c_name": "პროგრამა", "c_what": "რას აკეთებს", "c_state": "დაყენებულია",
- "me": "ჩემთვის", "all": "ყველასთვის", "both": "ჩემთვის + ყველასთვის", "none": "—",
+ "me": "ჩემთვის", "all": "ყველასთვის", "both": "ჩემთვის + ყველასთვის", "none": "—", "yes": "დაყენებულია",
  "f_where": "სად", "w_user": "მხოლოდ ჩემთვის (~/.local) — პაროლი არ სჭირდება", "w_sys": "ყველასთვის (/usr/local) — ადმინისტრატორის პაროლს მოითხოვს",
  "f_opts": "ასევე", "o_desk": "იარლიყი სამუშაო მაგიდაზე", "o_fold": "ორმაგი დაწკაპების იარლიყი თითოეული პროგრამის საქაღალდეში",
  "o_note_sys": "(სამუშაო მაგიდისა და საქაღალდის იარლიყები მხოლოდ „ჩემთვის“ რეჟიმშია)",
@@ -107,6 +113,8 @@ STR = {
  "etcher_ask": "დავაყენო balenaEtcher {version}?\n\nჩამოტვირთვა: {file} ({mb} MB)\nსაიდან: {source}\nდაყენებამდე შემოწმდება SHA-256-ით:\n{sha}\n\nმერე დაყენდება სისტემის პაკეტ-მენეჯერით (ადმინისტრატორის პაროლი).",
  "etcher_manual": "balenaEtcher-ს ამ სისტემისთვის ოფიციალური პაკეტი აქ არ აქვს.\n\nაიღეთ გამომცემლის გვერდიდან:\n{url}",
  "etcher_un": "balenaEtcher",
+ "pkg_ask": "დავაყენო {name} თქვენი დისტრიბუციის რეპოზიტორიიდან?\n\nპაკეტი: {pkg}  ({pm})\n(ადმინისტრატორის პაროლი)",
+ "pkg_unknown": "ამ სისტემის პაკეტ-მენეჯერისთვის ({pm}) {name}-ის ცნობილი პაკეტი არ არის.",
  "prereq_ask": "PrintHub-ს სჭირდება Python-ის venv / pip, რაც ამ კომპიუტერზე ჯერ არ არის.\n\nდავაყენო ახლა, მერე PrintHub და გავუშვა PrintHub?\n(ადმინისტრატორის პაროლს მოითხოვს; ბრძანება: {cmd})",
  "prereq_run": "ვაყენებ იმას, რაც PrintHub-ს სჭირდება…", "launching": "ვუშვებ PrintHub-ს…",
  "note": "ეს ფანჯარა მხოლოდ ./install.sh-ს უშვებს თქვენთვის — ბრძანება ღილაკების ზემოთ ჩანს.",
@@ -338,7 +346,8 @@ class App(tk.Tk):
         r = len(TOOLS) + 1
         ttk.Label(self.box, text=t("c_other"), font=("", 9, "bold")).grid(row=r, column=1, columnspan=3, sticky="w", padx=8, pady=(8, 2))
         for r, ex in enumerate(EXTRAS, start=r + 1):
-            ver = extras.etcher_installed() if ex["id"] == "etcher" else None
+            ver = extras.etcher_installed() if ex["id"] == "etcher" else (
+                t("yes") if extras.package_installed(ex["id"]) else None)
             ttk.Checkbutton(self.box, variable=self.extra_vars[ex["id"]], command=self.sync).grid(row=r, column=0, sticky="w", pady=1)
             ttk.Label(self.box, text=ex["name"][LANG]).grid(row=r, column=1, sticky="w", padx=8)
             ttk.Label(self.box, text=ex["info"][LANG], foreground="#555555").grid(row=r, column=2, sticky="w", padx=8)
@@ -352,8 +361,10 @@ class App(tk.Tk):
         ids = self.selected_ids()
         shown = shell_line(build_command(ROOT, ids or ["…"], "install", self.where.get(),
                                          self.v_desk.get(), self.v_fold.get())) if ids or not self.selected_extras() else ""
-        if self.selected_extras():
-            shown = (shown + "\n" if shown else "") + "balenaEtcher: curl (HTTPS) → sha256sum -c → apt/dnf install (shown in full before it runs)"
+        for ex_id in self.selected_extras():
+            note = ("balenaEtcher: curl (HTTPS) → sha256sum -c → apt/dnf install (shown in full before it runs)" if ex_id == "etcher"
+                    else f"{ex_id}: the distribution's package manager (install {extras.package_name(ex_id, detect_pm()) or ex_id})")
+            shown = (shown + "\n" if shown else "") + note
         self.lbl_cmd.config(text=shown)
 
     def toggle_lang(self):
@@ -386,13 +397,14 @@ class App(tk.Tk):
         if self.busy:
             return
         ids = self.selected_ids()
-        want_etcher = "etcher" in self.selected_extras()
-        if not ids and not want_etcher:
+        extra_ids = self.selected_extras()
+        if not ids and not extra_ids:
             return messagebox.showinfo(t("title"), t("nothing"))
         system = self.where.get() == "system"
         names = "\n".join("• " + x["name"][LANG] for x in TOOLS if x["id"] in ids)
-        if want_etcher:
-            names += ("\n" if names else "") + "• " + t("etcher_un")
+        for ex in EXTRAS:
+            if ex["id"] in extra_ids:
+                names += ("\n" if names else "") + "• " + ex["name"][LANG]
         if action == "uninstall" and not messagebox.askyesno(
                 t("title"), t("confirm_un", where=t("w_sys" if system else "w_user").split(" — ")[0], names=names)):
             return
@@ -410,10 +422,11 @@ class App(tk.Tk):
             elif not messagebox.askyesno(t("title"), t("heavy")):
                 return
         extra_jobs = []
-        if want_etcher:
-            extra_jobs = self.etcher_jobs(action)
-            if extra_jobs is None:
+        for ex_id in extra_ids:
+            jobs_for = self.etcher_jobs(action) if ex_id == "etcher" else self.package_jobs(action, ex_id)
+            if jobs_for is None:
                 return
+            extra_jobs += jobs_for
         cmd, shown = None, ""
         if ids:
             cmd = build_command(ROOT, ids, action, self.where.get(), self.v_desk.get(), self.v_fold.get())
@@ -444,6 +457,26 @@ class App(tk.Tk):
             rc = run_jobs(jobs, lambda ln: to_ui(self.say, ln))
             to_ui(self.finish, rc)
         threading.Thread(target=work, daemon=True).start()
+
+    def package_jobs(self, action, app_id):
+        """Commands for a program that comes from the distribution's repositories, or None (cancelled / impossible)."""
+        pm = detect_pm()
+        name = next(x["name"][LANG] for x in EXTRAS if x["id"] == app_id)
+        steps = extras.package_steps(app_id, pm, remove=(action == "uninstall"))
+        if not steps:
+            messagebox.showinfo(t("title"), t("pkg_unknown", name=name, pm=pm or "?"))
+            return None
+        if action == "install" and not messagebox.askyesno(
+                t("title"), t("pkg_ask", name=name, pkg=extras.package_name(app_id, pm), pm=pm)):
+            return None
+        jobs = []
+        for st in steps:
+            job = elevate(["sh", "-c", st["sh"]])
+            if job is None:
+                messagebox.showwarning(t("title"), t("no_pkexec", cmd="sudo sh -c " + shlex_quote(st["sh"])))
+                return None
+            jobs.append(job)
+        return jobs
 
     def etcher_jobs(self, action):
         """Commands for balenaEtcher, or None when the user cancelled / it cannot be done (a message was shown)."""
