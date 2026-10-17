@@ -658,7 +658,7 @@ class Extras(unittest.TestCase):
         self.assertEqual(self.ex.etcher_installed(run=lambda *a, **k: R("install ok installed 2.1.7"), which=lambda c: "/x"), "2.1.7")
         self.assertIsNone(self.ex.etcher_installed(run=lambda *a, **k: R("", 1), which=lambda c: "/x"))
         self.assertIsNone(self.ex.etcher_installed(run=lambda *a, **k: R("install ok installed 1"), which=lambda c: None))
-        self.assertIn("apt-get remove -y balena-etcher", self.ex.etcher_remove_steps("apt-get")[0]["sh"])
+        self.assertIn("apt-get purge -y balena-etcher", self.ex.etcher_remove_steps("apt-get")[0]["sh"])
         self.assertEqual(self.ex.etcher_remove_steps("pacman"), [])
 
     def test_window_asks_before_downloading_then_runs_download_install_cleanup(self):
@@ -1024,7 +1024,7 @@ class VendorPrograms(unittest.TestCase):
         self.assertTrue(self.ex.deb_installed("code", run=lambda *a, **k: ok, which=lambda c: "/x"))
         self.assertFalse(self.ex.deb_installed("code", run=lambda *a, **k: gone, which=lambda c: "/x" if c == "dpkg-query" else None))
         self.assertTrue(self.ex.deb_installed("code", "code", run=lambda *a, **k: gone, which=lambda c: "/x"))
-        self.assertIn("apt-get remove -y rustdesk", self.ex.apt_remove_steps("rustdesk", "apt-get")[0]["sh"])
+        self.assertIn("apt-get purge -y rustdesk", self.ex.apt_remove_steps("rustdesk", "apt-get")[0]["sh"])
         self.assertEqual(self.ex.apt_remove_steps("rustdesk", "dnf"), [])
 
     def test_every_new_program_is_in_the_window_and_the_shortcuts(self):
@@ -1069,6 +1069,84 @@ class ProgramUpdates(unittest.TestCase):
         self.assertIsNone(self.ex.installed_version("x", run=lambda *a, **k: ok, which=lambda c: None))
 
 
+class FullRemoval(unittest.TestCase):
+    """Uninstall takes the program AND what the installer added to apt (repository entry, key) off the system."""
+    ex = Installer.m.extras
+
+    def fake_bin(self, d, insiders=False):
+        b = os.path.join(d, "bin")
+        os.makedirs(b)
+        log = os.path.join(d, "log")
+        with open(os.path.join(b, "apt-get"), "w") as f:
+            f.write(f'#!/bin/sh\necho "apt-get $*" >> {log}\n')
+        with open(os.path.join(b, "dpkg"), "w") as f:
+            f.write(f'#!/bin/sh\nexit {0 if insiders else 1}\n')
+        for n in ("apt-get", "dpkg"):
+            os.chmod(os.path.join(b, n), 0o755)
+        return b, log
+
+    def run_sh(self, sh, bindir):
+        return subprocess.run(["sh", "-c", sh], capture_output=True, text=True, env=dict(os.environ, PATH=bindir + ":" + os.environ["PATH"]))
+
+    def test_vscode_repository_and_key_go_with_the_program(self):
+        with tempfile.TemporaryDirectory() as d:
+            b, log = self.fake_bin(d)
+            src = os.path.join(d, "sources.list.d")
+            os.makedirs(src)
+            key, lst = os.path.join(d, "microsoft.gpg"), os.path.join(src, "vscode.sources")
+            for f in (key, lst):
+                open(f, "w").close()
+            sh = self.ex.vscode_remove_steps("apt-get", sources_dir=src, keyring=key, listfile=lst)[0]["sh"]
+            r = self.run_sh(sh, b)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertFalse(os.path.exists(lst))
+            self.assertFalse(os.path.exists(key))
+            self.assertIn("apt-get purge -y code", open(log).read())
+
+    def test_vscode_key_stays_when_another_source_uses_it(self):
+        with tempfile.TemporaryDirectory() as d:
+            b, log = self.fake_bin(d)
+            src = os.path.join(d, "sources.list.d")
+            os.makedirs(src)
+            key, lst = os.path.join(d, "microsoft.gpg"), os.path.join(src, "vscode.sources")
+            open(key, "w").close()
+            open(lst, "w").close()
+            with open(os.path.join(src, "edge.sources"), "w") as f:
+                f.write("Signed-By: /usr/share/keyrings/microsoft.gpg\n")
+            self.run_sh(self.ex.vscode_remove_steps("apt-get", sources_dir=src, keyring=key, listfile=lst)[0]["sh"], b)
+            self.assertFalse(os.path.exists(lst))
+            self.assertTrue(os.path.exists(key))
+
+    def test_vscode_repository_stays_when_insiders_is_installed(self):
+        with tempfile.TemporaryDirectory() as d:
+            b, log = self.fake_bin(d, insiders=True)
+            src = os.path.join(d, "s")
+            os.makedirs(src)
+            key, lst = os.path.join(d, "microsoft.gpg"), os.path.join(src, "vscode.sources")
+            open(key, "w").close()
+            open(lst, "w").close()
+            self.run_sh(self.ex.vscode_remove_steps("apt-get", sources_dir=src, keyring=key, listfile=lst)[0]["sh"], b)
+            self.assertTrue(os.path.exists(lst) and os.path.exists(key))
+
+    def test_claude_files_are_removed(self):
+        with tempfile.TemporaryDirectory() as d:
+            b, log = self.fake_bin(d)
+            key, lst = os.path.join(d, "k.asc"), os.path.join(d, "c.list")
+            open(key, "w").close()
+            open(lst, "w").close()
+            self.run_sh(self.ex.claude_remove_steps("apt-get", keyring=key, listfile=lst)[0]["sh"], b)
+            self.assertFalse(os.path.exists(key) or os.path.exists(lst))
+            self.assertIn("apt-get purge -y claude-desktop", open(log).read())
+
+    def test_every_removal_on_apt_is_a_purge_and_others_stay_possible(self):
+        for sh in (self.ex.etcher_remove_steps("apt-get")[0]["sh"], self.ex.brave_remove_steps("apt-get")[0]["sh"],
+                   self.ex.apt_remove_steps("x", "apt-get")[0]["sh"], self.ex.package_steps("k3b", "apt-get", remove=True)[0]["sh"]):
+            self.assertIn("apt-get purge -y", sh)
+            self.assertNotIn("apt-get remove", sh)
+        self.assertEqual(self.ex.vscode_remove_steps("dnf"), [])
+        self.assertIn("dnf remove", self.ex.etcher_remove_steps("dnf")[0]["sh"])
+
+
 class ClaudeDesktop(unittest.TestCase):
     ex = Installer.m.extras
 
@@ -1093,7 +1171,7 @@ class ClaudeDesktop(unittest.TestCase):
                       "https://downloads.claude.ai/claude-desktop/apt/stable stable main", sh)
         self.assertIn("/etc/apt/sources.list.d/claude-desktop.list", sh)
         self.assertTrue(sh.rstrip().endswith("apt-get install -y claude-desktop"))
-        self.assertIn("apt-get remove -y claude-desktop", self.ex.claude_remove_steps("apt-get")[0]["sh"])
+        self.assertIn("apt-get purge -y claude-desktop", self.ex.claude_remove_steps("apt-get")[0]["sh"])
         self.assertEqual(self.ex.claude_remove_steps("dnf"), [])
         self.assertTrue(self.ex.claude_installed(which=lambda c: "/usr/bin/claude-desktop"))
         self.assertFalse(self.ex.claude_installed(which=lambda c: None))
@@ -1268,7 +1346,7 @@ class Brave(unittest.TestCase):
 
     def test_remove_steps(self):
         apt = self.ex.brave_remove_steps("apt-get")[0]["sh"]
-        self.assertIn("apt-get remove -y brave-browser", apt)
+        self.assertIn("apt-get purge -y brave-browser", apt)
         self.assertIn("brave-browser-release.sources", apt)                         # the repository the script added
         self.assertIn("brave-browser-archive-keyring.gpg", apt)
         self.assertIn("dnf remove -y brave-browser", self.ex.brave_remove_steps("dnf")[0]["sh"])
@@ -1325,7 +1403,7 @@ class PackagePrograms(unittest.TestCase):
         self.assertEqual(set(self.ex.PACKAGE_APPS), {"brasero", "xfburn", "k3b"})
         self.assertEqual({x["id"] for x in Installer.m.EXTRAS}, set(self.ex.PACKAGE_APPS) | {"etcher", "brave", "claude", "vscode", "discord"} | set(self.ex.GITHUB_APPS))   # window and logic agree
         self.assertEqual({x["id"] for x in Shortcuts.m.TOOLS} >= set(self.ex.PACKAGE_APPS), True)       # and shortcuts know them
-        self.assertIn("apt-get remove -y brasero", self.ex.package_steps("brasero", "apt-get", remove=True)[0]["sh"])
+        self.assertIn("apt-get purge -y brasero", self.ex.package_steps("brasero", "apt-get", remove=True)[0]["sh"])
         self.assertIn("pacman -R --noconfirm brasero", self.ex.package_steps("brasero", "pacman", remove=True)[0]["sh"])
         self.assertEqual(self.ex.package_steps("brasero", "unknown-pm"), [])
         self.assertEqual(self.ex.package_steps("brasero", ""), [])
@@ -1356,7 +1434,7 @@ class PackagePrograms(unittest.TestCase):
             self.assertIn("No known Brasero package", asked[-1])
             m.detect_pm = lambda: "apt-get"
             removal = m.App.package_jobs(object(), "uninstall", "brasero")                 # removal is confirmed by the window
-            self.assertIn("apt-get remove -y brasero", removal[0][3])
+            self.assertIn("apt-get purge -y brasero", removal[0][3])
         finally:
             for k, v in saved.items():
                 setattr(m, k, v)

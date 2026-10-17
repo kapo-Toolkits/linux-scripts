@@ -93,7 +93,7 @@ def etcher_steps(release, pm, arch, cache_dir=None):
 
 
 def etcher_remove_steps(pm):
-    cmd = {"apt-get": f"apt-get remove -y {ETCHER_PACKAGE}", "dnf": f"dnf remove -y {ETCHER_PACKAGE}",
+    cmd = {"apt-get": f"apt-get purge -y {ETCHER_PACKAGE}", "dnf": f"dnf remove -y {ETCHER_PACKAGE}",
            "zypper": f"zypper --non-interactive remove {ETCHER_PACKAGE}"}.get(pm)
     return [{"root": True, "sh": f"set -u\n{cmd}\n"}] if cmd else []
 
@@ -146,8 +146,8 @@ def brave_steps(script_path):
 
 def brave_remove_steps(pm):
     """Package plus the repository files the script added (apt); rpm distributions keep their repo file."""
-    cmds = {"apt-get": "apt-get remove -y brave-browser\nrm -f /etc/apt/sources.list.d/brave-browser-release.sources "
-                       "/usr/share/keyrings/brave-browser-archive-keyring.gpg\napt-get update",
+    cmds = {"apt-get": "apt-get purge -y brave-browser\nrm -f /etc/apt/sources.list.d/brave-browser-release.sources "
+                       "/usr/share/keyrings/brave-browser-archive-keyring.gpg\napt-get update || true",
             "dnf": "dnf remove -y brave-browser", "yum": "yum remove -y brave-browser",
             "zypper": "zypper --non-interactive remove brave-browser",
             "pacman": "pacman -R --noconfirm brave-browser || pacman -R --noconfirm brave-bin"}
@@ -197,9 +197,14 @@ apt-get install -y claude-desktop
     return [{"root": True, "sh": sh}], {"fingerprint": fpr, "url": url, "repo": line, "key": keyring}
 
 
-def claude_remove_steps(pm):
-    """The package's own removal also drops the repository entry and key it registered (vendor docs)."""
-    return [{"root": True, "sh": "set -u\napt-get remove -y claude-desktop\n"}] if pm == "apt-get" else []
+def claude_remove_steps(pm, keyring=None, listfile=None):
+    """Purge the package, then drop the repository entry and key this installer registered (the package's own removal does
+    the same per the vendor docs; removing the files again is harmless)."""
+    if pm != "apt-get":
+        return []
+    q = shlex.quote
+    return [{"root": True, "sh": f"set -u\napt-get purge -y claude-desktop\nrm -f {q(listfile or CLAUDE_LIST)} {q(keyring or CLAUDE_KEYRING)}\n"
+                                 "apt-get update || true\n"}]
 
 
 def claude_installed(which=shutil.which):
@@ -307,7 +312,7 @@ def outdated(installed=installed_version, github=None, etcher=None):
 
 
 def apt_remove_steps(package, pm):
-    return [{"root": True, "sh": f"set -u\napt-get remove -y {package}\n"}] if pm == "apt-get" else []
+    return [{"root": True, "sh": f"set -u\napt-get purge -y {package}\n"}] if pm == "apt-get" else []
 
 
 # ---- Visual Studio Code: Microsoft's apt repository, key fingerprint checked ----
@@ -347,6 +352,23 @@ apt-get install -y code
 """
     return [{"root": True, "sh": sh}], {"fingerprint": fpr, "url": url, "key": keyring}
 
+def vscode_remove_steps(pm, sources_dir="/etc/apt/sources.list.d", keyring=None, listfile=None):
+    """Purge `code`, then remove Microsoft's source file for it (and the key when nothing else in apt's sources uses it):
+    a system without VS Code should not keep checking Microsoft's repository."""
+    if pm != "apt-get":
+        return []
+    q = shlex.quote
+    keyring, listfile = keyring or VSCODE_KEYRING, listfile or VSCODE_LIST
+    sh = f"""set -u
+apt-get purge -y code
+if ! dpkg -s code-insiders >/dev/null 2>&1; then
+  rm -f {q(listfile)} {q(sources_dir)}/vscode.list
+  if ! grep -rqs {q(os.path.basename(keyring))} {q(sources_dir)} /etc/apt/sources.list 2>/dev/null; then rm -f {q(keyring)}; fi
+fi
+apt-get update || true
+"""
+    return [{"root": True, "sh": sh}]
+
 
 # ---- Discord: the publisher's own .deb (https://discord.com/download).  Discord publishes no checksum, so only HTTPS protects it ----
 DISCORD_URL = "https://discord.com/api/download?platform=linux&format=deb"
@@ -379,7 +401,7 @@ PACKAGE_APPS = {"brasero": {"cmd": "brasero", "name": "Brasero"},
 _INSTALL = {"apt-get": "apt-get install -y {p}", "dnf": "dnf install -y {p}", "yum": "yum install -y {p}",
             "pacman": "pacman -S --noconfirm {p}", "zypper": "zypper --non-interactive install {p}",
             "apk": "apk add {p}", "xbps-install": "xbps-install -y {p}"}
-_REMOVE = {"apt-get": "apt-get remove -y {p}", "dnf": "dnf remove -y {p}", "yum": "yum remove -y {p}",
+_REMOVE = {"apt-get": "apt-get purge -y {p}", "dnf": "dnf remove -y {p}", "yum": "yum remove -y {p}",
            "pacman": "pacman -R --noconfirm {p}", "zypper": "zypper --non-interactive remove {p}",
            "apk": "apk del {p}", "xbps-install": "xbps-remove -y {p}"}
 

@@ -1060,7 +1060,7 @@ class App(tk.Tk):
         import platform
         pm = detect_pm()
         if action == "uninstall":
-            steps = extras.apt_remove_steps("code", pm)
+            steps = extras.vscode_remove_steps(pm)
         else:
             steps, info = extras.vscode_steps(pm, platform.machine())
             if steps and not messagebox.askyesno(t("title"), t("vscode_ask", fpr=info["fingerprint"])):
