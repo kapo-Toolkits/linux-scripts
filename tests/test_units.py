@@ -1335,6 +1335,22 @@ class RunControl(unittest.TestCase):
         self.assertEqual((rc2, lines2), (0, ["finished\n"]))
 
 
+class AutoApply(unittest.TestCase):
+    f = staticmethod(Installer.m.should_auto_apply)
+
+    def test_it_is_opt_in_and_only_for_clear_cases(self):
+        git = {"mode": "git", "behind": 2, "local": {"dirty": []}}
+        self.assertFalse(self.f(git, {}))                                       # off by default
+        self.assertTrue(self.f(git, {"auto_apply_update": True}))
+        self.assertFalse(self.f(dict(git, local={"dirty": ["install.sh"]}), {"auto_apply_update": True}))   # local changes
+        self.assertFalse(self.f(dict(git, ahead=1), {"auto_apply_update": True}))                           # local commits
+        self.assertFalse(self.f(dict(git, behind=0), {"auto_apply_update": True}))
+        self.assertTrue(self.f({"mode": "archive", "behind": 3, "local": {}}, {"auto_apply_update": True}))
+        self.assertFalse(self.f({"mode": "archive", "behind": None, "local": {}}, {"auto_apply_update": True}))  # unknown: show list first
+        self.assertFalse(self.f({"mode": "adopt", "behind": None, "local": {}}, {"auto_apply_update": True}))
+        self.assertFalse(self.f(None, {"auto_apply_update": True}))
+
+
 class ClaudeDesktop(unittest.TestCase):
     ex = Installer.m.extras
 

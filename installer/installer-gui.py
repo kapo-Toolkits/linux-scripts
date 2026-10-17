@@ -163,6 +163,7 @@ STR = {
  "flatpak_ask": "Install {name} as a Flatpak?\n\nFrom Flathub ({source}), id {fid}. Installed for you only, no administrator password.{extra}",
  "flatpak_need": "\n\nFlatpak itself is not installed yet: it is installed first from your distribution's repositories (administrator password).",
  "cancel": "Cancel", "cancelling": "Cancelling…", "cancelled": "Cancelled. Nothing further was run.", "downloading": "Downloading… {pct}%",
+ "upd_apply": "Install updates automatically at start-up (only when nothing was changed here; the window restarts)",
  "repo_url": "Could not open a browser. The project page:\n{url}",
  "upd_nogit": "git is not installed on this computer: updating works without it (Python downloads GitHub's snapshot).",
  "upd_archive": "This copy: GitHub commit {short} (updated without git)\nFolder: {folder}",
@@ -226,6 +227,7 @@ STR = {
  "flatpak_ask": "დავაყენო {name} Flatpak-ად?\n\nFlathub-იდან ({source}), id {fid}. დაყენდება მხოლოდ თქვენთვის, ადმინისტრატორის პაროლის გარეშე.{extra}",
  "flatpak_need": "\n\nთვით Flatpak ჯერ დაყენებული არ არის: ჯერ დაგენდება თქვენი დისტრიბუციის რეპოზიტორიიდან (ადმინისტრატორის პაროლი).",
  "cancel": "გაუქმება", "cancelling": "ვაუქმებ…", "cancelled": "გაუქმდა. მეტი არაფერი გაშვებულა.", "downloading": "მიმდინარეობს ჩამოტვირთვა… {pct}%",
+ "upd_apply": "განახლებების ავტომატური დაყენება გახსნისას (მხოლოდ თუ აქ არაფერია შეცვლილი; ფანჯარა თავიდან გაიხსნება)",
  "repo_url": "ბრაუზერის გახსნა ვერ მოხერხდა. პროექტის გვერდი:\n{url}",
  "upd_nogit": "ამ კომპიუტერზე git დაყენებული არ არის: განახლება მის გარეშეც მუშაობს (Python ჩამოტვირთავს GitHub-ის ასლს).",
  "upd_archive": "ეს ასლი: GitHub-ის კომიტი {short} (განახლებულია git-ის გარეშე)\nსაქაღალდე: {folder}",
@@ -395,6 +397,16 @@ def banner_for(res, settings, now):
     if res["mode"] == "adopt" and float(settings.get("update_snooze_until", 0) or 0) <= now:
         return ("plain", None)
     return None
+
+
+def should_auto_apply(res, settings):
+    """Automatic updating is opt-in and only for the clear cases: a git checkout with nothing changed locally, or a copy whose
+    GitHub commit is known (archive mode). Never for an unknown version (the user must see the file list first)."""
+    if not settings.get("auto_apply_update", False) or not res or not res.get("behind"):
+        return False
+    if res["mode"] == "git":
+        return not res["local"].get("dirty") and not res.get("ahead")
+    return res["mode"] == "archive"
 
 
 def reinstall_ids(tools, installed_fn):
@@ -940,9 +952,19 @@ class App(tk.Tk):
             st["last_update_check"] = time.time()
             updater.save_settings(st)
             found = banner_for(res, st, time.time())
-            if found:
+            if found and found[0] == "behind" and should_auto_apply(res, st):
+                self.ui(self.auto_apply, res, st.get("reinstall_after_update", True))
+            elif found:
                 self.ui(self.show_banner, found)
         threading.Thread(target=work, daemon=True).start()
+
+    def auto_apply(self, res, reinstall):
+        """The user switched on 'install updates automatically': bring the toolkit up to date now (the window restarts)."""
+        if self.busy:
+            return self.show_banner(("behind", res["behind"]))
+        self.busy = True
+        self.lbl_status.config(text=t("upd_working"))
+        threading.Thread(target=self.do_update, args=(res, reinstall), daemon=True).start()
 
     def show_banner(self, found):
         kind, n = found
@@ -970,13 +992,16 @@ class App(tk.Tk):
         settings = updater.load_settings()
         v_auto = tk.BooleanVar(value=settings.get("auto_update_check", True))
         v_re = tk.BooleanVar(value=settings.get("reinstall_after_update", True))
+        v_apply = tk.BooleanVar(value=settings.get("auto_apply_update", False))
 
         def persist():
             st = updater.load_settings()
             st["auto_update_check"], st["reinstall_after_update"] = v_auto.get(), v_re.get()
+            st["auto_apply_update"] = v_apply.get()
             updater.save_settings(st)
         ttk.Checkbutton(win, text=t("upd_auto"), variable=v_auto, command=persist).pack(anchor="w", padx=12)
         ttk.Checkbutton(win, text=t("upd_reinstall"), variable=v_re, command=persist).pack(anchor="w", padx=12)
+        ttk.Checkbutton(win, text=t("upd_apply"), variable=v_apply, command=persist).pack(anchor="w", padx=12)
         ttk.Button(win, text="GitHub ↗  " + updater.REPO_PAGE.split("://", 1)[1], command=self.open_repo).pack(anchor="w", padx=12, pady=(6, 0))
         bar = ttk.Frame(win)
         bar.pack(fill="x", padx=12, pady=(10, 4))
