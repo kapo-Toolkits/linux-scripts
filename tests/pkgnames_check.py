@@ -14,7 +14,8 @@ CHECK = {
     "dnf": lambda p: ["dnf", "-q", "info", p],
     "yum": lambda p: ["yum", "-q", "info", p],
     "pacman": lambda p: ["pacman", "-Si", p],
-    "zypper": lambda p: ["sh", "-c", f"zypper -q --non-interactive info {p} | grep -q '^Name'"],
+    # a dry-run install also resolves capabilities (openSUSE has python313 and only *provides* python3 / python3-tk)
+    "zypper": lambda p: ["zypper", "--non-interactive", "install", "--dry-run", p],
     "apk": lambda p: ["sh", "-c", f"apk search -e {p} | grep -q ."],
 }
 print(f"package manager: {pm}")
@@ -40,5 +41,13 @@ for rid, spec in sorted(requirements.REQ.items()):
         ok = subprocess.run(CHECK[pm](pkg), capture_output=True).returncode == 0
         bad += not ok
         print(("PASS" if ok else "FAIL"), f"req:{rid:10s} -> {pkg}")
+# the packages that tkinter auto-install and installer/start.sh rely on (a wrong name only shows on that distribution)
+extra = {pkg for mgr, _cmd, pkg in lscommon.TK_PACKAGES if mgr == pm} | set(lscommon.PYTHON_BOOTSTRAP.get(pm, []))
+for pkg in sorted(extra):
+    if pm not in CHECK:
+        break
+    ok = subprocess.run(CHECK[pm](pkg), capture_output=True).returncode == 0
+    bad += not ok
+    print(("PASS" if ok else "FAIL"), f"bootstrap  -> {pkg}")
 print("install hint:", lscommon.install_command([(c, v.get(pm)) for c, v in lscommon.PKG_FOR.items()], pm))
 sys.exit(1 if bad else 0)

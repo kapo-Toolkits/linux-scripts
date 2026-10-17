@@ -17,9 +17,14 @@ TK_PACKAGES = [
     ("yum", ["yum", "install", "-y"], "python3-tkinter"),
     ("pacman", ["pacman", "-S", "--noconfirm"], "tk"),
     ("zypper", ["zypper", "--non-interactive", "install"], "python3-tk"),
-    ("apk", ["apk", "add"], "py3-tkinter"),
+    ("apk", ["apk", "add"], "python3-tkinter"),
     ("xbps-install", ["xbps-install", "-y"], "python3-tkinter"),
 ]
+
+
+# what installer/start.sh installs when the system has no Python (tests/pkgnames_check.py checks these names per distribution)
+PYTHON_BOOTSTRAP = {"apt-get": ["python3", "python3-tk"], "dnf": ["python3", "python3-tkinter"],
+                    "pacman": ["python", "tk"], "zypper": ["python3", "python3-tk"], "apk": ["python3", "python3-tkinter"]}
 
 
 def load_lang(default="en"):

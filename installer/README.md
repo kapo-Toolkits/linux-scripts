@@ -8,11 +8,33 @@ python3 installer/installer-gui.py
 ```
 
 **One click from the file manager:** double-click `start-installer.desktop` in the top folder of this checkout. It is made for
-your machine (absolute paths, so it is not in git); create it once with
+the place the folder lives in (absolute paths, so it is **not** in git and does **not** survive copying the folder to another
+computer or path). Make it once on every computer — this needs nothing but `sh`, no Python, no executable bit:
 
 ```bash
-python3 installer/installer-gui.py --make-launcher
+sh installer/start.sh --make-launcher              # icon in this folder
+sh installer/start.sh --make-launcher --desktop    # ... and a copy on the Desktop
 ```
+
+### On a new computer (fresh Linux Mint XFCE, …)
+
+```bash
+sudo apt install git python3             # python3 is usually there already
+git clone https://github.com/kapo-Toolkits/linux-scripts.git
+cd linux-scripts
+sh installer/start.sh                    # opens the window; run it in a terminal the first time, so you see any message
+sh installer/start.sh --make-launcher --desktop
+```
+
+If the window does not open, `installer/start.sh` **says why in a message window** (python3 missing, the folder was copied
+incompletely, or the last lines of the error) and keeps the full log in `~/.cache/linux-scripts/start.log`.
+
+**No Python on the computer at all?** `start.sh` notices, **asks**, and installs it for you (`python3` + `tkinter`: `apt`
+`python3 python3-tk`, `dnf` `python3 python3-tkinter`, `pacman` `python tk`, `zypper` `python3 python3-tk`, `apk` `python3
+python3-tkinter`), with a graphical password prompt (or `sudo` in a terminal), then goes on and opens the window. The package
+names are checked against each distribution's repositories in CI (`tests/pkgnames_check.py`).
+If the file manager shows “untrusted launcher”: right-click the icon → *Allow Launching* (or `chmod +x` it), and a copied
+icon from another computer points to the OLD path - make a new one with the command above.
 
 ## The window
 

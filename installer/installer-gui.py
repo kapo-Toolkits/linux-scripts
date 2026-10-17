@@ -239,12 +239,14 @@ def run_command(cmd, on_line):
 
 
 def launcher_text(root):
-    """A double-click launcher for this window, placed in the checkout's top folder (absolute paths: %k does not work)."""
+    """A double-click launcher for this window, placed in the checkout's top folder (absolute paths: %k does not work).
+    It goes through installer/start.sh, which shows a message window when the installer cannot start; `sh` means no
+    executable bit is needed, so it also works from a copied or unzipped folder."""
     return "\n".join([
         "[Desktop Entry]", "Type=Application",
         "Name=Install apps (Toolkit Installer)", "Name[ka]=პროგრამების დაყენება (ხელსაწყოების დამყენებელი)",
         "Comment=Tick programs and install them with one click · მონიშნეთ პროგრამები და დააყენეთ",
-        f"Exec=python3 {os.path.join(root, 'installer', 'installer-gui.py')}", f"Path={root}",
+        f'Exec=sh "{os.path.join(root, "installer", "start.sh")}"', f"Path={root}",
         "Icon=system-software-install", "Terminal=false", "Categories=System;Utility;", ""])
 
 
