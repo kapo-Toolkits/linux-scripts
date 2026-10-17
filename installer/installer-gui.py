@@ -117,6 +117,7 @@ STR = {
  "upd_reinstall": "After updating, reinstall the programs I have installed (for me)",
  "upd_adopt_ask": "This folder is a plain copy. Connect it to GitHub and bring it to the latest version?\n\nFiles that git tracks here are replaced by the latest ones; other files (like start-installer.desktop) stay.",
  "upd_done": "Updated. The installer restarts now.", "upd_failed": "Not updated:\n{e}",
+ "repo_url": "Could not open a browser. The project page:\n{url}",
  "upd_nogit": "git is not installed on this computer: updating works without it (Python downloads GitHub's snapshot).",
  "upd_archive": "This copy: GitHub commit {short} (updated without git)\nFolder: {folder}",
  "upd_banner": "{n} new change(s) on GitHub", "upd_banner_plain": "This folder is a plain copy. Connect it to GitHub to get updates.",
@@ -161,6 +162,7 @@ STR = {
  "upd_reinstall": "განახლების შემდეგ ხელახლა დავაყენო ჩემთვის დაყენებული პროგრამები",
  "upd_adopt_ask": "ეს საქაღალდე უბრალო ასლია. მივაერთო GitHub-ს და გავაახლო ბოლო ვერსიამდე?\n\nფაილები, რასაც git აკონტროლებს, ჩანაცვლდება უახლესით; სხვა ფაილები (მაგ. start-installer.desktop) დარჩება.",
  "upd_done": "განახლდა. ინსტალერი ახლა თავიდან გაიხსნება.", "upd_failed": "ვერ განახლდა:\n{e}",
+ "repo_url": "ბრაუზერის გახსნა ვერ მოხერხდა. პროექტის გვერდი:\n{url}",
  "upd_nogit": "ამ კომპიუტერზე git დაყენებული არ არის: განახლება მის გარეშეც მუშაობს (Python ჩამოტვირთავს GitHub-ის ასლს).",
  "upd_archive": "ეს ასლი: GitHub-ის კომიტი {short} (განახლებულია git-ის გარეშე)\nსაქაღალდე: {folder}",
  "upd_banner": "GitHub-ზე {n} ახალი ცვლილებაა", "upd_banner_plain": "ეს საქაღალდე უბრალო ასლია. მიაერთეთ GitHub-ს, რომ განახლებები მიიღოთ.",
@@ -731,6 +733,7 @@ class App(tk.Tk):
             updater.save_settings(st)
         ttk.Checkbutton(win, text=t("upd_auto"), variable=v_auto, command=persist).pack(anchor="w", padx=12)
         ttk.Checkbutton(win, text=t("upd_reinstall"), variable=v_re, command=persist).pack(anchor="w", padx=12)
+        ttk.Button(win, text="GitHub ↗  " + updater.REPO_PAGE.split("://", 1)[1], command=self.open_repo).pack(anchor="w", padx=12, pady=(6, 0))
         bar = ttk.Frame(win)
         bar.pack(fill="x", padx=12, pady=10)
         b_check = ttk.Button(bar, text=t("upd_check"))
@@ -793,6 +796,16 @@ class App(tk.Tk):
         b_check.config(command=do_check)
         b_now.config(command=do_now)
         do_check()
+
+    def open_repo(self):
+        """Open the project's GitHub page in the default browser; when that is not possible, show the address."""
+        import webbrowser
+        try:
+            opened = webbrowser.open(updater.REPO_PAGE)
+        except Exception:  # noqa: BLE001
+            opened = False
+        if not opened:
+            messagebox.showinfo(t("settings"), t("repo_url", url=updater.REPO_PAGE))
 
     def do_update(self, res, reinstall):
         """Worker thread: update (or adopt), reinstall the installed programs, then restart. Every UI touch goes through ui()."""

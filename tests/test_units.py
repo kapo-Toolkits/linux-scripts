@@ -865,6 +865,14 @@ class UpdaterWithoutGit(unittest.TestCase):
             ok, msg = self.u.update_archive(d, self.SHA2)                # no install.sh there
             self.assertFalse(ok)
 
+    def test_settings_has_a_github_button(self):
+        self.assertEqual(self.u.REPO_PAGE, "https://github.com/kapo-Toolkits/linux-scripts")
+        self.assertEqual(self.u.REPO_URL, self.u.REPO_PAGE + ".git")
+        self.assertTrue(hasattr(Installer.m.App, "open_repo"))
+        with mock.patch("webbrowser.open", return_value=True) as wb:
+            Installer.m.App.open_repo(object())
+        wb.assert_called_once_with(self.u.REPO_PAGE)
+
     def test_apply_dispatches_and_banner(self):
         with mock.patch.object(self.u, "update_archive", return_value=(True, "ok")) as ua:
             self.assertEqual(self.u.apply("/x", {"mode": "archive", "latest": self.SHA2}), (True, "ok"))

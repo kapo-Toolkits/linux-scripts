@@ -23,6 +23,7 @@ import time
 import urllib.request
 
 REPO_URL = "https://github.com/kapo-Toolkits/linux-scripts.git"
+REPO_PAGE = "https://github.com/kapo-Toolkits/linux-scripts"       # shown as a button in Settings
 BRANCH = "main"
 API = "https://api.github.com/repos/kapo-Toolkits/linux-scripts"
 ARCHIVE = "https://codeload.github.com/kapo-Toolkits/linux-scripts/tar.gz/"      # + commit id
