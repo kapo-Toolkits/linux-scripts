@@ -766,6 +766,89 @@ class Updater(unittest.TestCase):
         self.assertTrue(self.up.should_check({"last_update_check": 1000}, now=1000 + self.up.CHECK_INTERVAL))
 
 
+class VendorPrograms(unittest.TestCase):
+    """VS Code, Discord, RustDesk, Tabby, WinBoat, ArtCraft: how they are fetched and verified."""
+    ex = Installer.m.extras
+
+    def release(self, app_id, names):
+        v = "9.9.9"
+        return {"tag": "v" + v, "version": v,
+                "assets": {n.format(v=v): {"url": "https://github.com/x/" + n.format(v=v), "size": 5 << 20, "sha256": "ab" * 32}
+                           for n in names}}
+
+    def test_github_apps_pick_the_right_deb_and_gate_on_sha256(self):
+        for app_id, app in self.ex.GITHUB_APPS.items():
+            rel = self.release(app_id, app["asset"].values())
+            steps, info = self.ex.github_steps(app_id, rel, "apt-get", "x86_64")
+            self.assertEqual([x["root"] for x in steps], [False, True, False], app_id)
+            self.assertIn("sha256sum -c", steps[0]["sh"])
+            self.assertIn("--proto '=https'", steps[0]["sh"])
+            self.assertLess(steps[0]["sh"].index("sha256sum -c"), steps[0]["sh"].index("mv "))
+            self.assertIn("apt-get install -y", steps[1]["sh"])
+            self.assertEqual(info["sha256"], "ab" * 32)
+            for st in steps:
+                self.assertEqual(subprocess.run(["sh", "-n", "-c", st["sh"]], capture_output=True).returncode, 0, app_id)
+            for pm, arch in (("dnf", "x86_64"), ("apt-get", "i386"), ("pacman", "x86_64")):
+                steps, info = self.ex.github_steps(app_id, rel, pm, arch)
+                self.assertEqual(steps, [])
+                self.assertIn("github.com/" + app["repo"], info["manual"])
+
+    def test_no_digest_means_no_install(self):
+        rel = self.release("tabby", self.ex.GITHUB_APPS["tabby"]["asset"].values())
+        for a in rel["assets"].values():
+            a["sha256"] = ""
+        self.assertEqual(self.ex.github_steps("tabby", rel, "apt-get", "amd64")[0], [])
+
+    def test_arm_only_where_the_project_ships_it(self):
+        for app_id, ok in (("rustdesk", True), ("tabby", True), ("artcraft", True), ("winboat", False)):
+            rel = self.release(app_id, self.ex.GITHUB_APPS[app_id]["asset"].values())
+            self.assertEqual(bool(self.ex.github_steps(app_id, rel, "apt-get", "aarch64")[0]), ok, app_id)
+
+    def test_release_lookup_reads_digests(self):
+        data = {"tag_name": "v1.2", "assets": [{"name": "a.deb", "browser_download_url": "https://h/a.deb", "size": 3,
+                                                  "digest": "sha256:" + "cd" * 32}, {"name": "b", "browser_download_url": "u"}]}
+        rel = self.ex.github_release("winboat", fetch=lambda url: data)
+        self.assertEqual(rel["version"], "1.2")
+        self.assertEqual(rel["assets"]["a.deb"]["sha256"], "cd" * 32)
+        self.assertEqual(rel["assets"]["b"]["sha256"], "")
+
+    def test_vscode_recipe(self):
+        steps, info = self.ex.vscode_steps("apt-get", "amd64")
+        sh = steps[0]["sh"]
+        self.assertEqual(subprocess.run(["sh", "-n", "-c", sh], capture_output=True).returncode, 0)
+        self.assertIn("BC528686B50D79E339D3721CEB3E94ADBE1229CF", sh)
+        self.assertLess(sh.index("KEY FINGERPRINT MISMATCH"), sh.index("install -D -m644"))
+        self.assertIn("https://packages.microsoft.com/repos/code", sh)
+        self.assertTrue(sh.rstrip().endswith("apt-get install -y code"))
+        self.assertEqual(self.ex.vscode_steps("dnf", "x86_64")[0], [])
+
+    def test_discord_recipe(self):
+        steps, info = self.ex.discord_steps("apt-get", "x86_64")
+        self.assertEqual([x["root"] for x in steps], [False, True, False])
+        self.assertIn("--proto '=https'", steps[0]["sh"])
+        self.assertIn("--proto-redir '=https'", steps[0]["sh"])
+        self.assertIn("grep -qx discord", steps[0]["sh"])             # what arrived must be the discord package
+        for st in steps:
+            self.assertEqual(subprocess.run(["sh", "-n", "-c", st["sh"]], capture_output=True).returncode, 0)
+        self.assertEqual(self.ex.discord_steps("apt-get", "aarch64")[0], [])
+
+    def test_installed_and_remove(self):
+        ok = types.SimpleNamespace(returncode=0, stdout="install ok installed")
+        gone = types.SimpleNamespace(returncode=1, stdout="")
+        self.assertTrue(self.ex.deb_installed("code", run=lambda *a, **k: ok, which=lambda c: "/x"))
+        self.assertFalse(self.ex.deb_installed("code", run=lambda *a, **k: gone, which=lambda c: "/x" if c == "dpkg-query" else None))
+        self.assertTrue(self.ex.deb_installed("code", "code", run=lambda *a, **k: gone, which=lambda c: "/x"))
+        self.assertIn("apt-get remove -y rustdesk", self.ex.apt_remove_steps("rustdesk", "apt-get")[0]["sh"])
+        self.assertEqual(self.ex.apt_remove_steps("rustdesk", "dnf"), [])
+
+    def test_every_new_program_is_in_the_window_and_the_shortcuts(self):
+        ids = {x["id"] for x in Installer.m.EXTRAS}
+        sc = {x["id"] for x in load("shortcuts/shortcuts-gui.py").TOOLS}
+        for i in ("vscode", "discord", *self.ex.GITHUB_APPS):
+            self.assertIn(i, ids)
+            self.assertIn(i, sc)
+
+
 class ClaudeDesktop(unittest.TestCase):
     ex = Installer.m.extras
 
@@ -1020,7 +1103,7 @@ class PackagePrograms(unittest.TestCase):
                 self.assertEqual(subprocess.run(["sh", "-n", "-c", steps[0]["sh"]], capture_output=True).returncode, 0)
                 self.assertEqual(self.ex.package_name(app, pm), app)
         self.assertEqual(set(self.ex.PACKAGE_APPS), {"brasero", "xfburn", "k3b"})
-        self.assertEqual({x["id"] for x in Installer.m.EXTRAS}, set(self.ex.PACKAGE_APPS) | {"etcher", "brave", "claude"})   # window and logic agree
+        self.assertEqual({x["id"] for x in Installer.m.EXTRAS}, set(self.ex.PACKAGE_APPS) | {"etcher", "brave", "claude", "vscode", "discord"} | set(self.ex.GITHUB_APPS))   # window and logic agree
         self.assertEqual({x["id"] for x in Shortcuts.m.TOOLS} >= set(self.ex.PACKAGE_APPS), True)       # and shortcuts know them
         self.assertIn("apt-get remove -y brasero", self.ex.package_steps("brasero", "apt-get", remove=True)[0]["sh"])
         self.assertIn("pacman -R --noconfirm brasero", self.ex.package_steps("brasero", "pacman", remove=True)[0]["sh"])
