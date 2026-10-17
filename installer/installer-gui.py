@@ -56,56 +56,58 @@ TOOLS = [
      "info": {"en": "print PDFs, images, Office files (downloads ~200 MB)", "ka": "PDF, სურათები, Office ფაილები (ჩამოტვირთავს ~200 MB)"}},
 ]
 
+GROUP_TEXT = {"dev": "g_dev", "net": "g_net", "disk": "g_disk", "more": "g_more"}
+
 # installed from the publisher (not by install.sh): shown in their own block, never ticked by default
 EXTRAS = [
-    {"id": "claude",
+    {"id": "claude", "group": "dev",
      "name": {"en": "Claude Desktop (beta)", "ka": "Claude Desktop (ბეტა)"},
      "info": {"en": "the Claude app: Chat, Cowork, Claude Code; Ubuntu / Debian / Mint; from Anthropic's apt repository",
               "ka": "Claude-ის აპლიკაცია: Chat, Cowork, Claude Code; Ubuntu / Debian / Mint; Anthropic-ის apt რეპოზიტორიიდან"}},
-    {"id": "vscode",
+    {"id": "vscode", "group": "dev",
      "name": {"en": "Visual Studio Code", "ka": "Visual Studio Code"},
      "info": {"en": "code editor; from Microsoft's apt repository (key fingerprint checked); updates via apt",
               "ka": "კოდის რედაქტორი; Microsoft-ის apt რეპოზიტორიიდან (გასაღების თითის ანაბეჭდი მოწმდება); განახლება apt-ით"}},
-    {"id": "discord",
-     "name": {"en": "Discord", "ka": "Discord"},
-     "info": {"en": "chat and voice; the publisher's own .deb (no checksum is published, only HTTPS)",
-              "ka": "ჩატი და ხმა; გამომცემლის საკუთარი .deb (კონტროლური ჯამი არ ქვეყნდება, მხოლოდ HTTPS)"}},
-    {"id": "rustdesk",
-     "name": {"en": "RustDesk", "ka": "RustDesk"},
-     "info": {"en": "remote desktop; .deb from the project's GitHub release, SHA-256 checked",
-              "ka": "დისტანციური სამუშაო მაგიდა; .deb პროექტის GitHub-იდან, SHA-256 მოწმდება"}},
-    {"id": "tabby",
+    {"id": "tabby", "group": "dev",
      "name": {"en": "Tabby", "ka": "Tabby"},
      "info": {"en": "terminal with SSH / serial; .deb from GitHub, SHA-256 checked (~130 MB)",
               "ka": "ტერმინალი SSH / serial-ით; .deb GitHub-იდან, SHA-256 მოწმდება (~130 MB)"}},
-    {"id": "winboat",
-     "name": {"en": "WinBoat", "ka": "WinBoat"},
-     "info": {"en": "run Windows apps on Linux (needs Docker + KVM); .deb from GitHub, SHA-256 checked (~120 MB)",
-              "ka": "Windows-ის აპების გაშვება Linux-ზე (სჭირდება Docker + KVM); .deb GitHub-იდან, SHA-256 მოწმდება (~120 MB)"}},
-    {"id": "artcraft",
-     "name": {"en": "ArtCraft Launcher", "ka": "ArtCraft Launcher"},
-     "info": {"en": "ArtCraft launcher; .deb from GitHub, SHA-256 checked",
-              "ka": "ArtCraft-ის გამშვები; .deb GitHub-იდან, SHA-256 მოწმდება"}},
-    {"id": "etcher",
-     "name": {"en": "balenaEtcher", "ka": "balenaEtcher"},
-     "info": {"en": "write an OS image to a USB stick / SD card (downloads ~120 MB from the publisher)",
-              "ka": "OS-ის იმიჯის ჩაწერა USB ფლეშკაზე / SD ბარათზე (ჩამოტვირთავს ~120 MB გამომცემლისგან)"}},
-    {"id": "brave",
+    {"id": "discord", "group": "net",
+     "name": {"en": "Discord", "ka": "Discord"},
+     "info": {"en": "chat and voice; the publisher's own .deb (no checksum is published, only HTTPS)",
+              "ka": "ჩატი და ხმა; გამომცემლის საკუთარი .deb (კონტროლური ჯამი არ ქვეყნდება, მხოლოდ HTTPS)"}},
+    {"id": "rustdesk", "group": "net",
+     "name": {"en": "RustDesk", "ka": "RustDesk"},
+     "info": {"en": "remote desktop; .deb from the project's GitHub release, SHA-256 checked",
+              "ka": "დისტანციური სამუშაო მაგიდა; .deb პროექტის GitHub-იდან, SHA-256 მოწმდება"}},
+    {"id": "brave", "group": "net",
      "name": {"en": "Brave Browser", "ka": "Brave Browser"},
      "info": {"en": "web browser; runs Brave's own install script (you see it first), adds Brave's repository",
               "ka": "ბრაუზერი; უშვებს Brave-ის საკუთარ ინსტალაციის სკრიპტს (წინასწარ ნახავთ), ამატებს Brave-ის რეპოზიტორიას"}},
-    {"id": "brasero",
+    {"id": "etcher", "group": "disk",
+     "name": {"en": "balenaEtcher", "ka": "balenaEtcher"},
+     "info": {"en": "write an OS image to a USB stick / SD card (downloads ~120 MB from the publisher)",
+              "ka": "OS-ის იმიჯის ჩაწერა USB ფლეშკაზე / SD ბარათზე (ჩამოტვირთავს ~120 MB გამომცემლისგან)"}},
+    {"id": "brasero", "group": "disk",
      "name": {"en": "Brasero", "ka": "Brasero"},
      "info": {"en": "burn CDs and DVDs (from your distribution's repositories)",
               "ka": "CD და DVD დისკების ჩაწერა (თქვენი დისტრიბუციის რეპოზიტორიიდან)"}},
-    {"id": "xfburn",
+    {"id": "xfburn", "group": "disk",
      "name": {"en": "Xfburn", "ka": "Xfburn"},
      "info": {"en": "light CD/DVD burner (Xfce); from your distribution's repositories",
               "ka": "მსუბუქი CD/DVD ჩამწერი (Xfce); თქვენი დისტრიბუციის რეპოზიტორიიდან"}},
-    {"id": "k3b",
+    {"id": "k3b", "group": "disk",
      "name": {"en": "K3b", "ka": "K3b"},
      "info": {"en": "full CD/DVD/Blu-ray burner (KDE, brings many KDE libraries); from your distribution's repositories",
               "ka": "სრული CD/DVD/Blu-ray ჩამწერი (KDE, ბევრ KDE ბიბლიოთეკას მოიტანს); თქვენი დისტრიბუციის რეპოზიტორიიდან"}},
+    {"id": "winboat", "group": "more",
+     "name": {"en": "WinBoat", "ka": "WinBoat"},
+     "info": {"en": "run Windows apps on Linux (needs Docker + KVM); .deb from GitHub, SHA-256 checked (~120 MB)",
+              "ka": "Windows-ის აპების გაშვება Linux-ზე (სჭირდება Docker + KVM); .deb GitHub-იდან, SHA-256 მოწმდება (~120 MB)"}},
+    {"id": "artcraft", "group": "more",
+     "name": {"en": "ArtCraft Launcher", "ka": "ArtCraft Launcher"},
+     "info": {"en": "ArtCraft launcher; .deb from GitHub, SHA-256 checked",
+              "ka": "ArtCraft-ის გამშვები; .deb GitHub-იდან, SHA-256 მოწმდება"}},
 ]
 
 USER_PREFIX = os.path.join(os.path.expanduser("~"), ".local")
@@ -152,6 +154,8 @@ STR = {
  "prog_none": "All programs installed from GitHub are up to date.", "prog_found": "{n} program(s) have a newer version:",
  "prog_fail": "Could not look up: {ids}", "prog_tick": "Tick them in the main window",
  "prog_ticked": "Ticked. Press “Install selected” in the main window to update them.",
+ "g_dev": "AI and development", "g_net": "Internet and remote", "g_disk": "Disks and burning", "g_more": "More", "search": "Search:", "no_match": "Nothing matches.",
+ "dup_hint": "Some programs are installed twice (for you and for everyone). To drop the system copy: tick them, choose “For everyone” and press Uninstall.",
  "repo_url": "Could not open a browser. The project page:\n{url}",
  "upd_nogit": "git is not installed on this computer: updating works without it (Python downloads GitHub's snapshot).",
  "upd_archive": "This copy: GitHub commit {short} (updated without git)\nFolder: {folder}",
@@ -208,6 +212,8 @@ STR = {
  "prog_none": "GitHub-იდან დაყენებული ყველა პროგრამა ახალია.", "prog_found": "{n} პროგრამას ახალი ვერსია აქვს:",
  "prog_fail": "ვერ შევამოწმე: {ids}", "prog_tick": "მონიშნე მთავარ ფანჯარაში",
  "prog_ticked": "მონიშნულია. განახლებისთვის მთავარ ფანჯარაში დააჭირეთ „მონიშნულის დაყენებას“.",
+ "g_dev": "AI და დეველოპმენტი", "g_net": "ინტერნეტი და დისტანციური წვდომა", "g_disk": "დისკები და ჩაწერა", "g_more": "სხვა", "search": "ძებნა:", "no_match": "არაფერი ემთხვევა.",
+ "dup_hint": "ზოგი პროგრამა ორჯერ არის დაყენებული (თქვენთვის და ყველასთვის). სისტემური ასლის მოსაცილებლად: მონიშნეთ ისინი, აირჩიეთ „ყველასთვის“ და დააჭირეთ წაშლას.",
  "repo_url": "ბრაუზერის გახსნა ვერ მოხერხდა. პროექტის გვერდი:\n{url}",
  "upd_nogit": "ამ კომპიუტერზე git დაყენებული არ არის: განახლება მის გარეშეც მუშაობს (Python ჩამოტვირთავს GitHub-ის ასლს).",
  "upd_archive": "ეს ასლი: GitHub-ის კომიტი {short} (განახლებულია git-ის გარეშე)\nსაქაღალდე: {folder}",
@@ -424,6 +430,13 @@ class App(tk.Tk):
         self.f_tools.grid(row=0, column=0, sticky="nsew", padx=3, pady=3)
         self.f_extra_box = ttk.LabelFrame(main)                 # the publisher's programs: a scrolling list, so a long one
         self.f_extra_box.grid(row=0, column=1, sticky="nsew", padx=3, pady=3)   # never makes the window taller than the screen
+        self.v_search = tk.StringVar()
+        row_s = ttk.Frame(self.f_extra_box)
+        row_s.pack(side="top", fill="x", padx=4, pady=(2, 0))
+        self.lbl_search = ttk.Label(row_s, font=("", 8))
+        self.lbl_search.pack(side="left")
+        ttk.Entry(row_s, textvariable=self.v_search).pack(side="left", fill="x", expand=True, padx=4)
+        self.v_search.trace_add("write", lambda *_: self.render())
         self.cv_extra = tk.Canvas(self.f_extra_box, highlightthickness=0, width=200, height=300)
         sb = ttk.Scrollbar(self.f_extra_box, orient="vertical", command=self.cv_extra.yview)
         self.cv_extra.configure(yscrollcommand=sb.set)
@@ -470,11 +483,13 @@ class App(tk.Tk):
 
         self.lbl_cmd = ttk.Label(self, wraplength=w - 30, justify="left", foreground="#555555", font=("TkFixedFont", 8))
         self.lbl_cmd.pack(anchor="w", padx=12, pady=(2, 0))
+        self.lbl_dup = ttk.Label(self, foreground="#a15c00", font=("", 8), wraplength=w - 30, justify="left")
+        self.lbl_dup.pack(anchor="w", padx=12)
         self.lbl_log = ttk.Label(self)                           # (heading kept for older callers; the log has no caption)
         # the status line is packed first, from the bottom, so a small window shortens the log and never cuts the status
         self.lbl_status = ttk.Label(self, foreground="#555555", wraplength=w - 30)
         self.lbl_status.pack(side="bottom", anchor="w", padx=12, pady=(0, 6))
-        self.log = scrolledtext.ScrolledText(self, height=3, state="disabled", wrap="word", font=("TkFixedFont", 9))
+        self.log = scrolledtext.ScrolledText(self, height=2, state="disabled", wrap="word", font=("TkFixedFont", 9))
         self.log.pack(fill="both", expand=True, padx=10, pady=(2, 2))
         self.apply_lang()
         self.after(1500, self.start_quiet_check)
@@ -488,6 +503,7 @@ class App(tk.Tk):
         self.btn_later.config(text=t("upd_later"))
         self.f_tools.config(text=t("c_tools"))
         self.f_extra_box.config(text=t("c_other"))
+        self.lbl_search.config(text=t("search"))
         self.f_where.config(text=t("f_where"))
         self.rb_user.config(text=t("w_user"))
         self.rb_sys.config(text=t("w_sys"))
@@ -517,14 +533,14 @@ class App(tk.Tk):
         self.update_idletasks()
         self.cv_extra.configure(height=max(200, self.f_tools.winfo_reqheight() - 24))
 
-    def item_row(self, parent, r, var, title, info, state, good):
+    def item_row(self, parent, base, var, title, info, state, good):
         """Two lines per program: [checkbox] name ... state / grey description. Narrow enough for three columns."""
         parent.columnconfigure(0, weight=1)
-        ttk.Checkbutton(parent, text=title, variable=var, command=self.sync).grid(row=2 * r, column=0, sticky="w", padx=(4, 0))
+        ttk.Checkbutton(parent, text=title, variable=var, command=self.sync).grid(row=base, column=0, sticky="w", padx=(4, 0))
         ttk.Label(parent, text=state, foreground="#1a7f37" if good else "#888888", font=("", 8)).grid(
-            row=2 * r, column=1, sticky="e", padx=(4, 6))
+            row=base, column=1, sticky="e", padx=(4, 6))
         ttk.Label(parent, text=info, foreground="#666666", font=("", 8), wraplength=self.wrap, justify="left").grid(
-            row=2 * r + 1, column=0, columnspan=2, sticky="w", padx=(24, 4), pady=(0, 2))
+            row=base + 1, column=0, columnspan=2, sticky="w", padx=(24, 4), pady=(0, 2))
 
     def render(self):
         for frame in (self.f_tools, self.f_extra):
@@ -533,8 +549,17 @@ class App(tk.Tk):
         for r, tool in enumerate(TOOLS):
             where = installed_where(tool)
             state = t("both") if where == {"user", "system"} else t("me") if where == {"user"} else t("all") if where else t("none")
-            self.item_row(self.f_tools, r, self.vars[tool["id"]], tool["name"][LANG], tool["info"][LANG], state, bool(where))
-        for r, ex in enumerate(EXTRAS):
+            self.item_row(self.f_tools, 2 * r, self.vars[tool["id"]], tool["name"][LANG], tool["info"][LANG], state, bool(where))
+        needle = self.v_search.get().strip().lower()
+        row, shown_group, hits = 0, None, 0
+        for ex in EXTRAS:
+            if needle and needle not in (ex["name"][LANG] + " " + ex["info"][LANG] + " " + ex["id"]).lower():
+                continue
+            if ex["group"] != shown_group:                                  # a heading whenever the group changes
+                shown_group = ex["group"]
+                ttk.Label(self.f_extra, text=t(GROUP_TEXT[shown_group]), font=("", 9, "bold"), foreground="#444444").grid(
+                    row=row, column=0, columnspan=2, sticky="w", padx=4, pady=(6, 0))
+                row += 1
             if ex["id"] == "etcher":
                 ver = extras.etcher_installed()
             elif ex["id"] == "brave":
@@ -550,7 +575,13 @@ class App(tk.Tk):
                 ver = t("yes") if extras.deb_installed(g["package"], g["cmd"]) else None
             else:
                 ver = t("yes") if extras.package_installed(ex["id"]) else None
-            self.item_row(self.f_extra, r, self.extra_vars[ex["id"]], ex["name"][LANG], ex["info"][LANG], ver or t("none"), bool(ver))
+            self.item_row(self.f_extra, row, self.extra_vars[ex["id"]], ex["name"][LANG], ex["info"][LANG], ver or t("none"), bool(ver))
+            row += 2
+            hits += 1
+        if not hits:
+            ttk.Label(self.f_extra, text=t("no_match"), foreground="#888888").grid(row=0, column=0, padx=8, pady=8)
+        both = [x for x in TOOLS if installed_where(x) == {"user", "system"}]
+        self.lbl_dup.config(text=t("dup_hint") if both else "")
         self.fit_extra()
 
     def sync(self):

@@ -415,6 +415,18 @@ class Shortcuts(unittest.TestCase):
 class Installer(unittest.TestCase):
     m = load("installer/installer-gui.py")
 
+    def test_other_programs_are_grouped_contiguously(self):
+        m = Installer.m
+        seen = []
+        for x in m.EXTRAS:
+            self.assertIn(x["group"], m.GROUP_TEXT)
+            if not seen or seen[-1] != x["group"]:
+                seen.append(x["group"])
+        self.assertEqual(len(seen), len(set(seen)), "a group must not be split in two headings")
+        for lang in ("en", "ka"):
+            for key in m.GROUP_TEXT.values():
+                self.assertIn(key, m.STR[lang])
+
     def test_every_text_key_used_by_the_window_exists_in_both_languages(self):
         import re
         with open(os.path.join(ROOT, "installer", "installer-gui.py")) as f:
