@@ -54,13 +54,49 @@ if [ "${1:-}" = "--make-launcher" ]; then
   exit 0
 fi
 
-command -v python3 >/dev/null 2>&1 || {
-  say "python3 is not installed.
-
-Open a terminal and run:
-  sudo apt install python3"
-  exit 1
+ask() {   # yes/no: a window with a display, else the terminal; TOOLKIT_ASSUME_YES=1 answers yes (tests, scripts)
+  [ "${TOOLKIT_ASSUME_YES:-}" = 1 ] && return 0
+  if [ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ] && command -v zenity >/dev/null 2>&1; then
+    zenity --question --width=520 --no-markup --title="Toolkit Installer" --text="$1" 2>/dev/null
+    return $?
+  fi
+  if [ -t 0 ]; then
+    printf '%s [Y/n] ' "$1" >&2
+    read -r a
+    case "$a" in ""|y|Y|yes|YES) return 0 ;; *) return 1 ;; esac
+  fi
+  return 1
 }
+
+# python3 (+ tkinter) is all the window needs.  If the system has no Python, offer to install it and go on.
+install_python() {
+  for m in apt-get dnf pacman zypper apk; do command -v "$m" >/dev/null 2>&1 && pm="$m" && break; done
+  case "${pm:-}" in
+    apt-get) cmd="apt-get install -y python3 python3-tk || (apt-get update && apt-get install -y python3 python3-tk)" ;;
+    dnf)     cmd="dnf install -y python3 python3-tkinter" ;;
+    pacman)  cmd="pacman -S --noconfirm python tk" ;;
+    zypper)  cmd="zypper --non-interactive install python3 python3-tk" ;;
+    apk)     cmd="apk add python3 py3-tkinter" ;;
+    *) say "python3 is not installed and this system's package manager is unknown. Install Python 3 with tkinter, then start this again."; return 1 ;;
+  esac
+  ask "Python 3 is not installed on this computer, and the installer window needs it.
+
+Install it now? (administrator password)
+
+$cmd" || { say "Cancelled. Python 3 is needed:  $cmd"; return 1; }
+  if [ "$(id -u)" = 0 ]; then
+    sh -c "$cmd"
+  elif [ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ] && command -v pkexec >/dev/null 2>&1; then
+    pkexec sh -c "$cmd"
+  elif command -v sudo >/dev/null 2>&1; then
+    sudo sh -c "$cmd"
+  else
+    say "No way to get administrator rights here. Run as root:  $cmd"; return 1
+  fi
+  command -v python3 >/dev/null 2>&1 || { say "Python 3 still is not available after the installation. Run in a terminal:  $cmd"; return 1; }
+}
+
+command -v python3 >/dev/null 2>&1 || install_python || exit 1
 [ -f "$here/installer-gui.py" ] || { say "installer-gui.py was not found next to start.sh ($here). Was the folder copied incompletely?"; exit 1; }
 
 mkdir -p "$(dirname "$log")" 2>/dev/null
