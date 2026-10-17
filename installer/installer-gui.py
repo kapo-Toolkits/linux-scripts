@@ -56,56 +56,58 @@ TOOLS = [
      "info": {"en": "print PDFs, images, Office files (downloads ~200 MB)", "ka": "PDF, სურათები, Office ფაილები (ჩამოტვირთავს ~200 MB)"}},
 ]
 
+GROUP_TEXT = {"dev": "g_dev", "net": "g_net", "disk": "g_disk", "more": "g_more"}
+
 # installed from the publisher (not by install.sh): shown in their own block, never ticked by default
 EXTRAS = [
-    {"id": "claude",
+    {"id": "claude", "group": "dev",
      "name": {"en": "Claude Desktop (beta)", "ka": "Claude Desktop (ბეტა)"},
      "info": {"en": "the Claude app: Chat, Cowork, Claude Code; Ubuntu / Debian / Mint; from Anthropic's apt repository",
               "ka": "Claude-ის აპლიკაცია: Chat, Cowork, Claude Code; Ubuntu / Debian / Mint; Anthropic-ის apt რეპოზიტორიიდან"}},
-    {"id": "vscode",
+    {"id": "vscode", "group": "dev",
      "name": {"en": "Visual Studio Code", "ka": "Visual Studio Code"},
      "info": {"en": "code editor; from Microsoft's apt repository (key fingerprint checked); updates via apt",
               "ka": "კოდის რედაქტორი; Microsoft-ის apt რეპოზიტორიიდან (გასაღების თითის ანაბეჭდი მოწმდება); განახლება apt-ით"}},
-    {"id": "discord",
-     "name": {"en": "Discord", "ka": "Discord"},
-     "info": {"en": "chat and voice; the publisher's own .deb (no checksum is published, only HTTPS)",
-              "ka": "ჩატი და ხმა; გამომცემლის საკუთარი .deb (კონტროლური ჯამი არ ქვეყნდება, მხოლოდ HTTPS)"}},
-    {"id": "rustdesk",
-     "name": {"en": "RustDesk", "ka": "RustDesk"},
-     "info": {"en": "remote desktop; .deb from the project's GitHub release, SHA-256 checked",
-              "ka": "დისტანციური სამუშაო მაგიდა; .deb პროექტის GitHub-იდან, SHA-256 მოწმდება"}},
-    {"id": "tabby",
+    {"id": "tabby", "group": "dev",
      "name": {"en": "Tabby", "ka": "Tabby"},
      "info": {"en": "terminal with SSH / serial; .deb from GitHub, SHA-256 checked (~130 MB)",
               "ka": "ტერმინალი SSH / serial-ით; .deb GitHub-იდან, SHA-256 მოწმდება (~130 MB)"}},
-    {"id": "winboat",
-     "name": {"en": "WinBoat", "ka": "WinBoat"},
-     "info": {"en": "run Windows apps on Linux (needs Docker + KVM); .deb from GitHub, SHA-256 checked (~120 MB)",
-              "ka": "Windows-ის აპების გაშვება Linux-ზე (სჭირდება Docker + KVM); .deb GitHub-იდან, SHA-256 მოწმდება (~120 MB)"}},
-    {"id": "artcraft",
-     "name": {"en": "ArtCraft Launcher", "ka": "ArtCraft Launcher"},
-     "info": {"en": "ArtCraft launcher; .deb from GitHub, SHA-256 checked",
-              "ka": "ArtCraft-ის გამშვები; .deb GitHub-იდან, SHA-256 მოწმდება"}},
-    {"id": "etcher",
-     "name": {"en": "balenaEtcher", "ka": "balenaEtcher"},
-     "info": {"en": "write an OS image to a USB stick / SD card (downloads ~120 MB from the publisher)",
-              "ka": "OS-ის იმიჯის ჩაწერა USB ფლეშკაზე / SD ბარათზე (ჩამოტვირთავს ~120 MB გამომცემლისგან)"}},
-    {"id": "brave",
+    {"id": "discord", "group": "net",
+     "name": {"en": "Discord", "ka": "Discord"},
+     "info": {"en": "chat and voice; the publisher's own .deb (no checksum is published, only HTTPS)",
+              "ka": "ჩატი და ხმა; გამომცემლის საკუთარი .deb (კონტროლური ჯამი არ ქვეყნდება, მხოლოდ HTTPS)"}},
+    {"id": "rustdesk", "group": "net",
+     "name": {"en": "RustDesk", "ka": "RustDesk"},
+     "info": {"en": "remote desktop; .deb from the project's GitHub release, SHA-256 checked",
+              "ka": "დისტანციური სამუშაო მაგიდა; .deb პროექტის GitHub-იდან, SHA-256 მოწმდება"}},
+    {"id": "brave", "group": "net",
      "name": {"en": "Brave Browser", "ka": "Brave Browser"},
      "info": {"en": "web browser; runs Brave's own install script (you see it first), adds Brave's repository",
               "ka": "ბრაუზერი; უშვებს Brave-ის საკუთარ ინსტალაციის სკრიპტს (წინასწარ ნახავთ), ამატებს Brave-ის რეპოზიტორიას"}},
-    {"id": "brasero",
+    {"id": "etcher", "group": "disk",
+     "name": {"en": "balenaEtcher", "ka": "balenaEtcher"},
+     "info": {"en": "write an OS image to a USB stick / SD card (downloads ~120 MB from the publisher)",
+              "ka": "OS-ის იმიჯის ჩაწერა USB ფლეშკაზე / SD ბარათზე (ჩამოტვირთავს ~120 MB გამომცემლისგან)"}},
+    {"id": "brasero", "group": "disk",
      "name": {"en": "Brasero", "ka": "Brasero"},
      "info": {"en": "burn CDs and DVDs (from your distribution's repositories)",
               "ka": "CD და DVD დისკების ჩაწერა (თქვენი დისტრიბუციის რეპოზიტორიიდან)"}},
-    {"id": "xfburn",
+    {"id": "xfburn", "group": "disk",
      "name": {"en": "Xfburn", "ka": "Xfburn"},
      "info": {"en": "light CD/DVD burner (Xfce); from your distribution's repositories",
               "ka": "მსუბუქი CD/DVD ჩამწერი (Xfce); თქვენი დისტრიბუციის რეპოზიტორიიდან"}},
-    {"id": "k3b",
+    {"id": "k3b", "group": "disk",
      "name": {"en": "K3b", "ka": "K3b"},
      "info": {"en": "full CD/DVD/Blu-ray burner (KDE, brings many KDE libraries); from your distribution's repositories",
               "ka": "სრული CD/DVD/Blu-ray ჩამწერი (KDE, ბევრ KDE ბიბლიოთეკას მოიტანს); თქვენი დისტრიბუციის რეპოზიტორიიდან"}},
+    {"id": "winboat", "group": "more",
+     "name": {"en": "WinBoat", "ka": "WinBoat"},
+     "info": {"en": "run Windows apps on Linux (needs Docker + KVM); .deb from GitHub, SHA-256 checked (~120 MB)",
+              "ka": "Windows-ის აპების გაშვება Linux-ზე (სჭირდება Docker + KVM); .deb GitHub-იდან, SHA-256 მოწმდება (~120 MB)"}},
+    {"id": "artcraft", "group": "more",
+     "name": {"en": "ArtCraft Launcher", "ka": "ArtCraft Launcher"},
+     "info": {"en": "ArtCraft launcher; .deb from GitHub, SHA-256 checked",
+              "ka": "ArtCraft-ის გამშვები; .deb GitHub-იდან, SHA-256 მოწმდება"}},
 ]
 
 USER_PREFIX = os.path.join(os.path.expanduser("~"), ".local")
@@ -138,17 +140,26 @@ STR = {
  "claude_ask": "Install Claude Desktop (beta)?\n\nFrom Anthropic's apt repository:\n{repo}\n\nThe signing key is downloaded and its fingerprint must equal the one Anthropic publishes:\n{fpr}\nIf it does not, nothing is installed.\n\nThen: apt install claude-desktop (administrator password).\n\n{notes}",
  "claude_manual": "Claude Desktop (beta) is published only for Debian-based Linux (Ubuntu 22.04+, Debian 12+, Linux Mint) on x86-64 / arm64.\n\nSee {url}\nOn other systems the vendor points to the Claude Code command line.",
  "settings": "Settings", "set_close": "Close", "upd_head": "Updates from GitHub",
- "upd_current": "This copy: {short} ({branch}, {date})\nFolder: {folder}", "upd_plain": "This folder is a plain copy (it has no link to GitHub).",
+ "upd_current": "This copy: {short} ({branch}, {date})\nFolder: {folder}", "upd_plain": "Version of this copy: not recorded yet (no link to GitHub).",
  "upd_check": "Check for updates", "upd_now": "Update now", "upd_checking": "Looking at GitHub…", "upd_none": "Up to date.",
  "upd_behind": "{n} new change(s) on GitHub:", "upd_ahead": "(this copy also has {a} change(s) that GitHub does not)",
  "upd_error": "Could not check: {e}", "upd_auto": "Check for updates when the installer starts (at most every 6 hours)",
  "upd_reinstall": "After updating, reinstall the programs I have installed (for me)",
  "upd_adopt_ask": "This folder is a plain copy. Connect it to GitHub and bring it to the latest version?\n\nFiles that git tracks here are replaced by the latest ones; other files (like start-installer.desktop) stay.",
  "upd_done": "Updated. The installer restarts now.", "upd_failed": "Not updated:\n{e}",
+ "upd_unknown": "This copy's version is not known yet. {n} file(s) differ from GitHub's latest (list below; replaced files are saved first).",
+ "upd_unknown_same": "This copy is identical to GitHub's latest version.",
+ "upd_archive_ask": "Download the latest version from GitHub and replace the files listed?\n\nThe old copies are saved to ~/.cache/linux-scripts/update-backup/ first. Your other files stay.",
+ "prog_check": "Check programs for updates", "prog_checking": "Asking GitHub about your installed programs…",
+ "prog_none": "All programs installed from GitHub are up to date.", "prog_found": "{n} program(s) have a newer version:",
+ "prog_fail": "Could not look up: {ids}", "prog_tick": "Tick them in the main window",
+ "prog_ticked": "Ticked. Press “Install selected” in the main window to update them.",
+ "g_dev": "AI and development", "g_net": "Internet and remote", "g_disk": "Disks and burning", "g_more": "More", "search": "Search:", "no_match": "Nothing matches.",
+ "dup_hint": "Some programs are installed twice (for you and for everyone). To drop the system copy: tick them, choose “For everyone” and press Uninstall.",
  "repo_url": "Could not open a browser. The project page:\n{url}",
  "upd_nogit": "git is not installed on this computer: updating works without it (Python downloads GitHub's snapshot).",
  "upd_archive": "This copy: GitHub commit {short} (updated without git)\nFolder: {folder}",
- "upd_banner": "{n} new change(s) on GitHub", "upd_banner_plain": "This folder is a plain copy. Connect it to GitHub to get updates.",
+ "upd_banner": "{n} new change(s) on GitHub", "upd_banner_plain": "This copy has not been compared with GitHub yet. Open Settings to see what is new.",
  "upd_banner_btn": "Update…", "upd_later": "Later", "upd_working": "Updating…",
  "brave_title": "Brave Browser — review the script before it runs",
  "brave_head": "Brave's official install script ({kb} KB, SHA-256 {sha}) from {url}\nwill run as the ADMINISTRATOR. Source: {src}\nIt adds Brave's package repository (signing key + source file) and installs brave-browser.",
@@ -187,17 +198,26 @@ STR = {
  "claude_ask": "დავაყენო Claude Desktop (ბეტა)?\n\nAnthropic-ის apt რეპოზიტორიიდან:\n{repo}\n\nჩამოიტვირთება ხელმოწერის გასაღები და მისი თითის ანაბეჭდი უნდა ემთხვეოდეს იმას, რასაც Anthropic აქვეყნებს:\n{fpr}\nთუ არ ემთხვევა, არაფერი დაყენდება.\n\nშემდეგ: apt install claude-desktop (ადმინისტრატორის პაროლი).\n\n{notes}",
  "claude_manual": "Claude Desktop (ბეტა) ქვეყნდება მხოლოდ Debian-ზე დაფუძნებული Linux-ისთვის (Ubuntu 22.04+, Debian 12+, Linux Mint), x86-64 / arm64.\n\nიხილეთ {url}\nსხვა სისტემებისთვის მწარმოებელი Claude Code-ის ბრძანების ხაზის ვერსიას გვთავაზობს.",
  "settings": "პარამეტრები", "set_close": "დახურვა", "upd_head": "განახლებები GitHub-იდან",
- "upd_current": "ეს ასლი: {short} ({branch}, {date})\nსაქაღალდე: {folder}", "upd_plain": "ეს საქაღალდე უბრალო ასლია (GitHub-თან კავშირი არ აქვს).",
+ "upd_current": "ეს ასლი: {short} ({branch}, {date})\nსაქაღალდე: {folder}", "upd_plain": "ამ ასლის ვერსია ჯერ არ არის ჩაწერილი (GitHub-თან კავშირი არ აქვს).",
  "upd_check": "განახლებების შემოწმება", "upd_now": "ახლავე განახლება", "upd_checking": "ვუყურებ GitHub-ს…", "upd_none": "ყველაფერი ახალია.",
  "upd_behind": "GitHub-ზე {n} ახალი ცვლილებაა:", "upd_ahead": "(ამ ასლს {a} ისეთი ცვლილებაც აქვს, რაც GitHub-ზე არ არის)",
  "upd_error": "შემოწმება ვერ მოხერხდა: {e}", "upd_auto": "განახლებების შემოწმება ინსტალერის გახსნისას (არაუმეტეს 6 საათში ერთხელ)",
  "upd_reinstall": "განახლების შემდეგ ხელახლა დავაყენო ჩემთვის დაყენებული პროგრამები",
  "upd_adopt_ask": "ეს საქაღალდე უბრალო ასლია. მივაერთო GitHub-ს და გავაახლო ბოლო ვერსიამდე?\n\nფაილები, რასაც git აკონტროლებს, ჩანაცვლდება უახლესით; სხვა ფაილები (მაგ. start-installer.desktop) დარჩება.",
  "upd_done": "განახლდა. ინსტალერი ახლა თავიდან გაიხსნება.", "upd_failed": "ვერ განახლდა:\n{e}",
+ "upd_unknown": "ამ ასლის ვერსია ჯერ უცნობია. GitHub-ის უახლესისგან {n} ფაილით განსხვავდება (სია ქვემოთაა; ჩანაცვლებულ ფაილებს წინასწარ ვინახავ).",
+ "upd_unknown_same": "ეს ასლი GitHub-ის უახლესი ვერსიის იდენტურია.",
+ "upd_archive_ask": "ჩამოვტვირთო GitHub-იდან უახლესი ვერსია და ჩავანაცვლო ჩამოთვლილი ფაილები?\n\nძველი ასლები წინასწარ შეინახება ~/.cache/linux-scripts/update-backup/-ში. თქვენი სხვა ფაილები არ შეიცვლება.",
+ "prog_check": "პროგრამების განახლების შემოწმება", "prog_checking": "ვეკითხები GitHub-ს თქვენს დაყენებულ პროგრამებზე…",
+ "prog_none": "GitHub-იდან დაყენებული ყველა პროგრამა ახალია.", "prog_found": "{n} პროგრამას ახალი ვერსია აქვს:",
+ "prog_fail": "ვერ შევამოწმე: {ids}", "prog_tick": "მონიშნე მთავარ ფანჯარაში",
+ "prog_ticked": "მონიშნულია. განახლებისთვის მთავარ ფანჯარაში დააჭირეთ „მონიშნულის დაყენებას“.",
+ "g_dev": "AI და დეველოპმენტი", "g_net": "ინტერნეტი და დისტანციური წვდომა", "g_disk": "დისკები და ჩაწერა", "g_more": "სხვა", "search": "ძებნა:", "no_match": "არაფერი ემთხვევა.",
+ "dup_hint": "ზოგი პროგრამა ორჯერ არის დაყენებული (თქვენთვის და ყველასთვის). სისტემური ასლის მოსაცილებლად: მონიშნეთ ისინი, აირჩიეთ „ყველასთვის“ და დააჭირეთ წაშლას.",
  "repo_url": "ბრაუზერის გახსნა ვერ მოხერხდა. პროექტის გვერდი:\n{url}",
  "upd_nogit": "ამ კომპიუტერზე git დაყენებული არ არის: განახლება მის გარეშეც მუშაობს (Python ჩამოტვირთავს GitHub-ის ასლს).",
  "upd_archive": "ეს ასლი: GitHub-ის კომიტი {short} (განახლებულია git-ის გარეშე)\nსაქაღალდე: {folder}",
- "upd_banner": "GitHub-ზე {n} ახალი ცვლილებაა", "upd_banner_plain": "ეს საქაღალდე უბრალო ასლია. მიაერთეთ GitHub-ს, რომ განახლებები მიიღოთ.",
+ "upd_banner": "GitHub-ზე {n} ახალი ცვლილებაა", "upd_banner_plain": "ეს ასლი GitHub-თან ჯერ შედარებული არ არის. გახსენით პარამეტრები და ნახეთ, რა არის ახალი.",
  "upd_banner_btn": "განახლება…", "upd_later": "მოგვიანებით", "upd_working": "ვაახლებ…",
  "brave_title": "Brave Browser — გადახედეთ სკრიპტს გაშვებამდე",
  "brave_head": "Brave-ის ოფიციალური ინსტალაციის სკრიპტი ({kb} KB, SHA-256 {sha}) მისამართიდან {url}\nგაეშვება ადმინისტრატორის უფლებით. წყარო: {src}\nის ამატებს Brave-ის პაკეტების რეპოზიტორიას (ხელმოწერის გასაღები + წყაროს ფაილი) და აყენებს brave-browser-ს.",
@@ -410,6 +430,13 @@ class App(tk.Tk):
         self.f_tools.grid(row=0, column=0, sticky="nsew", padx=3, pady=3)
         self.f_extra_box = ttk.LabelFrame(main)                 # the publisher's programs: a scrolling list, so a long one
         self.f_extra_box.grid(row=0, column=1, sticky="nsew", padx=3, pady=3)   # never makes the window taller than the screen
+        self.v_search = tk.StringVar()
+        row_s = ttk.Frame(self.f_extra_box)
+        row_s.pack(side="top", fill="x", padx=4, pady=(2, 0))
+        self.lbl_search = ttk.Label(row_s, font=("", 8))
+        self.lbl_search.pack(side="left")
+        ttk.Entry(row_s, textvariable=self.v_search).pack(side="left", fill="x", expand=True, padx=4)
+        self.v_search.trace_add("write", lambda *_: self.render())
         self.cv_extra = tk.Canvas(self.f_extra_box, highlightthickness=0, width=200, height=300)
         sb = ttk.Scrollbar(self.f_extra_box, orient="vertical", command=self.cv_extra.yview)
         self.cv_extra.configure(yscrollcommand=sb.set)
@@ -456,11 +483,13 @@ class App(tk.Tk):
 
         self.lbl_cmd = ttk.Label(self, wraplength=w - 30, justify="left", foreground="#555555", font=("TkFixedFont", 8))
         self.lbl_cmd.pack(anchor="w", padx=12, pady=(2, 0))
+        self.lbl_dup = ttk.Label(self, foreground="#a15c00", font=("", 8), wraplength=w - 30, justify="left")
+        self.lbl_dup.pack(anchor="w", padx=12)
         self.lbl_log = ttk.Label(self)                           # (heading kept for older callers; the log has no caption)
         # the status line is packed first, from the bottom, so a small window shortens the log and never cuts the status
         self.lbl_status = ttk.Label(self, foreground="#555555", wraplength=w - 30)
         self.lbl_status.pack(side="bottom", anchor="w", padx=12, pady=(0, 6))
-        self.log = scrolledtext.ScrolledText(self, height=3, state="disabled", wrap="word", font=("TkFixedFont", 9))
+        self.log = scrolledtext.ScrolledText(self, height=2, state="disabled", wrap="word", font=("TkFixedFont", 9))
         self.log.pack(fill="both", expand=True, padx=10, pady=(2, 2))
         self.apply_lang()
         self.after(1500, self.start_quiet_check)
@@ -474,6 +503,7 @@ class App(tk.Tk):
         self.btn_later.config(text=t("upd_later"))
         self.f_tools.config(text=t("c_tools"))
         self.f_extra_box.config(text=t("c_other"))
+        self.lbl_search.config(text=t("search"))
         self.f_where.config(text=t("f_where"))
         self.rb_user.config(text=t("w_user"))
         self.rb_sys.config(text=t("w_sys"))
@@ -503,14 +533,14 @@ class App(tk.Tk):
         self.update_idletasks()
         self.cv_extra.configure(height=max(200, self.f_tools.winfo_reqheight() - 24))
 
-    def item_row(self, parent, r, var, title, info, state, good):
+    def item_row(self, parent, base, var, title, info, state, good):
         """Two lines per program: [checkbox] name ... state / grey description. Narrow enough for three columns."""
         parent.columnconfigure(0, weight=1)
-        ttk.Checkbutton(parent, text=title, variable=var, command=self.sync).grid(row=2 * r, column=0, sticky="w", padx=(4, 0))
+        ttk.Checkbutton(parent, text=title, variable=var, command=self.sync).grid(row=base, column=0, sticky="w", padx=(4, 0))
         ttk.Label(parent, text=state, foreground="#1a7f37" if good else "#888888", font=("", 8)).grid(
-            row=2 * r, column=1, sticky="e", padx=(4, 6))
+            row=base, column=1, sticky="e", padx=(4, 6))
         ttk.Label(parent, text=info, foreground="#666666", font=("", 8), wraplength=self.wrap, justify="left").grid(
-            row=2 * r + 1, column=0, columnspan=2, sticky="w", padx=(24, 4), pady=(0, 2))
+            row=base + 1, column=0, columnspan=2, sticky="w", padx=(24, 4), pady=(0, 2))
 
     def render(self):
         for frame in (self.f_tools, self.f_extra):
@@ -519,8 +549,17 @@ class App(tk.Tk):
         for r, tool in enumerate(TOOLS):
             where = installed_where(tool)
             state = t("both") if where == {"user", "system"} else t("me") if where == {"user"} else t("all") if where else t("none")
-            self.item_row(self.f_tools, r, self.vars[tool["id"]], tool["name"][LANG], tool["info"][LANG], state, bool(where))
-        for r, ex in enumerate(EXTRAS):
+            self.item_row(self.f_tools, 2 * r, self.vars[tool["id"]], tool["name"][LANG], tool["info"][LANG], state, bool(where))
+        needle = self.v_search.get().strip().lower()
+        row, shown_group, hits = 0, None, 0
+        for ex in EXTRAS:
+            if needle and needle not in (ex["name"][LANG] + " " + ex["info"][LANG] + " " + ex["id"]).lower():
+                continue
+            if ex["group"] != shown_group:                                  # a heading whenever the group changes
+                shown_group = ex["group"]
+                ttk.Label(self.f_extra, text=t(GROUP_TEXT[shown_group]), font=("", 9, "bold"), foreground="#444444").grid(
+                    row=row, column=0, columnspan=2, sticky="w", padx=4, pady=(6, 0))
+                row += 1
             if ex["id"] == "etcher":
                 ver = extras.etcher_installed()
             elif ex["id"] == "brave":
@@ -536,7 +575,13 @@ class App(tk.Tk):
                 ver = t("yes") if extras.deb_installed(g["package"], g["cmd"]) else None
             else:
                 ver = t("yes") if extras.package_installed(ex["id"]) else None
-            self.item_row(self.f_extra, r, self.extra_vars[ex["id"]], ex["name"][LANG], ex["info"][LANG], ver or t("none"), bool(ver))
+            self.item_row(self.f_extra, row, self.extra_vars[ex["id"]], ex["name"][LANG], ex["info"][LANG], ver or t("none"), bool(ver))
+            row += 2
+            hits += 1
+        if not hits:
+            ttk.Label(self.f_extra, text=t("no_match"), foreground="#888888").grid(row=0, column=0, padx=8, pady=8)
+        both = [x for x in TOOLS if installed_where(x) == {"user", "system"}]
+        self.lbl_dup.config(text=t("dup_hint") if both else "")
         self.fit_extra()
 
     def sync(self):
@@ -784,7 +829,7 @@ class App(tk.Tk):
     def open_settings(self):
         win = tk.Toplevel(self)
         win.title(t("settings"))
-        win.geometry("560x520")
+        win.geometry("580x600")
         win.transient(self)
         ttk.Label(win, text=t("upd_head"), font=("", 11, "bold")).pack(anchor="w", padx=12, pady=(12, 4))
         lbl_cur = ttk.Label(win, justify="left", wraplength=520)
@@ -805,11 +850,17 @@ class App(tk.Tk):
         ttk.Checkbutton(win, text=t("upd_reinstall"), variable=v_re, command=persist).pack(anchor="w", padx=12)
         ttk.Button(win, text="GitHub ↗  " + updater.REPO_PAGE.split("://", 1)[1], command=self.open_repo).pack(anchor="w", padx=12, pady=(6, 0))
         bar = ttk.Frame(win)
-        bar.pack(fill="x", padx=12, pady=10)
+        bar.pack(fill="x", padx=12, pady=(10, 4))
         b_check = ttk.Button(bar, text=t("upd_check"))
         b_now = ttk.Button(bar, text=t("upd_now"), state="disabled")
         b_check.pack(side="left")
         b_now.pack(side="left", padx=8)
+        bar2 = ttk.Frame(win)
+        bar2.pack(fill="x", padx=12)
+        b_prog = ttk.Button(bar2, text=t("prog_check"))
+        b_tick = ttk.Button(bar2, text=t("prog_tick"), state="disabled")
+        b_prog.pack(side="left")
+        b_tick.pack(side="left", padx=8)
         ttk.Button(bar, text=t("set_close"), command=win.destroy).pack(side="right")
         state = {"res": None}
 
@@ -823,6 +874,10 @@ class App(tk.Tk):
             lines, can = [], False
             if res["mode"] == "error":
                 lbl_res.config(text=t("upd_error", e=res["error"]))
+            elif res["mode"] == "archive" and res["behind"] is None and res.get("files") is not None:
+                lines = [("~ " if k == "changed" else "+ ") + path for k, path in res["files"]]
+                lbl_res.config(text=t("upd_unknown", n=len(lines)) if lines else t("upd_unknown_same"))
+                can = True
             elif res["mode"] == "adopt" or (res["mode"] == "archive" and res["behind"] is None):
                 lbl_res.config(text=t("upd_banner_plain"))
                 can = True
@@ -846,15 +901,52 @@ class App(tk.Tk):
 
             def work():
                 res = updater.check(ROOT)
+                if res["mode"] == "archive" and res["behind"] is None:      # commit unknown: show what would change first
+                    ok, files = updater.preview_archive(ROOT, res.get("latest"))
+                    res["files"] = files if ok else None
                 st = updater.load_settings()
                 st["last_update_check"] = time.time()
                 updater.save_settings(st)
                 self.ui(show, res)
             threading.Thread(target=work, daemon=True).start()
 
+        found = {"ids": []}
+
+        def show_programs(items, failed):
+            found["ids"] = [x["id"] for x in items]
+            lines = [f"{x['name']}: {x['installed']} → {x['latest']}" for x in items]
+            msg = t("prog_found", n=len(items)) if items else t("prog_none")
+            if failed:
+                msg += "\n" + t("prog_fail", ids=", ".join(failed))
+            lbl_res.config(text=msg)
+            box.config(state="normal")
+            box.delete("1.0", "end")
+            box.insert("end", "\n".join(lines))
+            box.config(state="disabled")
+            b_prog.config(state="normal")
+            b_tick.config(state="normal" if items else "disabled")
+
+        def do_programs():
+            lbl_res.config(text=t("prog_checking"))
+            b_prog.config(state="disabled")
+            b_tick.config(state="disabled")
+            threading.Thread(target=lambda: self.ui(show_programs, *extras.outdated()), daemon=True).start()
+
+        def do_tick():
+            for i in found["ids"]:
+                if i in self.extra_vars:
+                    self.extra_vars[i].set(True)
+            self.sync()
+            win.destroy()
+            self.lbl_status.config(text=t("prog_ticked"))
+            messagebox.showinfo(t("title"), t("prog_ticked"))
+        b_prog.config(command=do_programs)
+        b_tick.config(command=do_tick)
+
         def do_now():
             res = state["res"]
-            if not res or (res["mode"] in ("adopt", "archive") and res.get("behind") is None and not messagebox.askyesno(t("settings"), t("upd_adopt_ask"), parent=win)):
+            if not res or (res["mode"] in ("adopt", "archive") and res.get("behind") is None and not messagebox.askyesno(
+                    t("settings"), t("upd_archive_ask" if res["mode"] == "archive" else "upd_adopt_ask"), parent=win)):
                 return
             lbl_res.config(text=t("upd_working"))
             b_now.config(state="disabled")

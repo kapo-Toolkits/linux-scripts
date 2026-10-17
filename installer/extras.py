@@ -264,6 +264,48 @@ def deb_installed(package, cmd=None, run=subprocess.run, which=shutil.which):
     return bool(cmd and which(cmd))
 
 
+def installed_version(package, run=subprocess.run, which=shutil.which):
+    """The dpkg version string of an installed package, or None."""
+    if not which("dpkg-query"):
+        return None
+    try:
+        r = run(["dpkg-query", "-W", "-f=${Status} ${Version}", package], capture_output=True, text=True, timeout=20)
+    except Exception:  # noqa: BLE001
+        return None
+    return r.stdout.split()[-1] if r.returncode == 0 and r.stdout.startswith("install ok installed") else None
+
+
+def version_key(v):
+    """'1:2.1.7-3' / 'v0.4.1' -> (2, 1, 7): the upstream numbers only, for comparing a dpkg version with a release tag."""
+    v = str(v).strip().lstrip("v")
+    if ":" in v.split(".")[0]:
+        v = v.split(":", 1)[1]
+    v = v.split("-", 1)[0].split("+", 1)[0].split("~", 1)[0]
+    return tuple(int(x) for x in v.split(".") if x.isdigit())
+
+
+def outdated(installed=installed_version, github=None, etcher=None):
+    """Programs installed from a publisher's GitHub release whose newest release is newer than what is installed.
+    -> ([{'id', 'name', 'installed', 'latest'}], [ids that could not be looked up]).  Nothing is downloaded or installed."""
+    github = github or github_release
+    etcher = etcher or etcher_release
+    found, failed = [], []
+    checks = [("etcher", "balenaEtcher", ETCHER_PACKAGE, etcher)] + [
+        (i, a["name"], a["package"], (lambda i=i: github(i))) for i, a in GITHUB_APPS.items()]
+    for app_id, name, package, get in checks:
+        have = installed(package)
+        if not have:
+            continue
+        try:
+            latest = get()["version"]
+        except Exception:  # noqa: BLE001 - offline, rate limit: say so, do not guess
+            failed.append(app_id)
+            continue
+        if version_key(latest) > version_key(have):
+            found.append({"id": app_id, "name": name, "installed": have, "latest": latest})
+    return found, failed
+
+
 def apt_remove_steps(package, pm):
     return [{"root": True, "sh": f"set -u\napt-get remove -y {package}\n"}] if pm == "apt-get" else []
 

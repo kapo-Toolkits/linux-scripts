@@ -160,6 +160,55 @@ def _safe_members(tar):
     return out
 
 
+def _download_snapshot(sha, tmp, opener=urllib.request.urlopen):
+    """Download GitHub's snapshot of `sha` into the folder `tmp` and return the path of its top folder (checked, links skipped)."""
+    tgz = os.path.join(tmp, "snapshot.tar.gz")
+    req = urllib.request.Request(ARCHIVE + sha, headers={"User-Agent": "linux-scripts-installer"})
+    with opener(req, timeout=60) as r, open(tgz, "wb") as f:
+        shutil.copyfileobj(r, f)
+    with tarfile.open(tgz) as tar:
+        members = _safe_members(tar)
+        top = members[0].name.split("/")[0] if members else ""
+        if not top or not any(m.name == f"{top}/install.sh" for m in members):
+            raise ValueError("the downloaded snapshot does not look like the linux-scripts repository")
+        tar.extractall(tmp, members=members)
+    return os.path.join(tmp, top)
+
+
+def _differences(src, root):
+    """[(kind, relative path, absolute source)] for files in the snapshot that are new here ('new') or differ ('changed')."""
+    out = []
+    for dirpath, _dirs, files in os.walk(src):
+        rel = os.path.relpath(dirpath, src)
+        for name in sorted(files):
+            a, b = os.path.join(dirpath, name), os.path.normpath(os.path.join(root, rel, name))
+            r = os.path.normpath(os.path.join(rel, name))
+            if not os.path.isfile(b):
+                out.append(("new", r, a))
+                continue
+            with open(a, "rb") as fa, open(b, "rb") as fb:
+                if fa.read() != fb.read():
+                    out.append(("changed", r, a))
+    return sorted(out, key=lambda x: (x[0] != "changed", x[1]))
+
+
+def _valid_sha(sha):
+    return isinstance(sha, str) and len(sha) == 40 and all(c in "0123456789abcdef" for c in sha)
+
+
+def preview_archive(root, sha=None, fetch=_get_json, opener=urllib.request.urlopen):
+    """What an archive update would do, without touching anything. -> (ok, [(kind, path)] | error message)
+    Used when this folder's commit is unknown, so the user sees which files would be replaced before agreeing."""
+    try:
+        sha = sha or fetch(f"{API}/commits/{BRANCH}")["sha"]
+        if not _valid_sha(sha):
+            return False, "GitHub returned an unexpected commit id"
+        with tempfile.TemporaryDirectory() as tmp:
+            return True, [(k, r) for k, r, _a in _differences(_download_snapshot(sha, tmp, opener), root)]
+    except Exception as e:  # noqa: BLE001
+        return False, str(e)
+
+
 def update_archive(root, sha=None, fetch=_get_json, opener=urllib.request.urlopen, backup_dir=None):
     """Download GitHub's snapshot of `sha` (default: newest main) and copy it over `root`. -> (ok, message).
     Files that differ are copied to a backup folder first; files that are not in the snapshot are left alone."""
@@ -167,40 +216,25 @@ def update_archive(root, sha=None, fetch=_get_json, opener=urllib.request.urlope
         return False, "this does not look like the linux-scripts folder (no install.sh)"
     try:
         sha = sha or fetch(f"{API}/commits/{BRANCH}")["sha"]
-        if not (len(sha) == 40 and all(c in "0123456789abcdef" for c in sha)):
+        if not _valid_sha(sha):
             return False, "GitHub returned an unexpected commit id"
         backup = backup_dir or os.path.join(os.path.expanduser("~/.cache/linux-scripts/update-backup"), time.strftime("%Y%m%d-%H%M%S"))
         with tempfile.TemporaryDirectory() as tmp:
-            tgz = os.path.join(tmp, "snapshot.tar.gz")
-            req = urllib.request.Request(ARCHIVE + sha, headers={"User-Agent": "linux-scripts-installer"})
-            with opener(req, timeout=60) as r, open(tgz, "wb") as f:
-                shutil.copyfileobj(r, f)
-            with tarfile.open(tgz) as tar:
-                members = _safe_members(tar)
-                top = members[0].name.split("/")[0] if members else ""
-                if not top or not any(m.name == f"{top}/install.sh" for m in members):
-                    return False, "the downloaded snapshot does not look like the linux-scripts repository"
-                tar.extractall(tmp, members=members)
-            src = os.path.join(tmp, top)
-            changed = 0
-            for dirpath, _dirs, files in os.walk(src):
-                rel = os.path.relpath(dirpath, src)
-                for name in files:
-                    a, b = os.path.join(dirpath, name), os.path.normpath(os.path.join(root, rel, name))
-                    if os.path.isfile(b):
-                        with open(a, "rb") as fa, open(b, "rb") as fb:
-                            if fa.read() == fb.read():
-                                continue
-                        os.makedirs(os.path.dirname(os.path.join(backup, rel, name)), exist_ok=True)
-                        shutil.copy2(b, os.path.join(backup, rel, name))
-                    os.makedirs(os.path.dirname(b), exist_ok=True)
-                    shutil.copy2(a, b)                       # keeps the executable bit
-                    changed += 1
+            src = _download_snapshot(sha, tmp, opener)
+            diffs = _differences(src, root)
+            for kind, rel, a in diffs:
+                b = os.path.normpath(os.path.join(root, rel))
+                if kind == "changed":
+                    os.makedirs(os.path.dirname(os.path.join(backup, rel)), exist_ok=True)
+                    shutil.copy2(b, os.path.join(backup, rel))
+                os.makedirs(os.path.dirname(b), exist_ok=True)
+                shutil.copy2(a, b)                           # keeps the executable bit
         with open(os.path.join(root, MARKER), "w") as f:
             f.write(sha + "\n")
     except Exception as e:  # noqa: BLE001
         return False, str(e)
-    return True, f"updated to {sha[:7]} ({changed} file(s) replaced" + (f", the old ones are in {backup}" if changed and os.path.isdir(backup) else "") + ")"
+    kept = os.path.isdir(backup)
+    return True, f"updated to {sha[:7]} ({len(diffs)} file(s) replaced or added" + (f", the old ones are in {backup}" if kept else "") + ")"
 
 
 def apply(root, res):
