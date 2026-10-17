@@ -46,6 +46,10 @@ TOOLS = [
      "name": {"en": "Bluetooth Setup", "ka": "Bluetooth-ის მართვა"},
      "comment": {"en": "Check adapters, scan, pair", "ka": "ადაპტერების შემოწმება, ძებნა, დაწყვილება"},
      "icon": "bluetooth", "cats": "Settings;HardwareSettings;"},
+    {"id": "balena-etcher", "cmd": "balena-etcher", "script": "", "file": "balena-etcher.desktop",
+     "name": {"en": "balenaEtcher", "ka": "balenaEtcher"},
+     "comment": {"en": "Write an OS image to a USB stick or SD card", "ka": "OS-ის იმიჯის ჩაწერა USB ფლეშკაზე ან SD ბარათზე"},
+     "icon": "balena-etcher", "cats": "Utility;System;"},
     {"id": "printhub", "cmd": "printhub", "script": "printhub/printhub-launcher.sh", "file": "printhub.desktop",
      "name": {"en": "PrintHub", "ka": "PrintHub"},
      "comment": {"en": "Print PDFs, images and Office files", "ka": "PDF-ის, სურათებისა და Office ფაილების ბეჭდვა"},
@@ -112,7 +116,7 @@ def resolve_exec(tool, root, which=shutil.which, exists=os.path.exists, home=Non
     found = found or which(tool["cmd"])
     if found:
         return "installed", os.path.abspath(found)
-    if root:
+    if root and tool["script"]:
         script = os.path.join(root, tool["script"])
         if exists(script):
             return "folder", ("sh " if script.endswith(".sh") else "python3 ") + script

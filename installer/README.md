@@ -32,4 +32,16 @@ offers to install what is missing (`python3-venv` on Debian/Ubuntu/Mint, `python
 from Printer Setup: its *Open PrintHub* button opens this window with PrintHub pre-ticked
 (`python3 installer/installer-gui.py --select printhub`) when PrintHub is not installed yet.
 
+## Other programs (from their publishers)
+
+Below the toolkit's own programs the window has a block for programs that are **not** part of `install.sh`:
+
+| Program | How it is installed |
+|---|---|
+| **balenaEtcher** ([etcher.balena.io](https://etcher.balena.io), Apache-2.0) — writes an OS image to a USB stick / SD card | The window looks up the **latest release** on `github.com/balena-io/etcher`, shows the file, size, source and its **SHA-256**, and asks. Then (as you) it downloads the publisher's `.deb` / `.rpm` over HTTPS, **refuses to go on unless the SHA-256 matches the digest GitHub publishes for that exact file**, and installs it with `apt` / `dnf` / `zypper` (administrator password); the cached download is deleted afterwards. Other systems (Arch, Alpine, ARM…) get the publisher's download page instead of a guess. |
+
+Nothing is bundled in this repository. These programs are never ticked by *Select all*. The same logic runs without a window:
+`python3 installer/extras.py etcher plan` prints what would run (it looks the release up, downloads nothing).
+Writing an image is destructive for the target drive: Etcher asks you to pick it, and `usb-eject` is the tool for removing the stick safely afterwards.
+
 If `pkexec` is missing, the window shows the `sudo …` command to paste into a terminal.
