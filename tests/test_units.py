@@ -1385,6 +1385,57 @@ class InstallerLog(unittest.TestCase):
             self.assertEqual(self.m.log_dir(), "/x/cache/linux-scripts/logs")
 
 
+class ProgramsRegistry(unittest.TestCase):
+    ex = Installer.m.extras
+
+    def base(self):
+        with open(self.ex.PROGRAMS_FILE, encoding="utf-8") as f:
+            return json.load(f)
+
+    def load(self, data):
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "programs.json")
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(data, f)
+            return self.ex.load_programs(path)
+
+    def test_the_shipped_file_is_valid_and_drives_everything(self):
+        progs = self.ex.PROGRAMS
+        self.assertGreaterEqual(len(progs), 12)
+        self.assertEqual([x["id"] for x in Installer.m.EXTRAS], [p["id"] for p in progs])
+        self.assertEqual(set(self.ex.GITHUB_APPS), {p["id"] for p in progs if p["kind"] == "github"})
+        self.assertEqual(set(Installer.m.GROUP_TEXT), set(self.base()["groups"]))
+
+    def test_every_program_has_a_shortcut_entry_so_the_two_lists_cannot_drift(self):
+        sc = {x["id"] for x in load("shortcuts/shortcuts-gui.py").TOOLS}
+        for p in self.ex.PROGRAMS:
+            sid = p.get("shortcut", p["id"])   # the shortcuts tool names a few programs differently
+            self.assertIn(sid, sc, p["id"])
+
+    def test_adding_a_program_is_one_entry(self):
+        data = self.base()
+        data["programs"].append({"id": "newapp", "group": "more", "kind": "github", "display": "NewApp", "repo": "o/r",
+                                 "package": "newapp", "cmd": "newapp", "asset": {"x86": "newapp-{v}.deb"},
+                                 "name": {"en": "NewApp", "ka": "NewApp"}, "info": {"en": "x", "ka": "y"}, "data": ["~/.config/newapp"]})
+        loaded = self.load(data)
+        self.assertEqual(loaded["programs"][-1]["id"], "newapp")
+
+    def test_mistakes_are_named(self):
+        for mutate, needle in (
+                (lambda d: d["programs"].append(dict(d["programs"][0])), "appears twice"),
+                (lambda d: d["programs"][0].update(kind="nonsense"), "kind must be"),
+                (lambda d: d["programs"][0].update(group="nope"), "group must be"),
+                (lambda d: d["programs"][0]["name"].pop("ka"), "both en and ka"),
+                (lambda d: next(p for p in d["programs"] if p["kind"] == "github").pop("repo"), "needs 'repo'"),
+                (lambda d: d["programs"][0].update(data=["/etc"]), "data paths"),
+                (lambda d: d["programs"][0].update(data=["~/../etc"]), "data paths")):
+            data = self.base()
+            mutate(data)
+            with self.assertRaises(ValueError) as cm:
+                self.load(data)
+            self.assertIn(needle, str(cm.exception))
+
+
 class ClaudeDesktop(unittest.TestCase):
     ex = Installer.m.extras
 
