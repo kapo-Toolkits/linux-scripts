@@ -62,6 +62,30 @@ EXTRAS = [
      "name": {"en": "Claude Desktop (beta)", "ka": "Claude Desktop (ბეტა)"},
      "info": {"en": "the Claude app: Chat, Cowork, Claude Code; Ubuntu / Debian / Mint; from Anthropic's apt repository",
               "ka": "Claude-ის აპლიკაცია: Chat, Cowork, Claude Code; Ubuntu / Debian / Mint; Anthropic-ის apt რეპოზიტორიიდან"}},
+    {"id": "vscode",
+     "name": {"en": "Visual Studio Code", "ka": "Visual Studio Code"},
+     "info": {"en": "code editor; from Microsoft's apt repository (key fingerprint checked); updates via apt",
+              "ka": "კოდის რედაქტორი; Microsoft-ის apt რეპოზიტორიიდან (გასაღების თითის ანაბეჭდი მოწმდება); განახლება apt-ით"}},
+    {"id": "discord",
+     "name": {"en": "Discord", "ka": "Discord"},
+     "info": {"en": "chat and voice; the publisher's own .deb (no checksum is published, only HTTPS)",
+              "ka": "ჩატი და ხმა; გამომცემლის საკუთარი .deb (კონტროლური ჯამი არ ქვეყნდება, მხოლოდ HTTPS)"}},
+    {"id": "rustdesk",
+     "name": {"en": "RustDesk", "ka": "RustDesk"},
+     "info": {"en": "remote desktop; .deb from the project's GitHub release, SHA-256 checked",
+              "ka": "დისტანციური სამუშაო მაგიდა; .deb პროექტის GitHub-იდან, SHA-256 მოწმდება"}},
+    {"id": "tabby",
+     "name": {"en": "Tabby", "ka": "Tabby"},
+     "info": {"en": "terminal with SSH / serial; .deb from GitHub, SHA-256 checked (~130 MB)",
+              "ka": "ტერმინალი SSH / serial-ით; .deb GitHub-იდან, SHA-256 მოწმდება (~130 MB)"}},
+    {"id": "winboat",
+     "name": {"en": "WinBoat", "ka": "WinBoat"},
+     "info": {"en": "run Windows apps on Linux (needs Docker + KVM); .deb from GitHub, SHA-256 checked (~120 MB)",
+              "ka": "Windows-ის აპების გაშვება Linux-ზე (სჭირდება Docker + KVM); .deb GitHub-იდან, SHA-256 მოწმდება (~120 MB)"}},
+    {"id": "artcraft",
+     "name": {"en": "ArtCraft Launcher", "ka": "ArtCraft Launcher"},
+     "info": {"en": "ArtCraft launcher; .deb from GitHub, SHA-256 checked",
+              "ka": "ArtCraft-ის გამშვები; .deb GitHub-იდან, SHA-256 მოწმდება"}},
     {"id": "etcher",
      "name": {"en": "balenaEtcher", "ka": "balenaEtcher"},
      "info": {"en": "write an OS image to a USB stick / SD card (downloads ~120 MB from the publisher)",
@@ -106,6 +130,10 @@ STR = {
  "lookup_fail": "Could not look up balenaEtcher (no internet, or GitHub is unreachable):\n{e}",
  "etcher_ask": "Install balenaEtcher {version}?\n\nDownload: {file} ({mb} MB)\nFrom: {source}\nChecked with SHA-256 before installing:\n{sha}\n\nThen installed with the system package manager (administrator password).",
  "etcher_manual": "balenaEtcher has no official package for this system here.\n\nGet it from the publisher:\n{url}",
+ "gh_ask": "Install {name} {version}?\n\nDownload: {file} ({mb} MB)\nFrom: {source}\nChecked with SHA-256 before installing:\n{sha}\n\nThen installed with apt (administrator password).",
+ "gh_manual": "{name} has no checked package for this system here.\n\nGet it from the project page:\n{url}",
+ "vscode_ask": "Install Visual Studio Code?\n\nAdds Microsoft's apt repository. The signing key is downloaded over HTTPS and its fingerprint must be\n{fpr}\notherwise nothing is installed. Then apt installs 'code' (administrator password).",
+ "discord_ask": "Install Discord?\n\nThe publisher's .deb is downloaded from {source} over HTTPS and installed with apt (administrator password).\nDiscord publishes no checksum, so only HTTPS protects this download.",
  "etcher_un": "balenaEtcher",
  "claude_ask": "Install Claude Desktop (beta)?\n\nFrom Anthropic's apt repository:\n{repo}\n\nThe signing key is downloaded and its fingerprint must equal the one Anthropic publishes:\n{fpr}\nIf it does not, nothing is installed.\n\nThen: apt install claude-desktop (administrator password).\n\n{notes}",
  "claude_manual": "Claude Desktop (beta) is published only for Debian-based Linux (Ubuntu 22.04+, Debian 12+, Linux Mint) on x86-64 / arm64.\n\nSee {url}\nOn other systems the vendor points to the Claude Code command line.",
@@ -150,6 +178,10 @@ STR = {
  "lookup_fail": "balenaEtcher-ის მოძებნა ვერ მოხერხდა (ინტერნეტი არ არის ან GitHub მიუწვდომელია):\n{e}",
  "etcher_ask": "დავაყენო balenaEtcher {version}?\n\nჩამოტვირთვა: {file} ({mb} MB)\nსაიდან: {source}\nდაყენებამდე შემოწმდება SHA-256-ით:\n{sha}\n\nმერე დაყენდება სისტემის პაკეტ-მენეჯერით (ადმინისტრატორის პაროლი).",
  "etcher_manual": "balenaEtcher-ს ამ სისტემისთვის ოფიციალური პაკეტი აქ არ აქვს.\n\nაიღეთ გამომცემლის გვერდიდან:\n{url}",
+ "gh_ask": "დავაყენო {name} {version}?\n\nჩამოტვირთვა: {file} ({mb} MB)\nსაიდან: {source}\nდაყენებამდე შემოწმდება SHA-256-ით:\n{sha}\n\nმერე დაყენდება apt-ით (ადმინისტრატორის პაროლი).",
+ "gh_manual": "{name}-ს ამ სისტემისთვის შემოწმებადი პაკეტი აქ არ აქვს.\n\nაიღეთ პროექტის გვერდიდან:\n{url}",
+ "vscode_ask": "დავაყენო Visual Studio Code?\n\nემატება Microsoft-ის apt რეპოზიტორია. ხელმოწერის გასაღები ჩამოიტვირთება HTTPS-ით და მისი თითის ანაბეჭდი უნდა იყოს\n{fpr}\nსაწინააღმდეგო შემთხვევაში არაფერი დაყენდება. მერე apt დააყენებს 'code'-ს (ადმინისტრატორის პაროლი).",
+ "discord_ask": "დავაყენო Discord?\n\nგამომცემლის .deb ჩამოიტვირთება {source}-დან HTTPS-ით და დაყენდება apt-ით (ადმინისტრატორის პაროლი).\nDiscord კონტროლურ ჯამს არ აქვეყნებს, ამიტომ ჩამოტვირთვას მხოლოდ HTTPS იცავს.",
  "etcher_un": "balenaEtcher",
  "claude_ask": "დავაყენო Claude Desktop (ბეტა)?\n\nAnthropic-ის apt რეპოზიტორიიდან:\n{repo}\n\nჩამოიტვირთება ხელმოწერის გასაღები და მისი თითის ანაბეჭდი უნდა ემთხვეოდეს იმას, რასაც Anthropic აქვეყნებს:\n{fpr}\nთუ არ ემთხვევა, არაფერი დაყენდება.\n\nშემდეგ: apt install claude-desktop (ადმინისტრატორის პაროლი).\n\n{notes}",
  "claude_manual": "Claude Desktop (ბეტა) ქვეყნდება მხოლოდ Debian-ზე დაფუძნებული Linux-ისთვის (Ubuntu 22.04+, Debian 12+, Linux Mint), x86-64 / arm64.\n\nიხილეთ {url}\nსხვა სისტემებისთვის მწარმოებელი Claude Code-ის ბრძანების ხაზის ვერსიას გვთავაზობს.",
@@ -374,8 +406,19 @@ class App(tk.Tk):
         main.columnconfigure(2, weight=5, uniform="col")
         self.f_tools = ttk.LabelFrame(main)
         self.f_tools.grid(row=0, column=0, sticky="nsew", padx=3, pady=3)
-        self.f_extra = ttk.LabelFrame(main)
-        self.f_extra.grid(row=0, column=1, sticky="nsew", padx=3, pady=3)
+        self.f_extra_box = ttk.LabelFrame(main)                 # the publisher's programs: a scrolling list, so a long one
+        self.f_extra_box.grid(row=0, column=1, sticky="nsew", padx=3, pady=3)   # never makes the window taller than the screen
+        self.cv_extra = tk.Canvas(self.f_extra_box, highlightthickness=0, width=200, height=300)
+        sb = ttk.Scrollbar(self.f_extra_box, orient="vertical", command=self.cv_extra.yview)
+        self.cv_extra.configure(yscrollcommand=sb.set)
+        sb.pack(side="right", fill="y")
+        self.cv_extra.pack(side="left", fill="both", expand=True)
+        self.f_extra = ttk.Frame(self.cv_extra)
+        win_id = self.cv_extra.create_window((0, 0), window=self.f_extra, anchor="nw")
+        self.f_extra.bind("<Configure>", lambda e: self.cv_extra.configure(scrollregion=self.cv_extra.bbox("all")))
+        self.cv_extra.bind("<Configure>", lambda e: self.cv_extra.itemconfigure(win_id, width=e.width))
+        for seq, d in (("<Button-4>", -1), ("<Button-5>", 1), ("<MouseWheel>", None)):
+            self.cv_extra.bind_all(seq, lambda e, d=d: self.wheel_extra(e, d), add="+")
         side = ttk.Frame(main)
         side.grid(row=0, column=2, sticky="nsew", padx=3, pady=3)
         self.box = self.f_tools                                 # kept for older callers
@@ -428,7 +471,7 @@ class App(tk.Tk):
         self.btn_banner.config(text=t("upd_banner_btn"))
         self.btn_later.config(text=t("upd_later"))
         self.f_tools.config(text=t("c_tools"))
-        self.f_extra.config(text=t("c_other"))
+        self.f_extra_box.config(text=t("c_other"))
         self.f_where.config(text=t("f_where"))
         self.rb_user.config(text=t("w_user"))
         self.rb_sys.config(text=t("w_sys"))
@@ -444,6 +487,19 @@ class App(tk.Tk):
         self.lbl_status.config(text=t("note"))
         self.render()
         self.sync()
+
+    def wheel_extra(self, e, d):
+        """Mouse wheel scrolls the list of other programs while the pointer is over it."""
+        w = self.winfo_containing(e.x_root, e.y_root)
+        while w is not None and w is not self.cv_extra:
+            w = w.master
+        if w is self.cv_extra:
+            self.cv_extra.yview_scroll(d if d is not None else (-1 if e.delta > 0 else 1), "units")
+
+    def fit_extra(self):
+        """The list is as tall as the toolkit column next to it (it scrolls when it has more)."""
+        self.update_idletasks()
+        self.cv_extra.configure(height=max(200, self.f_tools.winfo_reqheight() - 24))
 
     def item_row(self, parent, r, var, title, info, state, good):
         """Two lines per program: [checkbox] name ... state / grey description. Narrow enough for three columns."""
@@ -469,9 +525,17 @@ class App(tk.Tk):
                 ver = t("yes") if extras.brave_installed() else None
             elif ex["id"] == "claude":
                 ver = t("yes") if extras.claude_installed() else None
+            elif ex["id"] == "vscode":
+                ver = t("yes") if extras.deb_installed("code", "code") else None
+            elif ex["id"] == "discord":
+                ver = t("yes") if extras.deb_installed("discord", "discord") else None
+            elif ex["id"] in extras.GITHUB_APPS:
+                g = extras.GITHUB_APPS[ex["id"]]
+                ver = t("yes") if extras.deb_installed(g["package"], g["cmd"]) else None
             else:
                 ver = t("yes") if extras.package_installed(ex["id"]) else None
             self.item_row(self.f_extra, r, self.extra_vars[ex["id"]], ex["name"][LANG], ex["info"][LANG], ver or t("none"), bool(ver))
+        self.fit_extra()
 
     def sync(self):
         system = self.where.get() == "system"
@@ -485,6 +549,9 @@ class App(tk.Tk):
             note = ("balenaEtcher: curl (HTTPS) → sha256sum -c → apt/dnf install (shown in full before it runs)" if ex_id == "etcher"
                     else "Brave: download Brave's install script (HTTPS), show it, run it as administrator after you agree" if ex_id == "brave"
                     else "Claude Desktop: Anthropic's apt repository, key fingerprint checked, apt install claude-desktop" if ex_id == "claude"
+                    else "Visual Studio Code: Microsoft's apt repository, key fingerprint checked, apt install code" if ex_id == "vscode"
+                    else "Discord: the publisher's .deb over HTTPS (no checksum published), apt install" if ex_id == "discord"
+                    else f"{ex_id}: GitHub release .deb over HTTPS → sha256sum -c → apt install" if ex_id in extras.GITHUB_APPS
                     else f"{ex_id}: the distribution's package manager (install {extras.package_name(ex_id, detect_pm()) or ex_id})")
             shown = (shown + "\n" if shown else "") + note
         self.lbl_cmd.config(text=shown)
@@ -547,7 +614,10 @@ class App(tk.Tk):
         for ex_id in extra_ids:
             jobs_for = (self.etcher_jobs(action) if ex_id == "etcher" else
                         self.brave_jobs(action) if ex_id == "brave" else
-                        self.claude_jobs(action) if ex_id == "claude" else self.package_jobs(action, ex_id))
+                        self.claude_jobs(action) if ex_id == "claude" else
+                        self.vscode_jobs(action) if ex_id == "vscode" else
+                        self.discord_jobs(action) if ex_id == "discord" else
+                        self.github_jobs(action, ex_id) if ex_id in extras.GITHUB_APPS else self.package_jobs(action, ex_id))
             if jobs_for is None:
                 return
             extra_jobs += jobs_for
@@ -839,6 +909,75 @@ class App(tk.Tk):
                 return None
             jobs.append(job)
         return jobs
+
+    def steps_to_jobs(self, steps):
+        """[{'root', 'sh'}] -> commands (root steps through pkexec), or None when there is no way to ask for the password."""
+        jobs = []
+        for st in steps:
+            job = ["sh", "-c", st["sh"]]
+            if st["root"]:
+                job = elevate(job)
+                if job is None:
+                    messagebox.showwarning(t("title"), t("no_pkexec", cmd="sudo sh -c " + shlex_quote(st["sh"])))
+                    return None
+            jobs.append(job)
+        return jobs
+
+    def github_jobs(self, action, app_id):
+        """A .deb from a project's GitHub release (SHA-256 checked), or its removal; None when cancelled / impossible."""
+        import platform
+        pm, app = detect_pm(), extras.GITHUB_APPS[app_id]
+        if action == "uninstall":
+            steps = extras.apt_remove_steps(app["package"], pm)
+            if not steps:
+                messagebox.showinfo(t("title"), t("gh_manual", name=app["name"], url="https://github.com/" + app["repo"]))
+                return None
+            return self.steps_to_jobs(steps)
+        self.lbl_status.config(text=t("looking"))
+        self.update_idletasks()
+        try:
+            release = extras.github_release(app_id)
+        except Exception as e:  # noqa: BLE001
+            self.lbl_status.config(text=t("note"))
+            messagebox.showwarning(t("title"), t("lookup_fail", e=e))
+            return None
+        self.lbl_status.config(text=t("note"))
+        steps, info = extras.github_steps(app_id, release, pm, platform.machine())
+        if not steps:
+            messagebox.showinfo(t("title"), t("gh_manual", name=app["name"], url=info["manual"]))
+            return None
+        if not messagebox.askyesno(t("title"), t("gh_ask", name=app["name"], version=info["version"], file=info["file"],
+                                                  mb=info["mb"], source=info["source"], sha=info["sha256"])):
+            return None
+        return self.steps_to_jobs(steps)
+
+    def vscode_jobs(self, action):
+        import platform
+        pm = detect_pm()
+        if action == "uninstall":
+            steps = extras.apt_remove_steps("code", pm)
+        else:
+            steps, info = extras.vscode_steps(pm, platform.machine())
+            if steps and not messagebox.askyesno(t("title"), t("vscode_ask", fpr=info["fingerprint"])):
+                return None
+        if not steps:
+            messagebox.showinfo(t("title"), t("gh_manual", name="Visual Studio Code", url=extras.VSCODE_PAGE))
+            return None
+        return self.steps_to_jobs(steps)
+
+    def discord_jobs(self, action):
+        import platform
+        pm = detect_pm()
+        if action == "uninstall":
+            steps = extras.apt_remove_steps("discord", pm)
+        else:
+            steps, info = extras.discord_steps(pm, platform.machine())
+            if steps and not messagebox.askyesno(t("title"), t("discord_ask", source=info["source"])):
+                return None
+        if not steps:
+            messagebox.showinfo(t("title"), t("gh_manual", name="Discord", url=extras.DISCORD_PAGE))
+            return None
+        return self.steps_to_jobs(steps)
 
     def etcher_jobs(self, action):
         """Commands for balenaEtcher, or None when the user cancelled / it cannot be done (a message was shown)."""

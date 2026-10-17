@@ -206,6 +206,130 @@ def claude_installed(which=shutil.which):
     return bool(which("claude-desktop"))
 
 
+# ---- programs published as a .deb on GitHub releases: RustDesk, Tabby, WinBoat, ArtCraft Launcher ----
+# Same safety as balenaEtcher: HTTPS download from the project's own GitHub release, SHA-256 checked against the digest
+# GitHub publishes for that exact asset, then apt installs it.  Debian-based systems only; elsewhere the project page is shown.
+GITHUB_APPS = {
+    "rustdesk": {"name": "RustDesk", "repo": "rustdesk/rustdesk", "package": "rustdesk", "cmd": "rustdesk",
+                 "asset": {"x86": "rustdesk-{v}-x86_64.deb", "arm": "rustdesk-{v}-aarch64.deb"}},
+    "tabby": {"name": "Tabby", "repo": "Eugeny/tabby", "package": "tabby-terminal", "cmd": "tabby",
+              "asset": {"x86": "tabby-{v}-linux-x64.deb", "arm": "tabby-{v}-linux-arm64.deb"}},
+    "winboat": {"name": "WinBoat", "repo": "TibixDev/winboat", "package": "winboat", "cmd": "winboat",
+                "asset": {"x86": "winboat-{v}-amd64.deb"}},
+    "artcraft": {"name": "ArtCraft Launcher", "repo": "storytold/craft-launcher", "package": "artcraft-launcher",
+                 "cmd": "artcraft-launcher", "asset": {"x86": "artcraft-launcher-{v}-linux-x86_64.deb",
+                                                       "arm": "artcraft-launcher-{v}-linux-aarch64.deb"}},
+}
+
+
+def github_release(app_id, fetch=fetch_json):
+    """-> {'tag', 'version', 'assets'} like etcher_release, for the project behind app_id."""
+    data = fetch(f"https://api.github.com/repos/{GITHUB_APPS[app_id]['repo']}/releases/latest")
+    assets = {}
+    for a in data.get("assets", []):
+        digest = a.get("digest") or ""
+        assets[a["name"]] = {"url": a["browser_download_url"], "size": int(a.get("size", 0)),
+                             "sha256": digest.split(":", 1)[1] if digest.startswith("sha256:") else ""}
+    tag = data["tag_name"]
+    return {"tag": tag, "version": tag.lstrip("v"), "assets": assets}
+
+
+def github_steps(app_id, release, pm, arch, cache_dir=None):
+    """-> (steps, info) as etcher_steps; steps is [] with info['manual'] when there is no checked .deb for this system."""
+    app = GITHUB_APPS[app_id]
+    page = "https://github.com/" + app["repo"] + "/releases/latest"
+    kind = "x86" if arch in X86 else "arm" if arch in ("arm64", "aarch64") else None
+    pattern = app["asset"].get(kind) if kind else None
+    a = release["assets"].get(pattern.format(v=release["version"])) if pattern and pm == "apt-get" else None
+    if not a or not a["sha256"]:
+        return [], {"manual": page, "version": release["version"]}
+    asset = dict(a, name=pattern.format(v=release["version"]))
+    path = os.path.join(os.path.expanduser(cache_dir or CACHE), asset["name"])
+    steps = [{"root": False, "sh": download_script(asset, cache_dir)},
+             {"root": True, "sh": f"set -eu\nexport DEBIAN_FRONTEND=noninteractive\napt-get install -y {shlex.quote(path)}\n"},
+             {"root": False, "sh": f"rm -f {shlex.quote(path)}\n"}]
+    return steps, {"version": release["version"], "file": asset["name"], "mb": round(asset["size"] / 1048576),
+                   "url": asset["url"], "sha256": asset["sha256"], "source": "github.com/" + app["repo"]}
+
+
+def deb_installed(package, cmd=None, run=subprocess.run, which=shutil.which):
+    """True when the dpkg package is installed (or, for other systems, its command is on PATH)."""
+    if which("dpkg-query"):
+        try:
+            r = run(["dpkg-query", "-W", "-f=${Status}", package], capture_output=True, text=True, timeout=20)
+            if r.returncode == 0 and r.stdout.startswith("install ok installed"):
+                return True
+        except Exception:  # noqa: BLE001
+            pass
+    return bool(cmd and which(cmd))
+
+
+def apt_remove_steps(package, pm):
+    return [{"root": True, "sh": f"set -u\napt-get remove -y {package}\n"}] if pm == "apt-get" else []
+
+
+# ---- Visual Studio Code: Microsoft's apt repository, key fingerprint checked ----
+VSCODE_PAGE = "https://code.visualstudio.com/docs/setup/linux"
+VSCODE_KEY_URL = "https://packages.microsoft.com/keys/microsoft.asc"
+VSCODE_FPR = "BC528686B50D79E339D3721CEB3E94ADBE1229CF"          # Microsoft (Release signing); also in the system's microsoft.gpg
+VSCODE_KEYRING = "/usr/share/keyrings/microsoft.gpg"
+VSCODE_LIST = "/etc/apt/sources.list.d/vscode.sources"
+
+
+def vscode_steps(pm, arch, proto="=https", keyring=None, listfile=None, fpr=None, url=None):
+    if pm != "apt-get" or arch not in ("amd64", "arm64", "x86_64", "aarch64"):
+        return [], {"manual": VSCODE_PAGE}
+    q = shlex.quote
+    keyring, listfile, fpr, url = keyring or VSCODE_KEYRING, listfile or VSCODE_LIST, fpr or VSCODE_FPR, url or VSCODE_KEY_URL
+    sh = f"""set -eu
+export DEBIAN_FRONTEND=noninteractive
+apt-get install -y curl gnupg ca-certificates || (apt-get update && apt-get install -y curl gnupg ca-certificates)
+TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
+curl -fsSL --proto '{proto}' --tlsv1.2 -o "$TMP/key.asc" {q(url)}
+mkdir -m700 "$TMP/gnupg"
+FPR=$(gpg --homedir "$TMP/gnupg" --show-keys --with-colons "$TMP/key.asc" | awk -F: '$1=="fpr"{{print $10; exit}}')
+if [ "$FPR" != "{fpr}" ]; then echo "KEY FINGERPRINT MISMATCH: $FPR - nothing was installed" >&2; exit 1; fi
+echo "Key fingerprint OK: $FPR"
+gpg --homedir "$TMP/gnupg" --dearmor < "$TMP/key.asc" > "$TMP/key.gpg"
+install -D -m644 "$TMP/key.gpg" {q(keyring)}
+cat > {q(listfile)} <<'EOF'
+Types: deb
+URIs: https://packages.microsoft.com/repos/code
+Suites: stable
+Components: main
+Architectures: amd64,arm64,armhf
+Signed-By: {keyring}
+EOF
+apt-get update
+apt-get install -y code
+"""
+    return [{"root": True, "sh": sh}], {"fingerprint": fpr, "url": url, "key": keyring}
+
+
+# ---- Discord: the publisher's own .deb (https://discord.com/download).  Discord publishes no checksum, so only HTTPS protects it ----
+DISCORD_URL = "https://discord.com/api/download?platform=linux&format=deb"
+DISCORD_PAGE = "https://discord.com/download"
+
+
+def discord_steps(pm, arch, cache_dir=None, proto="=https", url=None):
+    if pm != "apt-get" or arch not in X86:
+        return [], {"manual": DISCORD_PAGE}
+    d = os.path.expanduser(cache_dir or CACHE)
+    path = os.path.join(d, "discord.deb")
+    q = shlex.quote
+    dl = f"""set -eu
+command -v curl >/dev/null 2>&1 || {{ echo "curl is not installed (Debian/Ubuntu: sudo apt install curl)" >&2; exit 1; }}
+mkdir -p {q(d)}
+trap 'rm -f {q(path)}.part' EXIT
+curl -fL --proto '{proto}' --proto-redir '{proto}' --tlsv1.2 -o {q(path)}.part {q(url or DISCORD_URL)}
+dpkg-deb -f {q(path)}.part Package | grep -qx discord || {{ echo "the download is not the Discord package - nothing was installed" >&2; exit 1; }}
+mv {q(path)}.part {q(path)}
+"""
+    return [{"root": False, "sh": dl},
+            {"root": True, "sh": f"set -eu\nexport DEBIAN_FRONTEND=noninteractive\napt-get install -y {q(path)}\n"},
+            {"root": False, "sh": f"rm -f {q(path)}\n"}], {"url": DISCORD_URL, "source": "discord.com"}
+
+
 # programs that simply come from the distribution's own repositories (no download, nothing to verify by hand)
 PACKAGE_APPS = {"brasero": {"cmd": "brasero", "name": "Brasero"},
                 "xfburn": {"cmd": "xfburn", "name": "Xfburn"},
