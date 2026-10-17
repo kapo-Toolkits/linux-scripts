@@ -628,6 +628,101 @@ class Extras(unittest.TestCase):
             m.extras.etcher_release, m.messagebox = saved_rel, saved_mb
 
 
+class Brave(unittest.TestCase):
+    ex = Installer.m.extras
+    fx = os.path.join(ROOT, "tests", "fixtures", "brave-install.sh")             # the vendor's script, BSD-3-Clause, as served
+
+    def fake_opener(self, body, url="https://dl.brave.com/install.sh"):
+        import io
+        class R(io.BytesIO):
+            def geturl(self_inner):
+                return url
+            def __enter__(self_inner):
+                return self_inner
+            def __exit__(self_inner, *a):
+                return False
+        return lambda req, timeout=None: R(body)
+
+    def test_fetch_accepts_the_real_script_and_reports_its_hash(self):
+        import hashlib
+        with open(self.fx, "rb") as f:
+            raw = f.read()
+        info = self.ex.brave_fetch_script(opener=self.fake_opener(raw))
+        self.assertEqual(info["sha256"], hashlib.sha256(raw).hexdigest())
+        self.assertEqual(info["bytes"], len(raw))
+        self.assertTrue(info["text"].startswith("#!/bin/sh"))
+        self.assertIn("brave-browser", info["text"])
+
+    def test_fetch_refuses_anything_else(self):
+        bad = {"an HTML error page": b"<!doctype html><html>404 not found brave</html>",
+               "an empty answer": b"",
+               "a script that is not Brave's": b"#!/bin/sh\necho hello\n",
+               "something huge": b"#!/bin/sh\n# brave\n" + b"x" * (self.ex.BRAVE_MAX_BYTES + 10)}
+        for what, body in bad.items():
+            with self.assertRaises(ValueError, msg=what):
+                self.ex.brave_fetch_script(opener=self.fake_opener(body))
+        with self.assertRaises(ValueError):                                        # redirected to plain http
+            self.ex.brave_fetch_script(opener=self.fake_opener(b"#!/bin/sh\n# brave\n", url="http://evil.example/x.sh"))
+
+    def test_the_vendor_script_really_parses_and_does_what_we_describe(self):
+        self.assertEqual(subprocess.run(["sh", "-n", self.fx], capture_output=True).returncode, 0)
+        with open(self.fx) as f:
+            text = f.read()
+        for needle in ("brave-browser-apt-", "apt-get install -y", "dnf", "zypper", "/usr/share/keyrings/", "/etc/apt/sources.list.d/"):
+            self.assertIn(needle, text)                                            # repository + key + package, as the window says
+        self.assertNotIn("curl | sh", text.replace(" ", ""))
+
+    def test_steps_run_as_administrator_then_delete_the_script(self):
+        steps = self.ex.brave_steps("/home/u/.cache/linux-scripts/downloads/brave install.sh")
+        self.assertEqual([x["root"] for x in steps], [True, False])
+        self.assertIn("sh '/home/u/.cache/linux-scripts/downloads/brave install.sh'", steps[0]["sh"])      # quoted
+        self.assertIn("rm -f", steps[1]["sh"])
+        for st in steps:
+            self.assertEqual(subprocess.run(["sh", "-n", "-c", st["sh"]], capture_output=True).returncode, 0)
+
+    def test_remove_steps(self):
+        apt = self.ex.brave_remove_steps("apt-get")[0]["sh"]
+        self.assertIn("apt-get remove -y brave-browser", apt)
+        self.assertIn("brave-browser-release.sources", apt)                         # the repository the script added
+        self.assertIn("brave-browser-archive-keyring.gpg", apt)
+        self.assertIn("dnf remove -y brave-browser", self.ex.brave_remove_steps("dnf")[0]["sh"])
+        self.assertEqual(self.ex.brave_remove_steps("unknown"), [])
+        self.assertTrue(self.ex.brave_installed(which=lambda c: "/usr/bin/brave-browser" if c == "brave-browser" else None))
+        self.assertFalse(self.ex.brave_installed(which=lambda c: None))
+
+    def test_window_shows_the_script_and_runs_nothing_when_declined(self):
+        m = Installer.m
+        with open(self.fx, "rb") as f:
+            raw = f.read()
+        info = self.ex.brave_fetch_script(opener=self.fake_opener(raw))
+        saved = {k: getattr(m, k) for k in ("detect_pm", "elevate")}
+        saved_fetch, saved_mb = m.extras.brave_fetch_script, m.messagebox
+        shown = []
+        try:
+            m.detect_pm = lambda: "apt-get"
+            m.elevate = lambda c, **k: ["pkexec"] + list(c)
+            m.extras.brave_fetch_script = lambda *a, **k: info
+            m.messagebox = types.SimpleNamespace(showinfo=lambda *a: None, showwarning=lambda *a: shown.append(a[1]))
+            app = types.SimpleNamespace(lbl_status=types.SimpleNamespace(config=lambda **k: None), update_idletasks=lambda: None,
+                                        confirm_script=lambda i: shown.append(i["sha256"]) or False)
+            self.assertIsNone(m.App.brave_jobs(app, "install"))                    # shown, declined -> nothing runs
+            self.assertEqual(shown, [info["sha256"]])
+            app.confirm_script = lambda i: True
+            with mock.patch("os.path.expanduser", return_value=tempfile.mkdtemp()):
+                jobs = m.App.brave_jobs(app, "install")
+            self.assertEqual(jobs[0][:3], ["pkexec", "sh", "-c"])                  # administrator, one password prompt
+            written = jobs[0][3].split("sh ", 1)[1].strip().strip("'")
+            with open(written) as f:
+                self.assertEqual(f.read(), info["text"])                           # exactly the text the user saw
+            m.extras.brave_fetch_script = lambda *a, **k: (_ for _ in ()).throw(OSError("offline"))
+            self.assertIsNone(m.App.brave_jobs(app, "install"))                    # offline: a message, nothing runs
+            self.assertIn("offline", shown[-1])
+        finally:
+            for k, v in saved.items():
+                setattr(m, k, v)
+            m.extras.brave_fetch_script, m.messagebox = saved_fetch, saved_mb
+
+
 class PackagePrograms(unittest.TestCase):
     ex = Installer.m.extras
 
@@ -642,7 +737,7 @@ class PackagePrograms(unittest.TestCase):
                 self.assertEqual(subprocess.run(["sh", "-n", "-c", steps[0]["sh"]], capture_output=True).returncode, 0)
                 self.assertEqual(self.ex.package_name(app, pm), app)
         self.assertEqual(set(self.ex.PACKAGE_APPS), {"brasero", "xfburn", "k3b"})
-        self.assertEqual({x["id"] for x in Installer.m.EXTRAS}, set(self.ex.PACKAGE_APPS) | {"etcher"})   # window and logic agree
+        self.assertEqual({x["id"] for x in Installer.m.EXTRAS}, set(self.ex.PACKAGE_APPS) | {"etcher", "brave"})   # window and logic agree
         self.assertEqual({x["id"] for x in Shortcuts.m.TOOLS} >= set(self.ex.PACKAGE_APPS), True)       # and shortcuts know them
         self.assertIn("apt-get remove -y brasero", self.ex.package_steps("brasero", "apt-get", remove=True)[0]["sh"])
         self.assertIn("pacman -R --noconfirm brasero", self.ex.package_steps("brasero", "pacman", remove=True)[0]["sh"])

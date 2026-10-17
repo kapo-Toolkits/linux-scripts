@@ -279,6 +279,11 @@ class BtSession:
             self.p.wait(timeout=2)
         except subprocess.TimeoutExpired:
             self.p.kill()
+        for pipe in (self.p.stdin, self.p.stdout):      # no file handles left behind
+            try:
+                pipe.close()
+            except (OSError, ValueError):
+                pass
 
 
 class App(tk.Tk):

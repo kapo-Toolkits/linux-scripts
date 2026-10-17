@@ -112,6 +112,53 @@ def etcher_installed(run=subprocess.run, which=shutil.which):
     return None
 
 
+# ---- Brave Browser: the publisher's own install script (BSD-3-Clause, https://github.com/brave/install.sh) ----
+# It adds Brave's package repository (signing key + source file, fetched over HTTPS from brave.com) and installs
+# brave-browser with the system package manager (apt / dnf / zypper / yum / pacman + AUR helper / rpm-ostree / eopkg).
+# It is never piped blindly into a shell: it is downloaded first, its SHA-256 and full text are shown, and it runs as the
+# administrator only after the user agrees.
+BRAVE_SCRIPT_URL = "https://dl.brave.com/install.sh"
+BRAVE_SOURCE = "https://github.com/brave/install.sh"
+BRAVE_MAX_BYTES = 200 * 1024
+
+
+def brave_fetch_script(opener=urllib.request.urlopen, timeout=20):
+    """-> {'text', 'sha256', 'bytes'}; refuses anything that is not a small shell script served over HTTPS."""
+    import hashlib
+    req = urllib.request.Request(BRAVE_SCRIPT_URL, headers={"User-Agent": "linux-scripts-installer"})
+    with opener(req, timeout=timeout) as r:
+        if not r.geturl().startswith("https://"):
+            raise ValueError("the download was redirected away from HTTPS")
+        raw = r.read(BRAVE_MAX_BYTES + 1)
+    if len(raw) > BRAVE_MAX_BYTES:
+        raise ValueError("the script is much larger than expected")
+    text = raw.decode("utf-8")
+    if not text.startswith("#!/bin/sh") or "<html" in text[:2000].lower() or "brave" not in text.lower():
+        raise ValueError("this does not look like Brave's install script (a web page or an error was received)")
+    return {"text": text, "sha256": hashlib.sha256(raw).hexdigest(), "bytes": len(raw)}
+
+
+def brave_steps(script_path):
+    """The script runs as the administrator (so it needs no sudo of its own and asks for the password once), then is deleted."""
+    q = shlex.quote(script_path)
+    return [{"root": True, "sh": f"set -eu\nsh {q}\n"}, {"root": False, "sh": f"rm -f {q}\n"}]
+
+
+def brave_remove_steps(pm):
+    """Package plus the repository files the script added (apt); rpm distributions keep their repo file."""
+    cmds = {"apt-get": "apt-get remove -y brave-browser\nrm -f /etc/apt/sources.list.d/brave-browser-release.sources "
+                       "/usr/share/keyrings/brave-browser-archive-keyring.gpg\napt-get update",
+            "dnf": "dnf remove -y brave-browser", "yum": "yum remove -y brave-browser",
+            "zypper": "zypper --non-interactive remove brave-browser",
+            "pacman": "pacman -R --noconfirm brave-browser || pacman -R --noconfirm brave-bin"}
+    cmd = cmds.get(pm)
+    return [{"root": True, "sh": f"set -u\n{cmd}\n"}] if cmd else []
+
+
+def brave_installed(which=shutil.which):
+    return bool(which("brave-browser") or which("brave"))
+
+
 # programs that simply come from the distribution's own repositories (no download, nothing to verify by hand)
 PACKAGE_APPS = {"brasero": {"cmd": "brasero", "name": "Brasero"},
                 "xfburn": {"cmd": "xfburn", "name": "Xfburn"},

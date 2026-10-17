@@ -60,6 +60,10 @@ EXTRAS = [
      "name": {"en": "balenaEtcher", "ka": "balenaEtcher"},
      "info": {"en": "write an OS image to a USB stick / SD card (downloads ~120 MB from the publisher)",
               "ka": "OS-ის იმიჯის ჩაწერა USB ფლეშკაზე / SD ბარათზე (ჩამოტვირთავს ~120 MB გამომცემლისგან)"}},
+    {"id": "brave",
+     "name": {"en": "Brave Browser", "ka": "Brave Browser"},
+     "info": {"en": "web browser; runs Brave's own install script (you see it first), adds Brave's repository",
+              "ka": "ბრაუზერი; უშვებს Brave-ის საკუთარ ინსტალაციის სკრიპტს (წინასწარ ნახავთ), ამატებს Brave-ის რეპოზიტორიას"}},
     {"id": "brasero",
      "name": {"en": "Brasero", "ka": "Brasero"},
      "info": {"en": "burn CDs and DVDs (from your distribution's repositories)",
@@ -96,6 +100,10 @@ STR = {
  "etcher_ask": "Install balenaEtcher {version}?\n\nDownload: {file} ({mb} MB)\nFrom: {source}\nChecked with SHA-256 before installing:\n{sha}\n\nThen installed with the system package manager (administrator password).",
  "etcher_manual": "balenaEtcher has no official package for this system here.\n\nGet it from the publisher:\n{url}",
  "etcher_un": "balenaEtcher",
+ "brave_title": "Brave Browser — review the script before it runs",
+ "brave_head": "Brave's official install script ({kb} KB, SHA-256 {sha}) from {url}\nwill run as the ADMINISTRATOR. Source: {src}\nIt adds Brave's package repository (signing key + source file) and installs brave-browser.",
+ "brave_install": "Run it (administrator password)", "brave_cancel": "Cancel",
+ "brave_fail": "Could not get Brave's install script:\n{e}",
  "pkg_ask": "Install {name} from your distribution's repositories?\n\nPackage: {pkg}  ({pm})\n(administrator password)",
  "pkg_unknown": "No known {name} package for this system's package manager ({pm}).",
  "prereq_ask": "PrintHub needs Python's venv / pip, which this computer does not have yet.\n\nInstall it now, then PrintHub, and start PrintHub?\n(asks for the administrator password; command: {cmd})",
@@ -121,6 +129,10 @@ STR = {
  "etcher_ask": "დავაყენო balenaEtcher {version}?\n\nჩამოტვირთვა: {file} ({mb} MB)\nსაიდან: {source}\nდაყენებამდე შემოწმდება SHA-256-ით:\n{sha}\n\nმერე დაყენდება სისტემის პაკეტ-მენეჯერით (ადმინისტრატორის პაროლი).",
  "etcher_manual": "balenaEtcher-ს ამ სისტემისთვის ოფიციალური პაკეტი აქ არ აქვს.\n\nაიღეთ გამომცემლის გვერდიდან:\n{url}",
  "etcher_un": "balenaEtcher",
+ "brave_title": "Brave Browser — გადახედეთ სკრიპტს გაშვებამდე",
+ "brave_head": "Brave-ის ოფიციალური ინსტალაციის სკრიპტი ({kb} KB, SHA-256 {sha}) მისამართიდან {url}\nგაეშვება ადმინისტრატორის უფლებით. წყარო: {src}\nის ამატებს Brave-ის პაკეტების რეპოზიტორიას (ხელმოწერის გასაღები + წყაროს ფაილი) და აყენებს brave-browser-ს.",
+ "brave_install": "გაშვება (ადმინისტრატორის პაროლი)", "brave_cancel": "გაუქმება",
+ "brave_fail": "Brave-ის სკრიპტის მიღება ვერ მოხერხდა:\n{e}",
  "pkg_ask": "დავაყენო {name} თქვენი დისტრიბუციის რეპოზიტორიიდან?\n\nპაკეტი: {pkg}  ({pm})\n(ადმინისტრატორის პაროლი)",
  "pkg_unknown": "ამ სისტემის პაკეტ-მენეჯერისთვის ({pm}) {name}-ის ცნობილი პაკეტი არ არის.",
  "prereq_ask": "PrintHub-ს სჭირდება Python-ის venv / pip, რაც ამ კომპიუტერზე ჯერ არ არის.\n\nდავაყენო ახლა, მერე PrintHub და გავუშვა PrintHub?\n(ადმინისტრატორის პაროლს მოითხოვს; ბრძანება: {cmd})",
@@ -356,8 +368,12 @@ class App(tk.Tk):
         r = len(TOOLS) + 1
         ttk.Label(self.box, text=t("c_other"), font=("", 9, "bold")).grid(row=r, column=1, columnspan=3, sticky="w", padx=8, pady=(8, 2))
         for r, ex in enumerate(EXTRAS, start=r + 1):
-            ver = extras.etcher_installed() if ex["id"] == "etcher" else (
-                t("yes") if extras.package_installed(ex["id"]) else None)
+            if ex["id"] == "etcher":
+                ver = extras.etcher_installed()
+            elif ex["id"] == "brave":
+                ver = t("yes") if extras.brave_installed() else None
+            else:
+                ver = t("yes") if extras.package_installed(ex["id"]) else None
             ttk.Checkbutton(self.box, variable=self.extra_vars[ex["id"]], command=self.sync).grid(row=r, column=0, sticky="w", pady=1)
             ttk.Label(self.box, text=ex["name"][LANG]).grid(row=r, column=1, sticky="w", padx=8)
             ttk.Label(self.box, text=ex["info"][LANG], foreground="#555555").grid(row=r, column=2, sticky="w", padx=8)
@@ -373,6 +389,7 @@ class App(tk.Tk):
                                          self.v_desk.get(), self.v_fold.get())) if ids or not self.selected_extras() else ""
         for ex_id in self.selected_extras():
             note = ("balenaEtcher: curl (HTTPS) → sha256sum -c → apt/dnf install (shown in full before it runs)" if ex_id == "etcher"
+                    else "Brave: download Brave's install script (HTTPS), show it, run it as administrator after you agree" if ex_id == "brave"
                     else f"{ex_id}: the distribution's package manager (install {extras.package_name(ex_id, detect_pm()) or ex_id})")
             shown = (shown + "\n" if shown else "") + note
         self.lbl_cmd.config(text=shown)
@@ -433,7 +450,8 @@ class App(tk.Tk):
                 return
         extra_jobs = []
         for ex_id in extra_ids:
-            jobs_for = self.etcher_jobs(action) if ex_id == "etcher" else self.package_jobs(action, ex_id)
+            jobs_for = (self.etcher_jobs(action) if ex_id == "etcher" else
+                        self.brave_jobs(action) if ex_id == "brave" else self.package_jobs(action, ex_id))
             if jobs_for is None:
                 return
             extra_jobs += jobs_for
@@ -467,6 +485,71 @@ class App(tk.Tk):
             rc = run_jobs(jobs, lambda ln: to_ui(self.say, ln))
             to_ui(self.finish, rc)
         threading.Thread(target=work, daemon=True).start()
+
+    def confirm_script(self, info):
+        """Show the downloaded script in full and ask. True = run it. (A window of its own: nothing runs unseen.)"""
+        win = tk.Toplevel(self)
+        win.title(t("brave_title"))
+        win.geometry("760x560")
+        win.transient(self)
+        ttk.Label(win, wraplength=720, justify="left", font=("", 9, "bold"),
+                  text=t("brave_head", kb=max(1, round(info["bytes"] / 1024)), sha=info["sha256"],
+                         url=extras.BRAVE_SCRIPT_URL, src=extras.BRAVE_SOURCE)).pack(anchor="w", padx=10, pady=(10, 4))
+        box = scrolledtext.ScrolledText(win, wrap="none", font=("TkFixedFont", 9))
+        box.pack(fill="both", expand=True, padx=10)
+        box.insert("end", info["text"])
+        box.config(state="disabled")
+        answer = {"ok": False}
+        bar = ttk.Frame(win)
+        bar.pack(fill="x", padx=10, pady=10)
+
+        def go():
+            answer["ok"] = True
+            win.destroy()
+        ttk.Button(bar, text=t("brave_install"), command=go).pack(side="right")
+        ttk.Button(bar, text=t("brave_cancel"), command=win.destroy).pack(side="right", padx=8)
+        win.grab_set()
+        self.wait_window(win)
+        return answer["ok"]
+
+    def brave_jobs(self, action):
+        """Brave: remove through the package manager, or download the vendor's script, show it, run it as administrator."""
+        pm = detect_pm()
+        if action == "uninstall":
+            steps = extras.brave_remove_steps(pm)
+            if not steps:
+                messagebox.showinfo(t("title"), t("pkg_unknown", name="Brave", pm=pm or "?"))
+                return None
+        else:
+            self.lbl_status.config(text=t("looking"))
+            self.update_idletasks()
+            try:
+                info = extras.brave_fetch_script()
+            except Exception as e:  # noqa: BLE001 - offline, changed URL, an error page: say it, do not run anything
+                self.lbl_status.config(text=t("note"))
+                messagebox.showwarning(t("title"), t("brave_fail", e=e))
+                return None
+            self.lbl_status.config(text=t("note"))
+            if not self.confirm_script(info):
+                return None
+            import tempfile
+            d = os.path.join(os.path.expanduser("~"), ".cache", "linux-scripts", "downloads")
+            os.makedirs(d, exist_ok=True)
+            fd, path = tempfile.mkstemp(prefix="brave-install-", suffix=".sh", dir=d)
+            with os.fdopen(fd, "w") as f:
+                f.write(info["text"])                  # exactly the text that was shown
+            os.chmod(path, 0o644)
+            steps = extras.brave_steps(path)
+        jobs = []
+        for st in steps:
+            job = ["sh", "-c", st["sh"]]
+            if st["root"]:
+                job = elevate(job)
+                if job is None:
+                    messagebox.showwarning(t("title"), t("no_pkexec", cmd="sudo sh -c " + shlex_quote(st["sh"])))
+                    return None
+            jobs.append(job)
+        return jobs
 
     def package_jobs(self, action, app_id):
         """Commands for a program that comes from the distribution's repositories, or None (cancelled / impossible)."""
