@@ -158,6 +158,8 @@ STR = {
  "dup_hint": "Some programs are installed twice (for you and for everyone). To drop the system copy: tick them, choose “For everyone” and press Uninstall.",
  "data_ask": "Also delete your personal data of the program(s) you are uninstalling?\n\n{list}\n\nThis cannot be undone (settings, logins, history, downloaded data).\nNo = keep them, so a later reinstall finds everything as it was.",
  "data_done": "Personal data removed: {n} item(s).", "data_fail": "Could not remove: {p} ({e})",
+ "flatpak_ask": "Install {name} as a Flatpak?\n\nFrom Flathub ({source}), id {fid}. Installed for you only, no administrator password.{extra}",
+ "flatpak_need": "\n\nFlatpak itself is not installed yet: it is installed first from your distribution's repositories (administrator password).",
  "repo_url": "Could not open a browser. The project page:\n{url}",
  "upd_nogit": "git is not installed on this computer: updating works without it (Python downloads GitHub's snapshot).",
  "upd_archive": "This copy: GitHub commit {short} (updated without git)\nFolder: {folder}",
@@ -218,6 +220,8 @@ STR = {
  "dup_hint": "ზოგი პროგრამა ორჯერ არის დაყენებული (თქვენთვის და ყველასთვის). სისტემური ასლის მოსაცილებლად: მონიშნეთ ისინი, აირჩიეთ „ყველასთვის“ და დააჭირეთ წაშლას.",
  "data_ask": "წავშალო თქვენი პირადი მონაცემებიც იმ პროგრამებისა, რომლებსაც წაშლით?\n\n{list}\n\nეს ვეღარ დაბრუნდება (პარამეტრები, ანგარიშები, ისტორია, ჩამოტვირთული მონაცემები).\nარა = დარჩება, რომ მოგვიანებით ხელახლა დაყენებისას ყველაფერი ისე დახვდეთ.",
  "data_done": "პირადი მონაცემები წაიშალა: {n}.", "data_fail": "ვერ წავშალე: {p} ({e})",
+ "flatpak_ask": "დავაყენო {name} Flatpak-ად?\n\nFlathub-იდან ({source}), id {fid}. დაყენდება მხოლოდ თქვენთვის, ადმინისტრატორის პაროლის გარეშე.{extra}",
+ "flatpak_need": "\n\nთვით Flatpak ჯერ დაყენებული არ არის: ჯერ დაგენდება თქვენი დისტრიბუციის რეპოზიტორიიდან (ადმინისტრატორის პაროლი).",
  "repo_url": "ბრაუზერის გახსნა ვერ მოხერხდა. პროექტის გვერდი:\n{url}",
  "upd_nogit": "ამ კომპიუტერზე git დაყენებული არ არის: განახლება მის გარეშეც მუშაობს (Python ჩამოტვირთავს GitHub-ის ასლს).",
  "upd_archive": "ეს ასლი: GitHub-ის კომიტი {short} (განახლებულია git-ის გარეშე)\nსაქაღალდე: {folder}",
@@ -546,6 +550,57 @@ class App(tk.Tk):
         ttk.Label(parent, text=info, foreground="#666666", font=("", 8), wraplength=self.wrap, justify="left").grid(
             row=base + 1, column=0, columnspan=2, sticky="w", padx=(24, 4), pady=(0, 2))
 
+    def ex_native_state(self, ex_id):
+        """Installed through the system (apt / dnf ...): the version or 'yes', else None."""
+        if ex_id == "etcher":
+            return extras.etcher_installed()
+        if ex_id == "brave":
+            return t("yes") if extras.brave_installed() else None
+        if ex_id == "claude":
+            return t("yes") if extras.claude_installed() else None
+        if ex_id == "vscode":
+            return t("yes") if extras.deb_installed("code", "code") else None
+        if ex_id == "discord":
+            return t("yes") if extras.deb_installed("discord", "discord") else None
+        if ex_id in extras.GITHUB_APPS:
+            g = extras.GITHUB_APPS[ex_id]
+            return t("yes") if extras.deb_installed(g["package"], g["cmd"]) else None
+        return t("yes") if extras.package_installed(ex_id) else None
+
+    def ex_state(self, ex_id):
+        """What the list shows: installed natively, or as a Flatpak."""
+        return self.ex_native_state(ex_id) or (t("yes") if extras.flatpak_scopes(ex_id) else None)
+
+    def flatpak_jobs(self, action, ex_id):
+        """Flatpak route for programs whose .deb / apt repository does not apply here, and removal of a flatpak install.
+        -> (handled, jobs): handled False means 'use the normal route'; jobs None means cancelled / impossible."""
+        import platform
+        if ex_id not in extras.FLATPAK_IDS:
+            return False, []
+        name = next(x["name"][LANG] for x in EXTRAS if x["id"] == ex_id)
+        pm = detect_pm()
+        if action == "uninstall":
+            scopes = extras.flatpak_scopes(ex_id)
+            if not scopes:
+                return False, []
+            steps, _info = extras.flatpak_steps(ex_id, pm, True, remove_scopes=scopes)
+            jobs = self.steps_to_jobs(steps)
+            if jobs is None:
+                return True, None
+            if self.ex_native_state(ex_id):                           # installed both ways: take both away
+                return False, jobs
+            return True, jobs
+        if pm == "apt-get" and platform.machine() in ("amd64", "x86_64", "arm64", "aarch64"):
+            return False, []
+        steps, info = extras.flatpak_steps(ex_id, pm, bool(shutil.which("flatpak")))
+        if not steps:
+            messagebox.showinfo(t("title"), t("gh_manual", name=name, url=info["manual"]))
+            return True, None
+        if not messagebox.askyesno(t("title"), t("flatpak_ask", name=name, fid=info["id"], source=info["source"],
+                                                  extra=t("flatpak_need") if info["needs_flatpak"] else "")):
+            return True, None
+        return True, self.steps_to_jobs(steps)
+
     def render(self):
         for frame in (self.f_tools, self.f_extra):
             for w in frame.winfo_children():
@@ -564,21 +619,7 @@ class App(tk.Tk):
                 ttk.Label(self.f_extra, text=t(GROUP_TEXT[shown_group]), font=("", 9, "bold"), foreground="#444444").grid(
                     row=row, column=0, columnspan=2, sticky="w", padx=4, pady=(6, 0))
                 row += 1
-            if ex["id"] == "etcher":
-                ver = extras.etcher_installed()
-            elif ex["id"] == "brave":
-                ver = t("yes") if extras.brave_installed() else None
-            elif ex["id"] == "claude":
-                ver = t("yes") if extras.claude_installed() else None
-            elif ex["id"] == "vscode":
-                ver = t("yes") if extras.deb_installed("code", "code") else None
-            elif ex["id"] == "discord":
-                ver = t("yes") if extras.deb_installed("discord", "discord") else None
-            elif ex["id"] in extras.GITHUB_APPS:
-                g = extras.GITHUB_APPS[ex["id"]]
-                ver = t("yes") if extras.deb_installed(g["package"], g["cmd"]) else None
-            else:
-                ver = t("yes") if extras.package_installed(ex["id"]) else None
+            ver = self.ex_state(ex["id"])
             self.item_row(self.f_extra, row, self.extra_vars[ex["id"]], ex["name"][LANG], ex["info"][LANG], ver or t("none"), bool(ver))
             row += 2
             hits += 1
@@ -663,6 +704,12 @@ class App(tk.Tk):
                 return
         extra_jobs = []
         for ex_id in extra_ids:
+            handled, fp_jobs = self.flatpak_jobs(action, ex_id)
+            if fp_jobs is None:
+                return
+            if handled:
+                extra_jobs += fp_jobs
+                continue
             jobs_for = (self.etcher_jobs(action) if ex_id == "etcher" else
                         self.brave_jobs(action) if ex_id == "brave" else
                         self.claude_jobs(action) if ex_id == "claude" else
@@ -671,7 +718,7 @@ class App(tk.Tk):
                         self.github_jobs(action, ex_id) if ex_id in extras.GITHUB_APPS else self.package_jobs(action, ex_id))
             if jobs_for is None:
                 return
-            extra_jobs += jobs_for
+            extra_jobs += fp_jobs + jobs_for
         self.pending_data = None
         if action == "uninstall" and extra_ids:                       # asked on its own, default "no": this cannot be undone
             found = extras.data_paths(extra_ids)

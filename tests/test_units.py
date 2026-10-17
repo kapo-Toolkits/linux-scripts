@@ -1208,6 +1208,83 @@ class PersonalData(unittest.TestCase):
                 self.assertTrue(p.startswith("~/") and ".." not in p)
 
 
+class FlatpakRoute(unittest.TestCase):
+    ex = Installer.m.extras
+    App = Installer.m.App
+
+    def test_install_steps(self):
+        steps, info = self.ex.flatpak_steps("discord", "dnf", False)
+        self.assertEqual([x["root"] for x in steps], [True, False])
+        self.assertIn("dnf install -y flatpak", steps[0]["sh"])
+        self.assertIn("flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo", steps[1]["sh"])
+        self.assertIn("flatpak install -y --user flathub com.discordapp.Discord", steps[1]["sh"])
+        self.assertTrue(info["needs_flatpak"])
+        steps, info = self.ex.flatpak_steps("vscode", "pacman", True)
+        self.assertEqual([x["root"] for x in steps], [False])               # no administrator password at all
+        for st in steps:
+            self.assertEqual(subprocess.run(["sh", "-n", "-c", st["sh"]], capture_output=True).returncode, 0)
+
+    def test_no_flathub_entry_or_no_way_to_get_flatpak_means_the_manual_page(self):
+        self.assertEqual(self.ex.flatpak_steps("winboat", "dnf", True)[0], [])
+        self.assertEqual(self.ex.flatpak_steps("discord", "unknown-pm", False)[0], [])
+        self.assertEqual(self.ex.flatpak_steps("discord", "unknown-pm", False)[1]["manual"], self.ex.FLATPAK_SETUP)
+
+    def test_remove_steps_follow_the_scope(self):
+        steps, _ = self.ex.flatpak_steps("rustdesk", "dnf", True, remove_scopes={"user"})
+        self.assertEqual([x["root"] for x in steps], [False])
+        steps, _ = self.ex.flatpak_steps("rustdesk", "dnf", True, remove_scopes={"user", "system"})
+        self.assertEqual([x["root"] for x in steps], [False, True])
+
+    def test_scopes_come_from_flatpak_info(self):
+        def run(cmd, **k):
+            return types.SimpleNamespace(returncode=0 if "--user" in cmd else 1)
+        self.assertEqual(self.ex.flatpak_scopes("discord", run=run, which=lambda c: "/x"), {"user"})
+        self.assertEqual(self.ex.flatpak_scopes("discord", run=run, which=lambda c: None), set())
+        self.assertEqual(self.ex.flatpak_scopes("winboat", run=run, which=lambda c: "/x"), set())
+
+    def test_every_flatpak_program_is_known_and_has_its_data_folder_listed(self):
+        ids = {x["id"] for x in Installer.m.EXTRAS}
+        self.assertTrue(set(self.ex.FLATPAK_IDS) <= ids)
+        with tempfile.TemporaryDirectory() as d:
+            os.makedirs(os.path.join(d, ".var/app/com.discordapp.Discord/config"))
+            found = [os.path.relpath(p, os.path.realpath(d)) for p, _n in self.ex.data_paths(["discord"], home=d)]
+            self.assertEqual(found, [".var/app/com.discordapp.Discord"])
+
+    def fake_app(self, native, scopes, pm, asked=True):
+        app = types.SimpleNamespace()
+        app.ex_native_state = lambda i: "yes" if native else None
+        app.steps_to_jobs = lambda steps: [["job"] for _ in steps]
+        m = Installer.m
+        return app, mock.patch.multiple(m, detect_pm=lambda: pm, messagebox=mock.Mock(askyesno=lambda *a, **k: asked, showinfo=mock.Mock()),
+                                        t=lambda k, **kw: k), mock.patch.object(self.ex, "flatpak_scopes", lambda i: scopes)
+
+    def test_routing(self):
+        with mock.patch("platform.machine", return_value="x86_64"):
+            app, p1, p2 = self.fake_app(False, set(), "apt-get")
+            with p1, p2:
+                self.assertEqual(self.App.flatpak_jobs(app, "install", "discord"), (False, []))        # apt: the normal route
+            app, p1, p2 = self.fake_app(False, set(), "dnf")
+            with p1, p2, mock.patch("shutil.which", return_value="/usr/bin/flatpak"):
+                handled, jobs = self.App.flatpak_jobs(app, "install", "discord")
+                self.assertTrue(handled)
+                self.assertEqual(len(jobs), 1)
+            app, p1, p2 = self.fake_app(False, set(), "dnf", asked=False)
+            with p1, p2, mock.patch("shutil.which", return_value="/usr/bin/flatpak"):
+                self.assertEqual(self.App.flatpak_jobs(app, "install", "discord"), (True, None))       # declined
+            app, p1, p2 = self.fake_app(False, {"user"}, "dnf")
+            with p1, p2:
+                self.assertEqual(self.App.flatpak_jobs(app, "uninstall", "discord")[0], True)           # flatpak only: that is all
+            app, p1, p2 = self.fake_app(True, {"user"}, "apt-get")
+            with p1, p2:
+                handled, jobs = self.App.flatpak_jobs(app, "uninstall", "discord")
+                self.assertEqual((handled, len(jobs)), (False, 1))                                      # both: flatpak + the normal route
+            app, p1, p2 = self.fake_app(True, set(), "apt-get")
+            with p1, p2:
+                self.assertEqual(self.App.flatpak_jobs(app, "uninstall", "discord"), (False, []))
+            with p1, p2:
+                self.assertEqual(self.App.flatpak_jobs(app, "install", "claude"), (False, []))          # no flatpak for it
+
+
 class ClaudeDesktop(unittest.TestCase):
     ex = Installer.m.extras
 
