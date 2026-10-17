@@ -43,7 +43,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: tests/run-distros.sh
+      - run: tests/retry-on-network.sh tests/run-distros.sh
 
   printhub:
     # PrintHub (Qt) offscreen tests, and install.sh printhub into a temp prefix (private venv with PySide6)
@@ -75,14 +75,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: tests/run-qr-decode.sh
+      - run: tests/retry-on-network.sh tests/run-qr-decode.sh
 
   qgis-containers:
     # real apt + qgis.org inside throwaway containers: key fingerprint check, repo config, uninstall
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: tests/run-qgis-containers.sh
+      - run: tests/retry-on-network.sh tests/run-qgis-containers.sh
 
   qgis-recipes:
     # every other install recipe of the installation guide, resolved (dry run) on its own distribution:
@@ -90,7 +90,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: tests/run-recipes-containers.sh
+      - run: tests/retry-on-network.sh tests/run-recipes-containers.sh
 
   guide-drift:
     # weekly: has the QGIS installation guide moved on (new release, LTR, Ubuntu/Debian codename, signing key)?
