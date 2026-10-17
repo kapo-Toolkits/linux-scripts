@@ -54,6 +54,23 @@ if [ "${1:-}" = "--make-launcher" ]; then
   exit 0
 fi
 
+# No dialog tool (zenity) and no terminal: open a terminal window and carry on there, so the question is always visible.
+reopen_in_terminal() {
+  [ "${TOOLKIT_IN_TERMINAL:-}" = 1 ] && return 1
+  [ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ] || return 1
+  keep='sh "$0" "$@"; rc=$?; if [ $rc -ne 0 ]; then echo; echo "Press Enter to close / დახურვისთვის დააჭირეთ Enter-ს"; read -r _; fi; exit $rc'
+  for t in xfce4-terminal gnome-terminal mate-terminal konsole xterm x-terminal-emulator; do
+    command -v "$t" >/dev/null 2>&1 || continue
+    case "$t" in
+      xfce4-terminal|mate-terminal) flag="-x" ;;
+      gnome-terminal)               flag="--" ;;
+      *)                            flag="-e" ;;
+    esac
+    TOOLKIT_IN_TERMINAL=1 "$t" "$flag" sh -c "$keep" "$here/start.sh" "$@" && return 0
+  done
+  return 1
+}
+
 ask() {   # yes/no: a window with a display, else the terminal; TOOLKIT_ASSUME_YES=1 answers yes (tests, scripts)
   [ "${TOOLKIT_ASSUME_YES:-}" = 1 ] && return 0
   if [ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ] && command -v zenity >/dev/null 2>&1; then
@@ -65,6 +82,7 @@ ask() {   # yes/no: a window with a display, else the terminal; TOOLKIT_ASSUME_Y
     read -r a
     case "$a" in ""|y|Y|yes|YES) return 0 ;; *) return 1 ;; esac
   fi
+  if reopen_in_terminal "$@"; then exit 0; fi       # the terminal window took over; this (invisible) copy is done
   return 1
 }
 
@@ -133,6 +151,15 @@ if ! command -v python3 >/dev/null 2>&1; then
   install_python python3 || exit 1
 elif ! python3 -c 'import tkinter' 2>/dev/null; then
   install_python tkinter || exit 1
+fi
+if [ "${TOOLKIT_IN_TERMINAL:-}" = 1 ]; then
+  setsid python3 "$here/installer-gui.py" "$@" >"$log" 2>&1 &
+  gui_pid=$!
+  sleep 2
+  kill -0 "$gui_pid" 2>/dev/null && exit 0          # the window is up: this helper terminal can close
+  wait "$gui_pid" 2>/dev/null
+  tail -n 12 "$log" >&2
+  exit 1
 fi
 if ! python3 "$here/installer-gui.py" "$@" >"$log" 2>&1; then
   say "The installer window could not start.

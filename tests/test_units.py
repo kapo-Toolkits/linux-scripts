@@ -59,6 +59,17 @@ class TkinterPrompt(unittest.TestCase):
         self.assertIn("Install python3-tk now?", plain)
         self.assertTrue(plain.isascii())
 
+    def test_terminal_fallback_picks_an_installed_terminal_with_its_own_flag(self):
+        import lscommon
+        have = lambda *names: (lambda c: "/usr/bin/" + c if c in names else None)      # noqa: E731
+        cmd = lscommon.terminal_command(["/p/app.py", "--x"], which=have("xfce4-terminal", "xterm"))
+        self.assertEqual(cmd[:2], ["xfce4-terminal", "-x"])                            # XFCE first: its flag is -x, not -e
+        self.assertEqual(cmd[-2:], ["/p/app.py", "--x"])
+        self.assertIn("Press Enter", cmd[4])                                           # the window stays open on failure
+        self.assertEqual(lscommon.terminal_command(["a"], which=have("gnome-terminal"))[:2], ["gnome-terminal", "--"])
+        self.assertEqual(lscommon.terminal_command(["a"], which=have("konsole"))[:2], ["konsole", "-e"])
+        self.assertIsNone(lscommon.terminal_command(["a"], which=have()))
+
     def test_a_locked_package_manager_is_explained(self):
         import lscommon
         for out in ("E: Could not get lock /var/lib/dpkg/lock-frontend. It is held by process 123 (ubiquity)",

@@ -75,6 +75,16 @@ def _zenity(kind, text, run=subprocess.run):
     return r.returncode == 0
 
 
+def terminal_command(argv, which=shutil.which):
+    """A terminal-emulator command line that runs `argv` and keeps the window open if it fails; None when no terminal exists."""
+    keep = 'python3 "$0" "$@"; rc=$?; if [ $rc -ne 0 ]; then echo; echo "Press Enter to close"; read -r _; fi; exit $rc'
+    for term, flag in (("xfce4-terminal", "-x"), ("gnome-terminal", "--"), ("mate-terminal", "-x"), ("konsole", "-e"),
+                       ("xterm", "-e"), ("x-terminal-emulator", "-e")):
+        if which(term):
+            return [term, flag, "sh", "-c", keep.replace("python3", sys.executable)] + list(argv)
+    return None
+
+
 def lock_hint(output):
     """When the package manager is blocked by another installer (a Linux Mint installation, Update Manager ...)."""
     low = (output or "").lower()
@@ -105,8 +115,16 @@ def ensure_tkinter():
     if sys.stdin.isatty():
         if input(tk_prompt(pkg, utf8) + " [Y/n] ").strip().lower() not in ("", "y", "yes"):
             sys.exit("Cancelled.")
-    elif gui and _zenity("question", tk_prompt(pkg, True)) is False:
-        sys.exit("Cancelled.")
+    elif gui:
+        if _zenity("question", tk_prompt(pkg, True)) is False:
+            sys.exit("Cancelled.")
+    elif (os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")) and not os.environ.get("TOOLKIT_IN_TERMINAL"):
+        # no dialog tool and no terminal: open a terminal window and ask there, so the question is always visible
+        term = terminal_command([os.path.abspath(sys.argv[0])] + sys.argv[1:])
+        if term:
+            env = dict(os.environ, TOOLKIT_IN_TERMINAL="1")
+            subprocess.Popen(term, env=env, start_new_session=True)
+            sys.exit(0)
     # administrator: nothing to add when already root, a graphical password prompt from a menu / icon, sudo in a terminal
     if hasattr(os, "geteuid") and os.geteuid() == 0:
         elevate = []
@@ -128,6 +146,10 @@ def ensure_tkinter():
         if gui:
             _zenity("error", msg + "\n\n" + out[-600:])
         sys.exit(msg)
+    if os.environ.get("TOOLKIT_IN_TERMINAL"):          # started by the helper terminal: open the program, let the terminal close
+        subprocess.Popen([sys.executable] + sys.argv, start_new_session=True,
+                         env={k: v for k, v in os.environ.items() if k != "TOOLKIT_IN_TERMINAL"})
+        sys.exit(0)
     os.execv(sys.executable, [sys.executable] + sys.argv)
 
 
