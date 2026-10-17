@@ -156,6 +156,8 @@ STR = {
  "prog_ticked": "Ticked. Press “Install selected” in the main window to update them.",
  "g_dev": "AI and development", "g_net": "Internet and remote", "g_disk": "Disks and burning", "g_more": "More", "search": "Search:", "no_match": "Nothing matches.",
  "dup_hint": "Some programs are installed twice (for you and for everyone). To drop the system copy: tick them, choose “For everyone” and press Uninstall.",
+ "data_ask": "Also delete your personal data of the program(s) you are uninstalling?\n\n{list}\n\nThis cannot be undone (settings, logins, history, downloaded data).\nNo = keep them, so a later reinstall finds everything as it was.",
+ "data_done": "Personal data removed: {n} item(s).", "data_fail": "Could not remove: {p} ({e})",
  "repo_url": "Could not open a browser. The project page:\n{url}",
  "upd_nogit": "git is not installed on this computer: updating works without it (Python downloads GitHub's snapshot).",
  "upd_archive": "This copy: GitHub commit {short} (updated without git)\nFolder: {folder}",
@@ -214,6 +216,8 @@ STR = {
  "prog_ticked": "მონიშნულია. განახლებისთვის მთავარ ფანჯარაში დააჭირეთ „მონიშნულის დაყენებას“.",
  "g_dev": "AI და დეველოპმენტი", "g_net": "ინტერნეტი და დისტანციური წვდომა", "g_disk": "დისკები და ჩაწერა", "g_more": "სხვა", "search": "ძებნა:", "no_match": "არაფერი ემთხვევა.",
  "dup_hint": "ზოგი პროგრამა ორჯერ არის დაყენებული (თქვენთვის და ყველასთვის). სისტემური ასლის მოსაცილებლად: მონიშნეთ ისინი, აირჩიეთ „ყველასთვის“ და დააჭირეთ წაშლას.",
+ "data_ask": "წავშალო თქვენი პირადი მონაცემებიც იმ პროგრამებისა, რომლებსაც წაშლით?\n\n{list}\n\nეს ვეღარ დაბრუნდება (პარამეტრები, ანგარიშები, ისტორია, ჩამოტვირთული მონაცემები).\nარა = დარჩება, რომ მოგვიანებით ხელახლა დაყენებისას ყველაფერი ისე დახვდეთ.",
+ "data_done": "პირადი მონაცემები წაიშალა: {n}.", "data_fail": "ვერ წავშალე: {p} ({e})",
  "repo_url": "ბრაუზერის გახსნა ვერ მოხერხდა. პროექტის გვერდი:\n{url}",
  "upd_nogit": "ამ კომპიუტერზე git დაყენებული არ არის: განახლება მის გარეშეც მუშაობს (Python ჩამოტვირთავს GitHub-ის ასლს).",
  "upd_archive": "ეს ასლი: GitHub-ის კომიტი {short} (განახლებულია git-ის გარეშე)\nსაქაღალდე: {folder}",
@@ -668,6 +672,14 @@ class App(tk.Tk):
             if jobs_for is None:
                 return
             extra_jobs += jobs_for
+        self.pending_data = None
+        if action == "uninstall" and extra_ids:                       # asked on its own, default "no": this cannot be undone
+            found = extras.data_paths(extra_ids)
+            if found:
+                listing = "\n".join(f"• {p}  ({max(1, round(n / 1048576))} MB)" for p, n in found[:12]) + (
+                    f"\n… (+{len(found) - 12})" if len(found) > 12 else "")
+                if messagebox.askyesno(t("title"), t("data_ask", list=listing), default="no"):
+                    self.pending_data = [p for p, _n in found]
         cmd, shown = None, ""
         if ids:
             cmd = build_command(ROOT, ids, action, self.where.get(), self.v_desk.get(), self.v_fold.get())
@@ -1127,6 +1139,13 @@ class App(tk.Tk):
             b.state(["!disabled"])
         self.say(t("done_ok") if rc == 0 else t("done_fail", rc=rc))
         self.lbl_status.config(text=t("done_ok") if rc == 0 else t("done_fail", rc=rc))
+        if rc == 0 and getattr(self, "pending_data", None):           # only after the programs themselves went away
+            done, failed = extras.remove_data(self.pending_data)
+            if done:
+                self.say(t("data_done", n=len(done)))
+            for path, err in failed:
+                self.say(t("data_fail", p=path, e=err))
+        self.pending_data = None
         self.render()
         if rc == 0 and getattr(self, "start_printhub", False):       # "install it and it runs"
             path = tool_path("printhub", self.where.get())

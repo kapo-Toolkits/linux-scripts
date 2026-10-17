@@ -369,6 +369,70 @@ apt-get update || true
 """
     return [{"root": True, "sh": sh}]
 
+# ---- the user's own data of these programs: only ever offered, never removed silently ----
+DATA_DIRS = {
+    "claude": ["~/.config/Claude", "~/.cache/Claude"],
+    "vscode": ["~/.config/Code", "~/.vscode", "~/.cache/Code"],
+    "discord": ["~/.config/discord"],
+    "rustdesk": ["~/.config/rustdesk", "~/.local/share/logs/RustDesk"],
+    "tabby": ["~/.config/tabby"],
+    "winboat": ["~/.config/winboat", "~/.winboat"],
+    "artcraft": ["~/.config/artcraft-launcher", "~/.local/share/artcraft-launcher"],
+    "etcher": ["~/.config/balenaEtcher"],
+    "brave": ["~/.config/BraveSoftware", "~/.cache/BraveSoftware"],
+    "brasero": ["~/.config/brasero"],
+    "xfburn": ["~/.config/xfburn"],
+    "k3b": ["~/.config/k3brc", "~/.local/share/k3b"],
+}
+
+
+def _size(path):
+    total = 0
+    for dirpath, _dirs, files in os.walk(path):
+        for f in files:
+            try:
+                total += os.lstat(os.path.join(dirpath, f)).st_size
+            except OSError:
+                pass
+    return total
+
+
+def data_paths(app_ids, home=None):
+    """-> [(path, bytes)]: the folders / files of these programs that really exist in the home folder (nothing is touched)."""
+    home = os.path.realpath(home or os.path.expanduser("~"))
+    out, seen = [], set()
+    for app_id in app_ids:
+        for p in DATA_DIRS.get(app_id, []):
+            path = os.path.join(home, p[2:])
+            if path in seen or not os.path.lexists(path):
+                continue
+            seen.add(path)
+            out.append((path, os.lstat(path).st_size if os.path.isfile(path) or os.path.islink(path) else _size(path)))
+    return out
+
+
+def remove_data(paths, home=None):
+    """Delete the given paths, but only those that lie inside the home folder (a symlink is removed itself, never followed).
+    -> (removed, [(path, error)])"""
+    home = os.path.realpath(home or os.path.expanduser("~"))
+    done, failed = [], []
+    for path in paths:
+        parent = os.path.realpath(os.path.dirname(path))
+        if not (parent == home or parent.startswith(home + os.sep)):      # inside the home folder only (so never the folder itself)
+            failed.append((path, "outside the home folder - not touched"))
+            continue
+        try:
+            if os.path.islink(path) or os.path.isfile(path):
+                os.unlink(path)
+            elif os.path.isdir(path):
+                shutil.rmtree(path)
+            else:
+                continue
+            done.append(path)
+        except OSError as e:
+            failed.append((path, str(e)))
+    return done, failed
+
 
 # ---- Discord: the publisher's own .deb (https://discord.com/download).  Discord publishes no checksum, so only HTTPS protects it ----
 DISCORD_URL = "https://discord.com/api/download?platform=linux&format=deb"

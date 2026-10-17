@@ -1147,6 +1147,67 @@ class FullRemoval(unittest.TestCase):
         self.assertIn("dnf remove", self.ex.etcher_remove_steps("dnf")[0]["sh"])
 
 
+class PersonalData(unittest.TestCase):
+    ex = Installer.m.extras
+
+    def home(self, d):
+        h = os.path.join(d, "home")
+        for p in (".config/Code/User", ".vscode/extensions", ".config/discord", ".config/keepme"):
+            os.makedirs(os.path.join(h, p))
+        for p in (".config/Code/User/settings.json", ".config/discord/x", ".config/keepme/y"):
+            with open(os.path.join(h, p), "w") as f:
+                f.write("data")
+        return h
+
+    def test_only_existing_data_of_the_selected_programs_is_listed(self):
+        with tempfile.TemporaryDirectory() as d:
+            h = self.home(d)
+            found = self.ex.data_paths(["vscode", "winboat"], home=h)
+            names = sorted(os.path.relpath(p, os.path.realpath(h)) for p, _n in found)
+            self.assertEqual(names, [".config/Code", ".vscode"])          # discord not selected, winboat has nothing
+            self.assertEqual(dict(found)[os.path.join(os.path.realpath(h), ".config/Code")], 4)
+
+    def test_remove_deletes_only_what_it_was_given(self):
+        with tempfile.TemporaryDirectory() as d:
+            h = self.home(d)
+            paths = [p for p, _n in self.ex.data_paths(["vscode", "discord"], home=h)]
+            done, failed = self.ex.remove_data(paths, home=h)
+            self.assertEqual((len(done), failed), (3, []))
+            self.assertFalse(os.path.exists(os.path.join(h, ".config/Code")))
+            self.assertFalse(os.path.exists(os.path.join(h, ".config/discord")))
+            self.assertTrue(os.path.exists(os.path.join(h, ".config/keepme/y")))
+
+    def test_it_refuses_the_home_folder_and_anything_outside_it(self):
+        with tempfile.TemporaryDirectory() as d:
+            h = self.home(d)
+            outside = os.path.join(d, "outside")
+            os.makedirs(outside)
+            done, failed = self.ex.remove_data([h, outside, "/etc", os.path.join(h, ".config")], home=h)
+            self.assertTrue(os.path.isdir(h) and os.path.isdir(outside) and os.path.isdir("/etc"))
+            self.assertEqual(len(failed), 3)                              # home itself, outside, /etc
+            self.assertEqual(done, [os.path.join(h, ".config")])        # a real folder inside home is allowed
+
+    def test_a_symlink_is_removed_but_never_followed(self):
+        with tempfile.TemporaryDirectory() as d:
+            h = self.home(d)
+            target = os.path.join(d, "precious")
+            os.makedirs(target)
+            with open(os.path.join(target, "f"), "w") as f:
+                f.write("x")
+            link = os.path.join(h, ".config", "discord_link")
+            os.symlink(target, link)
+            done, failed = self.ex.remove_data([link], home=h)
+            self.assertEqual((done, failed), ([link], []))
+            self.assertTrue(os.path.exists(os.path.join(target, "f")))
+
+    def test_every_program_with_data_is_known_to_the_window(self):
+        ids = {x["id"] for x in Installer.m.EXTRAS}
+        self.assertEqual(set(self.ex.DATA_DIRS), ids)
+        for paths in self.ex.DATA_DIRS.values():
+            for p in paths:
+                self.assertTrue(p.startswith("~/") and ".." not in p)
+
+
 class ClaudeDesktop(unittest.TestCase):
     ex = Installer.m.extras
 
