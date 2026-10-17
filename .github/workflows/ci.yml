@@ -13,7 +13,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: shellcheck
-        run: shellcheck -S warning install.sh usb-eject/usb-eject.sh wifi-hotspot/hotspot.sh tests/run-qgis-containers.sh
+        run: shellcheck -S warning install.sh get.sh usb-eject/usb-eject.sh wifi-hotspot/hotspot.sh tests/run-qgis-containers.sh
       - name: syntax of generated/embedded shell is covered by unit tests; compile all python
         run: python3 -m compileall -q common usb-eject wifi-hotspot printer-setup qgis-installer tests
       - name: unit tests (offline)

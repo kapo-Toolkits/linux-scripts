@@ -1436,6 +1436,81 @@ class ProgramsRegistry(unittest.TestCase):
             self.assertIn(needle, str(cm.exception))
 
 
+class GetScript(unittest.TestCase):
+    """get.sh: the one-file bootstrap. GitHub is replaced by a local snapshot (LS_SNAPSHOT), everything else is real."""
+
+    def snapshot(self, d):
+        snap = os.path.join(d, "snap.tar.gz")
+        top = os.path.join(d, "top")
+        os.makedirs(top)
+        os.symlink(ROOT, os.path.join(top, "linux-scripts"))
+        subprocess.run(["tar", "-czhf", snap, "-C", top, "--exclude=.git", "--exclude=__pycache__", "--exclude=.installed-sha",
+                        "--exclude=start-installer.desktop", "linux-scripts"], check=True, capture_output=True)
+        return snap
+
+    def run_get(self, d, *args, snap=None):
+        env = dict(os.environ, HOME=os.path.join(d, "home"), LS_SNAPSHOT=snap or self.snapshot(d), LS_SHA="a" * 40,
+                   XDG_CACHE_HOME=os.path.join(d, "cache"), XDG_DATA_HOME=os.path.join(d, "data"))
+        os.makedirs(env["HOME"], exist_ok=True)
+        return subprocess.run(["sh", os.path.join(ROOT, "get.sh"), *args], capture_output=True, text=True, env=env, timeout=120)
+
+    def test_syntax(self):
+        self.assertEqual(subprocess.run(["sh", "-n", os.path.join(ROOT, "get.sh")], capture_output=True).returncode, 0)
+
+    def test_fresh_install_into_a_folder(self):
+        with tempfile.TemporaryDirectory() as d:
+            dest = os.path.join(d, "home", "linux-scripts")
+            r = self.run_get(d, "--no-start")
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            for f in ("install.sh", "installer/start.sh", "installer/installer-gui.py", "installer/programs.json"):
+                self.assertTrue(os.path.isfile(os.path.join(dest, f)), f)
+            with open(os.path.join(dest, ".installed-sha")) as fh:
+                self.assertEqual(fh.read().strip(), "a" * 40)                  # the updater can tell what this copy is
+            self.assertTrue(os.path.isfile(os.path.join(dest, "start-installer.desktop")))       # launcher for THIS folder
+
+    def test_an_existing_copy_is_backed_up_and_own_files_stay(self):
+        with tempfile.TemporaryDirectory() as d:
+            snap = self.snapshot(d)
+            self.assertEqual(self.run_get(d, "--no-start", snap=snap).returncode, 0)
+            dest = os.path.join(d, "home", "linux-scripts")
+            with open(os.path.join(dest, "my-notes.txt"), "w") as f:
+                f.write("mine")
+            with open(os.path.join(dest, "install.sh"), "w") as f:
+                f.write("edited")
+            r = self.run_get(d, "--no-start", snap=snap)
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            backups = [x for x in os.listdir(os.path.join(d, "home")) if x.startswith("linux-scripts.backup-")]
+            self.assertEqual(len(backups), 1)
+            with open(os.path.join(d, "home", backups[0], "install.sh")) as f:
+                self.assertEqual(f.read(), "edited")
+            with open(os.path.join(dest, "install.sh")) as f:
+                self.assertNotEqual(f.read(), "edited")                        # replaced by the snapshot's
+            self.assertTrue(os.path.exists(os.path.join(dest, "my-notes.txt")))
+
+    def test_an_unrelated_folder_is_never_touched(self):
+        with tempfile.TemporaryDirectory() as d:
+            other = os.path.join(d, "stuff")
+            os.makedirs(other)
+            with open(os.path.join(other, "important.txt"), "w") as f:
+                f.write("x")
+            r = self.run_get(d, other, "--no-start")
+            self.assertNotEqual(r.returncode, 0)
+            self.assertIn("not a toolkit folder", r.stderr)
+            self.assertEqual(os.listdir(other), ["important.txt"])
+
+    def test_a_wrong_download_is_refused(self):
+        with tempfile.TemporaryDirectory() as d:
+            bad = os.path.join(d, "bad.tar.gz")
+            os.makedirs(os.path.join(d, "t", "x"))
+            with open(os.path.join(d, "t", "x", "readme"), "w") as f:
+                f.write("not the toolkit")
+            subprocess.run(["tar", "-czf", bad, "-C", os.path.join(d, "t"), "x"], check=True)
+            r = self.run_get(d, "--no-start", snap=bad)
+            self.assertNotEqual(r.returncode, 0)
+            self.assertIn("does not look like", r.stderr)
+            self.assertFalse(os.path.exists(os.path.join(d, "home", "linux-scripts", "install.sh")))
+
+
 class ClaudeDesktop(unittest.TestCase):
     ex = Installer.m.extras
 
