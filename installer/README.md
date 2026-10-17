@@ -36,7 +36,9 @@ names are checked against each distribution's repositories in CI (`tests/pkgname
 If the file manager shows “untrusted launcher”: right-click the icon → *Allow Launching* (or `chmod +x` it), and a copied
 icon from another computer points to the OLD path - make a new one with the command above.
 
-## The window
+## The window (three columns, fits a small screen)
+
+The window is laid out **side by side**: *Toolkit programs* | *Other programs (from their publishers)* | *Where / Also / buttons*. Each program is two lines (name and state, then a short grey description), the size is shrunk to the screen (a 1024×600 laptop still shows everything; the log gives way first), and the status line is never cut off. Georgian and English were checked at 1024×600 and 1366×768.
 
 | | |
 |---|---|
@@ -62,6 +64,8 @@ Below the toolkit's own programs the window has a block for programs that are **
 |---|---|
 | **balenaEtcher** ([etcher.balena.io](https://etcher.balena.io), Apache-2.0) — writes an OS image to a USB stick / SD card | The window looks up the **latest release** on `github.com/balena-io/etcher`, shows the file, size, source and its **SHA-256**, and asks. Then (as you) it downloads the publisher's `.deb` / `.rpm` over HTTPS, **refuses to go on unless the SHA-256 matches the digest GitHub publishes for that exact file**, and installs it with `apt` / `dnf` / `zypper` (administrator password); the cached download is deleted afterwards. Other systems (Arch, Alpine, ARM…) get the publisher's download page instead of a guess. |
 
+| **Claude Desktop** ([docs](https://code.claude.com/docs/en/desktop-linux)) | Anthropic's apt repository (Ubuntu / Debian / Mint, amd64 + arm64). After a consent dialog the window downloads the signing key over HTTPS, **checks its fingerprint against the one published in the docs** (aborts without writing anything on mismatch), adds the source file and installs `claude-desktop`; later updates come through normal `apt upgrade`. Other systems: the window points to the official page. Sign in with a claude.ai account; Cowork needs virtualization and membership in the `kvm` group. |
+| **Brave Browser** ([brave.com](https://brave.com)) | Brave's own install script, `curl -fsS https://dl.brave.com/install.sh | sh` — **but not blindly piped**: the window downloads it over HTTPS (refusing anything that is not a small shell script), shows it **in full with its SHA-256** in a window of its own, and runs it **only after you click Run**, as the administrator (one password prompt; the script needs no `sudo` of its own then). It adds Brave's package repository (signing key + source file from brave.com) and installs `brave-browser` with apt / dnf / zypper / yum / pacman (+ AUR helper) / rpm-ostree. The file that runs is byte-for-byte the text you saw, and it is deleted afterwards. Uninstall removes the package and (apt) the repository files the script added. You still trust Brave's server and TLS: that is the nature of vendor install scripts; source: [github.com/brave/install.sh](https://github.com/brave/install.sh) (BSD-3-Clause). |
 | **Brasero**, **Xfburn**, **K3b** — CD/DVD burners (Brasero: GNOME; Xfburn: light, Xfce; K3b: full-featured, KDE — on a non-KDE desktop it brings many KDE libraries, ~55 packages on Mint) | Come from your **distribution's own repositories**: `apt install brasero` (or `xfburn`, `k3b`) / `dnf install …` / `pacman -S …` / `zypper install …` / `apk add …`. The window shows the package and asks; uninstall removes it the same way. The package names are checked against each distribution's repositories by `tests/pkgnames_check.py` (CI). |
 
 Nothing is bundled in this repository. These programs are never ticked by *Select all*. The same logic runs without a window:
@@ -69,3 +73,7 @@ Nothing is bundled in this repository. These programs are never ticked by *Selec
 Writing an image is destructive for the target drive: Etcher asks you to pick it, and `usb-eject` is the tool for removing the stick safely afterwards.
 
 If `pkexec` is missing, the window shows the `sudo …` command to paste into a terminal.
+
+## Updates (⚙ Settings)
+
+The ⚙ button opens **Settings**. It asks GitHub (read-only) whether `main` of this repository has new commits and lists them. **Update now** pulls them (a git checkout is fast-forwarded; refused if you changed tracked files) and, if enabled, reinstalls the tools you installed for yourself, then restarts the window. A toolkit that was just **copied** to another computer (no `.git`) is *adopted*: the window attaches it to the repository and fetches the current version, so no manual copying is needed. Optionally the installer checks quietly at start-up (at most every 6 hours) and shows a banner with **Later** to snooze. Settings are stored in `~/.config/linux-scripts/settings.json`. Command line: `python3 installer/updater.py check|update [DIR]`.
