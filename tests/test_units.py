@@ -431,6 +431,18 @@ class Installer(unittest.TestCase):
             self.assertFalse(os.path.exists(os.path.join(d, "bin", "usb-eject-gui")))
             self.assertEqual(self.m.run_command(["definitely-not-a-command-xyz", "x"], lines.append), 127)
 
+    def test_start_sh_installs_exactly_the_bootstrap_packages(self):
+        import lscommon
+        with open(os.path.join(ROOT, "installer", "start.sh")) as f:
+            src = f.read()
+        for pm, pkgs in lscommon.PYTHON_BOOTSTRAP.items():
+            line = next(ln for ln in src.splitlines() if ln.strip().startswith(pm.replace("apt-get", "apt-get") + ")"))
+            for pkg in pkgs:
+                words = [w.strip('";') for w in line.split("||")[0].split()]
+                self.assertIn(pkg, words, (pm, pkg))                              # the table and the shell script agree
+        self.assertIn(["apk", "add"], [c for m, c, _ in lscommon.TK_PACKAGES if m == "apk"])
+        self.assertEqual([p for m, _, p in lscommon.TK_PACKAGES if m == "apk"], ["python3-tkinter"])   # not the old wrong name
+
     def test_prerequisite_commands_per_package_manager(self):
         self.assertEqual(self.m.prereq_command("apt-get")[:2], ["sh", "-c"])
         self.assertIn("python3-venv", self.m.prereq_command("apt-get")[2])

@@ -76,7 +76,7 @@ install_python() {
     dnf)     cmd="dnf install -y python3 python3-tkinter" ;;
     pacman)  cmd="pacman -S --noconfirm python tk" ;;
     zypper)  cmd="zypper --non-interactive install python3 python3-tk" ;;
-    apk)     cmd="apk add python3 py3-tkinter" ;;
+    apk)     cmd="apk add python3 python3-tkinter" ;;
     *) say "python3 is not installed and this system's package manager is unknown. Install Python 3 with tkinter, then start this again."; return 1 ;;
   esac
   ask "Python 3 is not installed on this computer, and the installer window needs it.

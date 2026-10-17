@@ -27,8 +27,12 @@ sh installer/start.sh --make-launcher --desktop
 ```
 
 If the window does not open, `installer/start.sh` **says why in a message window** (python3 missing, the folder was copied
-incompletely, or the last lines of the error) and keeps the full log in `~/.cache/linux-scripts/start.log`. On the first
-run the window installs Python's `tkinter` itself (`python3-tk`) with a graphical password prompt.
+incompletely, or the last lines of the error) and keeps the full log in `~/.cache/linux-scripts/start.log`.
+
+**No Python on the computer at all?** `start.sh` notices, **asks**, and installs it for you (`python3` + `tkinter`: `apt`
+`python3 python3-tk`, `dnf` `python3 python3-tkinter`, `pacman` `python tk`, `zypper` `python3 python3-tk`, `apk` `python3
+python3-tkinter`), with a graphical password prompt (or `sudo` in a terminal), then goes on and opens the window. The package
+names are checked against each distribution's repositories in CI (`tests/pkgnames_check.py`).
 If the file manager shows “untrusted launcher”: right-click the icon → *Allow Launching* (or `chmod +x` it), and a copied
 icon from another computer points to the OLD path - make a new one with the command above.
 
