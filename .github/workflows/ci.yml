@@ -102,6 +102,13 @@ jobs:
       - uses: actions/checkout@v4
       - run: tests/retry-on-network.sh tests/run-real-install.sh
 
+  gis-names:
+    # every package name in installer/gis.json exists in the real repositories of Ubuntu, Debian, Fedora, Arch and openSUSE
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: tests/retry-on-network.sh tests/run-gis-names.sh
+
   guide-drift:
     # weekly: has the QGIS installation guide moved on (new release, LTR, Ubuntu/Debian codename, signing key)?
     # A red run means qgis_installer/system.py needs updating; it never changes anything by itself.
