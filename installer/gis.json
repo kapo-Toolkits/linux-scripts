@@ -1,0 +1,513 @@
+{
+ "_comment": "GIS catalogue shown by the installer's GIS window. Entries with 'packages' (per package manager, names checked in real containers) can be installed from the distribution's repositories; 'tool' opens a tool of this toolkit; the rest are links to the project page.",
+ "sections": [
+  {
+   "id": "osgeo",
+   "title": {
+    "en": "OSGeo Projects",
+    "ka": "OSGeo პროექტები"
+   },
+   "programs": [
+    {
+     "id": "geonode",
+     "category": "Content Management Systems",
+     "name": "GeoNode",
+     "url": "https://www.osgeo.org/projects/geonode/"
+    },
+    {
+     "id": "marble",
+     "category": "Desktop Applications",
+     "name": "Marble",
+     "url": "https://www.osgeo.org/projects/marble/",
+     "packages": {
+      "apt-get": [
+       "marble"
+      ],
+      "dnf": [
+       "marble"
+      ],
+      "pacman": [
+       "marble"
+      ],
+      "zypper": [
+       "marble"
+      ]
+     }
+    },
+    {
+     "id": "gvsig",
+     "category": "Desktop Applications",
+     "name": "gvSIG Desktop",
+     "url": "https://www.osgeo.org/projects/gvsig/"
+    },
+    {
+     "id": "qgis",
+     "category": "Desktop Applications",
+     "name": "QGIS Desktop",
+     "url": "https://www.osgeo.org/projects/qgis/",
+     "tool": "qgis-installer"
+    },
+    {
+     "id": "torchgeo",
+     "category": "Geospatial Libraries",
+     "name": "TorchGeo",
+     "url": "https://www.osgeo.org/projects/torchgeo/"
+    },
+    {
+     "id": "geostyler",
+     "category": "Geospatial Libraries",
+     "name": "GeoStyler",
+     "url": "https://www.osgeo.org/projects/geostyler/"
+    },
+    {
+     "id": "proj",
+     "category": "Geospatial Libraries",
+     "name": "PROJ",
+     "url": "https://www.osgeo.org/projects/proj/",
+     "packages": {
+      "apt-get": [
+       "proj-bin"
+      ],
+      "dnf": [
+       "proj"
+      ],
+      "pacman": [
+       "proj"
+      ],
+      "zypper": [
+       "proj"
+      ]
+     }
+    },
+    {
+     "id": "geotools",
+     "category": "Geospatial Libraries",
+     "name": "GeoTools",
+     "url": "https://www.osgeo.org/projects/geotools/"
+    },
+    {
+     "id": "orfeo-toolbox",
+     "category": "Geospatial Libraries",
+     "name": "Orfeo ToolBox",
+     "url": "https://www.osgeo.org/projects/orfeo-toolbox/"
+    },
+    {
+     "id": "gdal",
+     "category": "Geospatial Libraries",
+     "name": "GDAL/OGR",
+     "url": "https://www.osgeo.org/projects/gdal/",
+     "packages": {
+      "apt-get": [
+       "gdal-bin"
+      ],
+      "dnf": [
+       "gdal"
+      ],
+      "pacman": [
+       "gdal"
+      ],
+      "zypper": [
+       "gdal"
+      ]
+     }
+    },
+    {
+     "id": "geos",
+     "category": "Geospatial Libraries",
+     "name": "GEOS",
+     "url": "https://www.osgeo.org/projects/geos/",
+     "packages": {
+      "apt-get": [
+       "libgeos-dev"
+      ],
+      "dnf": [
+       "geos"
+      ],
+      "pacman": [
+       "geos"
+      ],
+      "zypper": [
+       "geos"
+      ]
+     }
+    },
+    {
+     "id": "grass-gis",
+     "category": "Geospatial Libraries",
+     "name": "GRASS",
+     "url": "https://www.osgeo.org/projects/grass-gis/",
+     "packages": {
+      "apt-get": [
+       "grass"
+      ],
+      "dnf": [
+       "grass"
+      ],
+      "zypper": [
+       "grass"
+      ]
+     }
+    },
+    {
+     "id": "geonetwork",
+     "category": "Metadata Catalogs",
+     "name": "GeoNetwork",
+     "url": "https://www.osgeo.org/projects/geonetwork/"
+    },
+    {
+     "id": "pycsw",
+     "category": "Metadata Catalogs",
+     "name": "pycsw",
+     "url": "https://www.osgeo.org/projects/pycsw/"
+    },
+    {
+     "id": "osgeolive",
+     "category": "Other",
+     "name": "OSGeoLive",
+     "url": "https://www.osgeo.org/projects/osgeolive/"
+    },
+    {
+     "id": "postgis",
+     "category": "Spatial Databases",
+     "name": "PostGIS",
+     "url": "https://www.osgeo.org/projects/postgis/",
+     "packages": {
+      "apt-get": [
+       "postgis"
+      ],
+      "dnf": [
+       "postgis"
+      ],
+      "pacman": [
+       "postgis"
+      ]
+     }
+    },
+    {
+     "id": "pgrouting",
+     "category": "Spatial Databases",
+     "name": "pgRouting",
+     "url": "https://www.osgeo.org/projects/pgrouting/",
+     "packages": {
+      "apt-get": [
+       "postgresql-pgrouting"
+      ],
+      "dnf": [
+       "pgrouting"
+      ]
+     }
+    },
+    {
+     "id": "pygeoapi",
+     "category": "Web Mapping",
+     "name": "pygeoapi",
+     "url": "https://www.osgeo.org/projects/pygeoapi/"
+    },
+    {
+     "id": "mapserver",
+     "category": "Web Mapping",
+     "name": "MapServer",
+     "url": "https://www.osgeo.org/projects/mapserver/",
+     "packages": {
+      "apt-get": [
+       "mapserver-bin",
+       "cgi-mapserver"
+      ],
+      "dnf": [
+       "mapserver"
+      ],
+      "zypper": [
+       "mapserver"
+      ]
+     }
+    },
+    {
+     "id": "deegree",
+     "category": "Web Mapping",
+     "name": "deegree",
+     "url": "https://www.osgeo.org/projects/deegree/"
+    },
+    {
+     "id": "zoo-project",
+     "category": "Web Mapping",
+     "name": "ZOO-Project",
+     "url": "https://www.osgeo.org/projects/zoo-project/"
+    },
+    {
+     "id": "openlayers",
+     "category": "Web Mapping",
+     "name": "OpenLayers",
+     "url": "https://www.osgeo.org/projects/openlayers/"
+    },
+    {
+     "id": "geomoose",
+     "category": "Web Mapping",
+     "name": "GeoMoose",
+     "url": "https://www.osgeo.org/projects/geomoose/"
+    },
+    {
+     "id": "mapbender",
+     "category": "Web Mapping",
+     "name": "Mapbender",
+     "url": "https://www.osgeo.org/projects/mapbender/"
+    },
+    {
+     "id": "pywps",
+     "category": "Web Mapping",
+     "name": "PyWPS",
+     "url": "https://www.osgeo.org/projects/pywps/",
+     "packages": {
+      "apt-get": [
+       "python3-pywps"
+      ]
+     }
+    },
+    {
+     "id": "geoserver",
+     "category": "Web Mapping",
+     "name": "GeoServer",
+     "url": "https://www.osgeo.org/projects/geoserver/"
+    }
+   ]
+  },
+  {
+   "id": "community",
+   "title": {
+    "en": "Community projects",
+    "ka": "Community პროექტები"
+   },
+   "programs": [
+    {
+     "id": "osgeo4w",
+     "category": "Desktop Applications",
+     "name": "OSGeo4W",
+     "url": "https://www.osgeo.org/projects/osgeo4w/"
+    },
+    {
+     "id": "opticks",
+     "category": "Desktop Applications",
+     "name": "Opticks",
+     "url": "https://www.osgeo.org/projects/opticks/"
+    },
+    {
+     "id": "pygeometa",
+     "category": "Geospatial Libraries",
+     "name": "pygeometa",
+     "url": "https://www.osgeo.org/projects/pygeometa/"
+    },
+    {
+     "id": "sfcgal",
+     "category": "Geospatial Libraries",
+     "name": "SFCGAL",
+     "url": "https://www.osgeo.org/projects/sfcgal/",
+     "packages": {
+      "apt-get": [
+       "libsfcgal-dev"
+      ],
+      "dnf": [
+       "sfcgal"
+      ],
+      "zypper": [
+       "sfcgal"
+      ]
+     }
+    },
+    {
+     "id": "mappyfile",
+     "category": "Geospatial Libraries",
+     "name": "mappyfile",
+     "url": "https://www.osgeo.org/projects/mappyfile/"
+    },
+    {
+     "id": "etf",
+     "category": "Geospatial Libraries",
+     "name": "ETF",
+     "url": "https://www.osgeo.org/projects/etf/"
+    },
+    {
+     "id": "proj-jni",
+     "category": "Geospatial Libraries",
+     "name": "PROJ-JNI",
+     "url": "https://www.osgeo.org/projects/proj-jni/"
+    },
+    {
+     "id": "open-data-cube",
+     "category": "Geospatial Libraries",
+     "name": "Open Data Cube",
+     "url": "https://www.osgeo.org/projects/open-data-cube/"
+    },
+    {
+     "id": "mdal",
+     "category": "Geospatial Libraries",
+     "name": "Mesh Data Abstraction Library (MDAL)",
+     "url": "https://www.osgeo.org/projects/mdal/"
+    },
+    {
+     "id": "actinia",
+     "category": "Geospatial Libraries",
+     "name": "actinia",
+     "url": "https://www.osgeo.org/projects/actinia/"
+    },
+    {
+     "id": "pronto-raster",
+     "category": "Geospatial Libraries",
+     "name": "Pronto Raster",
+     "url": "https://www.osgeo.org/projects/pronto-raster/"
+    },
+    {
+     "id": "owslib",
+     "category": "Geospatial Libraries",
+     "name": "OWSLib",
+     "url": "https://www.osgeo.org/projects/owslib/",
+     "packages": {
+      "apt-get": [
+       "python3-owslib"
+      ],
+      "dnf": [
+       "python3-owslib"
+      ],
+      "pacman": [
+       "python-owslib"
+      ]
+     }
+    },
+    {
+     "id": "fdo",
+     "category": "Geospatial Libraries",
+     "name": "FDO",
+     "url": "https://www.osgeo.org/projects/fdo/"
+    },
+    {
+     "id": "ossim",
+     "category": "Geospatial Libraries",
+     "name": "OSSIM",
+     "url": "https://www.osgeo.org/projects/ossim/"
+    },
+    {
+     "id": "qfield",
+     "category": "Mobile Applications",
+     "name": "QField",
+     "url": "https://www.osgeo.org/projects/qfield/"
+    },
+    {
+     "id": "eoepca",
+     "category": "Other",
+     "name": "EOEPCA+",
+     "url": "https://www.osgeo.org/projects/eoepca/"
+    },
+    {
+     "id": "geoserver-client-php",
+     "category": "Other",
+     "name": "GeoServer Client PHP",
+     "url": "https://www.osgeo.org/projects/geoserver-client-php/"
+    },
+    {
+     "id": "loader-project",
+     "category": "Other",
+     "name": "Loader",
+     "url": "https://www.osgeo.org/projects/loader-project/"
+    },
+    {
+     "id": "geohealthcheck",
+     "category": "Other",
+     "name": "GeoHealthCheck",
+     "url": "https://www.osgeo.org/projects/geohealthcheck/"
+    },
+    {
+     "id": "portable-gis",
+     "category": "Other",
+     "name": "Portable GIS",
+     "url": "https://www.osgeo.org/projects/portable-gis/"
+    },
+    {
+     "id": "teamengine",
+     "category": "Other",
+     "name": "TEAM Engine",
+     "url": "https://www.osgeo.org/projects/teamengine/"
+    },
+    {
+     "id": "giswater",
+     "category": "Spatial Databases",
+     "name": "Giswater",
+     "url": "https://www.osgeo.org/projects/giswater/"
+    },
+    {
+     "id": "mobilitydb",
+     "category": "Spatial Databases",
+     "name": "MobilityDB",
+     "url": "https://www.osgeo.org/projects/mobilitydb/"
+    },
+    {
+     "id": "rasdaman",
+     "category": "Spatial Databases",
+     "name": "rasdaman",
+     "url": "https://www.osgeo.org/projects/rasdaman/"
+    },
+    {
+     "id": "geogirafe",
+     "category": "Web Mapping",
+     "name": "GeoGirafe",
+     "url": "https://www.osgeo.org/projects/geogirafe/"
+    },
+    {
+     "id": "polar",
+     "category": "Web Mapping",
+     "name": "POLAR",
+     "url": "https://www.osgeo.org/projects/polar/"
+    },
+    {
+     "id": "xyz-mapp",
+     "category": "Web Mapping",
+     "name": "XYZ / MAPP",
+     "url": "https://www.osgeo.org/projects/xyz-mapp/"
+    },
+    {
+     "id": "geoext",
+     "category": "Web Mapping",
+     "name": "GeoExt",
+     "url": "https://www.osgeo.org/projects/geoext/"
+    },
+    {
+     "id": "gc2-vidi",
+     "category": "Web Mapping",
+     "name": "GC2/Vidi",
+     "url": "https://www.osgeo.org/projects/gc2-vidi/"
+    },
+    {
+     "id": "geowebcache",
+     "category": "Web Mapping",
+     "name": "GeoWebCache",
+     "url": "https://www.osgeo.org/projects/geowebcache/"
+    },
+    {
+     "id": "mapguide-open-source",
+     "category": "Web Mapping",
+     "name": "MapGuide Open Source",
+     "url": "https://www.osgeo.org/projects/mapguide-open-source/"
+    },
+    {
+     "id": "mapfish",
+     "category": "Web Mapping",
+     "name": "mapfish",
+     "url": "https://www.osgeo.org/projects/mapfish/"
+    },
+    {
+     "id": "istsos",
+     "category": "Web Mapping",
+     "name": "istSOS",
+     "url": "https://www.osgeo.org/projects/istsos/"
+    }
+   ]
+  }
+ ],
+ "categories": {
+  "Content Management Systems": "შინაარსის მართვის სისტემები",
+  "Desktop Applications": "დესკტოპ აპლიკაციები",
+  "Geospatial Libraries": "გეოსივრცული ბიბლიოთეკები",
+  "Metadata Catalogs": "მეტამონაცემთა კატალოგები",
+  "Mobile Applications": "მობილური აპლიკაციები",
+  "Other": "სხვა",
+  "Spatial Databases": "სივრცითი მონაცემთა ბაზები",
+  "Web Mapping": "ვებ რუკები"
+ }
+}

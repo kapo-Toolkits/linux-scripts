@@ -1,0 +1,502 @@
+{
+ "_comment": "Snapshot of the OpenGeos organisation's profile README (https://github.com/opengeos/.github/blob/main/profile/README.md) with each project's GitHub description. Shown by the installer's OpenGeos window as links.",
+ "org": "https://github.com/opengeos",
+ "readme": "https://github.com/opengeos/.github/blob/main/profile/README.md",
+ "intro": {
+  "en": "Open Geospatial Solutions: a collection of open-source geospatial software from a community of developers and researchers, MIT licensed. Platforms, Python and R packages, data catalogs, plugins for QGIS and MapLibre, web apps.",
+  "ka": "Open Geospatial Solutions: გეოსივრცული ღია პროგრამების კრებული, რომელსაც დეველოპერებისა და მკვლევრების საზოგადოება ქმნის (MIT ლიცენზია). პლატფორმები, Python და R პაკეტები, მონაცემთა კატალოგები, QGIS-ისა და MapLibre-ის დანამატები, ვებ აპლიკაციები."
+ },
+ "sections": [
+  {
+   "id": "gis-platforms",
+   "title": {
+    "en": "GIS Platforms",
+    "ka": "GIS პლატფორმები"
+   },
+   "items": [
+    {
+     "name": "GeoLibre",
+     "url": "https://github.com/opengeos/GeoLibre",
+     "description": "A lightweight, cloud-native GIS platform for visualizing, exploring, and analyzing geospatial data. It runs in the web browser, on the desktop, on mobile, and inside Jupyter notebooks."
+    },
+    {
+     "name": "RustGIS",
+     "url": "https://github.com/opengeos/RustGIS",
+     "description": "A fast, free and open-source GIS in pure Rust."
+    },
+    {
+     "name": "geolibre-rust",
+     "url": "https://github.com/opengeos/geolibre-rust",
+     "description": "whitebox_next_gen geospatial tools (plus new GeoLibre tools) compiled to WebAssembly (WASI) for in-browser use in GeoLibre"
+    },
+    {
+     "name": "whitebox-wasm",
+     "url": "https://github.com/opengeos/whitebox-wasm",
+     "description": "Pure-Rust geospatial toolkit compiled to WebAssembly. No GDAL, no PROJ, no native libraries, no server."
+    }
+   ]
+  },
+  {
+   "id": "python-packages",
+   "title": {
+    "en": "Python Packages",
+    "ka": "Python პაკეტები"
+   },
+   "items": [
+    {
+     "name": "anymap",
+     "url": "https://github.com/opengeos/anymap",
+     "description": "A Python package for creating interactive maps with anywidget and JavaScript mapping libraries"
+    },
+    {
+     "name": "geemap",
+     "url": "https://github.com/gee-community/geemap",
+     "description": "A Python package for interactive geospatial analysis and visualization with Google Earth Engine."
+    },
+    {
+     "name": "GeoAgent",
+     "url": "https://github.com/opengeos/GeoAgent",
+     "description": "A multimodal AI agent for geospatial data analysis and interactive visualization"
+    },
+    {
+     "name": "geoai",
+     "url": "https://github.com/opengeos/geoai",
+     "description": "GeoAI: Artificial Intelligence for Geospatial Data"
+    },
+    {
+     "name": "geospatial",
+     "url": "https://github.com/opengeos/geospatial",
+     "description": "A Python package for installing commonly used packages for geospatial analysis and data visualization with only one command."
+    },
+    {
+     "name": "geospatial-ml",
+     "url": "https://github.com/opengeos/geospatial-ml",
+     "description": "A Python package for installing commonly used packages for geospatial analysis and machine learning with only one command."
+    },
+    {
+     "name": "HyperCoast",
+     "url": "https://github.com/opengeos/HyperCoast",
+     "description": "A Python Package for Visualizing and Analyzing Hyperspectral Data in Coastal Environments"
+    },
+    {
+     "name": "leafmap",
+     "url": "https://github.com/opengeos/leafmap",
+     "description": "A Python package for interactive mapping and geospatial analysis with minimal coding in a Jupyter environment"
+    },
+    {
+     "name": "lidar",
+     "url": "https://github.com/opengeos/lidar",
+     "description": "A Python package for delineating nested surface depressions from digital elevation data."
+    },
+    {
+     "name": "mapwidget",
+     "url": "https://github.com/opengeos/mapwidget",
+     "description": "Custom Jupyter widgets for creating interactive 2D/3D maps using popular JavaScript libraries with bidirectional communication, such as Cesium, Mapbox, MapLibre, Leaflet, and OpenLayers"
+    },
+    {
+     "name": "open-buildings",
+     "url": "https://github.com/opengeos/open-buildings",
+     "description": "Tools for working with open building datasets"
+    },
+    {
+     "name": "pygis",
+     "url": "https://github.com/opengeos/pygis",
+     "description": "A Python package for installing optional dependencies for geemap and leafmap."
+    },
+    {
+     "name": "segment-geospatial",
+     "url": "https://github.com/opengeos/segment-geospatial",
+     "description": "A Python package for segmenting geospatial data with the Segment Anything Model (SAM)"
+    },
+    {
+     "name": "whitebox-python",
+     "url": "https://github.com/opengeos/whitebox-python",
+     "description": "WhiteboxTools Python Frontend"
+    },
+    {
+     "name": "whiteboxgui",
+     "url": "https://github.com/opengeos/whiteboxgui",
+     "description": "An interactive GUI for WhiteboxTools in a Jupyter-based environment"
+    }
+   ]
+  },
+  {
+   "id": "data-catalogs",
+   "title": {
+    "en": "Data Catalogs",
+    "ka": "მონაცემთა კატალოგები"
+   },
+   "items": [
+    {
+     "name": "geospatial-data-catalogs",
+     "url": "https://github.com/opengeos/geospatial-data-catalogs",
+     "description": "A list of open geospatial datasets available on AWS, Earth Engine, Planetary Computer, NASA CMR, and STAC Index"
+    },
+    {
+     "name": "aws-open-data",
+     "url": "https://github.com/opengeos/aws-open-data",
+     "description": "A list of open datasets on AWS"
+    },
+    {
+     "name": "aws-open-data-geo",
+     "url": "https://github.com/opengeos/aws-open-data-geo",
+     "description": "A list of open geospatial datasets on AWS"
+    },
+    {
+     "name": "aws-open-data-stac",
+     "url": "https://github.com/opengeos/aws-open-data-stac",
+     "description": "A list of STAC endpoints for the AWS Open Data Program"
+    },
+    {
+     "name": "Earth-Engine-Catalog",
+     "url": "https://github.com/opengeos/Earth-Engine-Catalog",
+     "description": "The Google Earth Engine data catalog in CSV format"
+    },
+    {
+     "name": "NASA-CMR-STAC",
+     "url": "https://github.com/opengeos/NASA-CMR-STAC",
+     "description": "A list of geospatial datasets on NASA's Common Metadata Repository (CMR)"
+    },
+    {
+     "name": "NASA-Earth-Data",
+     "url": "https://github.com/opengeos/NASA-Earth-Data",
+     "description": "A comprehensive list of NASA Earth science data products"
+    },
+    {
+     "name": "stac-index-catalogs",
+     "url": "https://github.com/opengeos/stac-index-catalogs",
+     "description": "A list of STAC endpoints retrieved from https://stacindex.org"
+    },
+    {
+     "name": "maxar-open-data",
+     "url": "https://github.com/opengeos/maxar-open-data",
+     "description": "The Maxar Open Data STAC Catalog in CSV, GeoJSON, and MosaicJSON formats"
+    },
+    {
+     "name": "datasets",
+     "url": "https://github.com/opengeos/datasets",
+     "description": "A repository for sharing public geospatial datasets"
+    },
+    {
+     "name": "data",
+     "url": "https://github.com/opengeos/data",
+     "description": "Some commonly used geospatial datasets"
+    },
+    {
+     "name": "ee-tile-layers",
+     "url": "https://github.com/opengeos/ee-tile-layers",
+     "description": "Generate Earth Eninge tile layer URL to be used by leafmap"
+    }
+   ]
+  },
+  {
+   "id": "qgis-plugins",
+   "title": {
+    "en": "QGIS Plugins",
+    "ka": "QGIS დანამატები"
+   },
+   "items": [
+    {
+     "name": "Basemaps",
+     "url": "https://github.com/opengeos/qgis-basemaps",
+     "description": "Adding basemaps to QGIS"
+    },
+    {
+     "name": "CDSE",
+     "url": "https://github.com/opengeos/qgis-cdse-plugin",
+     "description": "QGIS Plugin for the Copernicus Data Space Ecosystem (CDSE)"
+    },
+    {
+     "name": "Earth Engine Data Catalogs",
+     "url": "https://github.com/opengeos/qgis-gee-data-catalogs-plugin",
+     "description": "A QGIS Plugin for searching data from the official Earth Engine Data Catalog and Awesome GEE Community Catalog"
+    },
+    {
+     "name": "Geemap",
+     "url": "https://github.com/opengeos/qgis-geemap-plugin",
+     "description": "A QGIS plugin for using Google Earth Engine and geemap"
+    },
+    {
+     "name": "GeoAI",
+     "url": "https://github.com/opengeos/geoai",
+     "description": "GeoAI: Artificial Intelligence for Geospatial Data"
+    },
+    {
+     "name": "HyperCoast",
+     "url": "https://github.com/opengeos/HyperCoast",
+     "description": "A Python Package for Visualizing and Analyzing Hyperspectral Data in Coastal Environments"
+    },
+    {
+     "name": "Leafmap",
+     "url": "https://github.com/opengeos/qgis-leafmap-plugin",
+     "description": "A QGIS plugin for leafmap"
+    },
+    {
+     "name": "Map",
+     "url": "https://github.com/opengeos/qgis-map",
+     "description": "A Python library that provides a high-level, leafmap-like API for working with PyQGIS"
+    },
+    {
+     "name": "Maxar Open Data",
+     "url": "https://github.com/opengeos/qgis-maxar-plugin",
+     "description": "A QGIS plugin for visualizing Maxar Open Data"
+    },
+    {
+     "name": "NASA Earthdata",
+     "url": "https://github.com/opengeos/qgis-nasa-earthdata-plugin",
+     "description": "A QGIS plugin for searching and visualizing NASA Earthdata"
+    },
+    {
+     "name": "NASA OPERA",
+     "url": "https://github.com/opengeos/qgis-nasa-opera-plugin",
+     "description": "A QGIS plugin for searching and visualizing NASA OPERA data"
+    },
+    {
+     "name": "Notebook",
+     "url": "https://github.com/opengeos/qgis-notebook-plugin",
+     "description": "A QGIS plugin for running Jupyter Notebook within QGIS"
+    },
+    {
+     "name": "OpenGeoAgent",
+     "url": "https://geoagent.gishub.org/qgis-plugin",
+     "description": ""
+    },
+    {
+     "name": "Plugin Template",
+     "url": "https://github.com/opengeos/qgis-plugin-template",
+     "description": "A QGIS plugin template"
+    },
+    {
+     "name": "SamGeo",
+     "url": "https://github.com/opengeos/qgis-samgeo-plugin",
+     "description": "QGIS plugin for the SamGeo Python package"
+    },
+    {
+     "name": "STAC",
+     "url": "https://github.com/opengeos/qgis-stac-plugin",
+     "description": "A QGIS plugin for searching, visualizing, and downloading data from STAC catalogs"
+    },
+    {
+     "name": "Terminal",
+     "url": "https://github.com/opengeos/qgis-terminal-plugin",
+     "description": "An integrated terminal for QGIS"
+    },
+    {
+     "name": "Terrascope",
+     "url": "https://github.com/opengeos/qgis-terrascope-plugin",
+     "description": "A QGIS plugin for Terrascope STAC API"
+    },
+    {
+     "name": "Timelapse",
+     "url": "https://github.com/opengeos/qgis-timelapse-plugin",
+     "description": "A QGIS plugin for creating timelapse animations from remote sensing imagery with Google Earth Engine"
+    },
+    {
+     "name": "Whitebox AI Agent",
+     "url": "https://github.com/opengeos/qgis-whitebox-agent",
+     "description": "AI agents for WhiteboxTools"
+    }
+   ]
+  },
+  {
+   "id": "maplibre-gl-js-plugins",
+   "title": {
+    "en": "MapLibre GL JS Plugins",
+    "ka": "MapLibre GL JS დანამატები"
+   },
+   "items": [
+    {
+     "name": "maplibre-gl-components",
+     "url": "https://github.com/opengeos/maplibre-gl-components",
+     "description": "Legend, colorbar, and HTML control components for MapLibre GL JS maps"
+    },
+    {
+     "name": "maplibre-gl-earth-engine",
+     "url": "https://github.com/opengeos/maplibre-gl-earth-engine",
+     "description": "A MapLibre GL Plugin for Google Earth Engine"
+    },
+    {
+     "name": "maplibre-gl-extend",
+     "url": "https://github.com/opengeos/maplibre-gl-extend",
+     "description": "Extended funcitonality for MapLibre GL"
+    },
+    {
+     "name": "maplibre-gl-geo-editor",
+     "url": "https://github.com/opengeos/maplibre-gl-geo-editor",
+     "description": "A MapLibre Plugin For Creating And Editing Geometries"
+    },
+    {
+     "name": "maplibre-gl-html-widget",
+     "url": "https://github.com/opengeos/maplibre-gl-html-widget",
+     "description": "Add customizable HTML widgets to your map with optional show/hide toggle functionality"
+    },
+    {
+     "name": "maplibre-gl-layer-control",
+     "url": "https://github.com/opengeos/maplibre-gl-layer-control",
+     "description": "A comprehensive layer control for MapLibre GL with advanced styling capabilities"
+    },
+    {
+     "name": "maplibre-gl-layer-manager",
+     "url": "https://github.com/opengeos/maplibre-gl-layer-manager",
+     "description": ""
+    },
+    {
+     "name": "maplibre-gl-lidar",
+     "url": "https://github.com/opengeos/maplibre-gl-lidar",
+     "description": "A MapLibre plugin for visualizing LiDAR Point Cloud"
+    },
+    {
+     "name": "maplibre-gl-noaa-lidar",
+     "url": "https://github.com/opengeos/maplibre-gl-noaa-lidar",
+     "description": "A web-based LiDAR point cloud viewer for NOAA Coastal LiDAR"
+    },
+    {
+     "name": "maplibre-gl-planetary-computer",
+     "url": "https://github.com/opengeos/maplibre-gl-planetary-computer",
+     "description": "An ineractive web app for searching, visualizing, and downloading data from Planetary Computer"
+    },
+    {
+     "name": "maplibre-gl-plugin-template",
+     "url": "https://github.com/opengeos/maplibre-gl-plugin-template",
+     "description": "A template for creating MapLibre GL JS plugins with TypeScript and React support"
+    },
+    {
+     "name": "maplibre-gl-splat",
+     "url": "https://github.com/opengeos/maplibre-gl-splat",
+     "description": "A MapLibre GL JS plugin for visualizing 3D Gaussian Splats"
+    },
+    {
+     "name": "maplibre-gl-storymaps",
+     "url": "https://github.com/opengeos/maplibre-gl-storymaps",
+     "description": "An open-source, scroll-driven storytelling template using MapLibre GL JS"
+    },
+    {
+     "name": "maplibre-gl-streetview",
+     "url": "https://github.com/opengeos/maplibre-gl-streetview",
+     "description": "A Street View control for MapLibre GL JS with support for both Google Street View and Mapillary imagery"
+    },
+    {
+     "name": "maplibre-gl-swipe",
+     "url": "https://github.com/opengeos/maplibre-gl-swipe",
+     "description": "A MapLibre plugin for swiping layers to compare them side by side."
+    },
+    {
+     "name": "maplibre-gl-time-slider",
+     "url": "https://github.com/opengeos/maplibre-gl-time-slider",
+     "description": "A MapLibre GL JS plugin for visualizing time series vector and raster data"
+    },
+    {
+     "name": "maplibre-gl-typescript-examples",
+     "url": "https://github.com/opengeos/maplibre-gl-typescript-examples",
+     "description": "A comprehensive collection of TypeScript examples demonstrating MapLibre GL JS features"
+    },
+    {
+     "name": "maplibre-gl-usgs-lidar",
+     "url": "https://github.com/opengeos/maplibre-gl-usgs-lidar",
+     "description": "A web-based LiDAR point cloud viewer for USGS 3DEP LiDAR"
+    }
+   ]
+  },
+  {
+   "id": "r-packages",
+   "title": {
+    "en": "R Packages",
+    "ka": "R პაკეტები"
+   },
+   "items": [
+    {
+     "name": "whiteboxR",
+     "url": "https://github.com/opengeos/whiteboxR",
+     "description": "WhiteboxTools R Frontend"
+    }
+   ]
+  },
+  {
+   "id": "arcgis-toolboxes",
+   "title": {
+    "en": "ArcGIS Toolboxes",
+    "ka": "ArcGIS ხელსაწყოების ნაკრებები"
+   },
+   "items": [
+    {
+     "name": "WhiteboxTools-ArcGIS",
+     "url": "https://github.com/opengeos/WhiteboxTools-ArcGIS",
+     "description": "ArcGIS Python Toolbox for WhiteboxTools"
+    }
+   ]
+  },
+  {
+   "id": "web-apps",
+   "title": {
+    "en": "Web Apps",
+    "ka": "ვებ აპლიკაციები"
+   },
+   "items": [
+    {
+     "name": "streamlit-geospatial",
+     "url": "https://github.com/opengeos/streamlit-geospatial",
+     "description": "A multi-page streamlit app for geospatial"
+    },
+    {
+     "name": "streamlit-map-template",
+     "url": "https://github.com/opengeos/streamlit-map-template",
+     "description": "A streamlit template for mapping applications"
+    },
+    {
+     "name": "solara-geemap",
+     "url": "https://github.com/opengeos/solara-geemap",
+     "description": "An Earth Engine web app developed using Solara and geemap"
+    },
+    {
+     "name": "solara-geospatial",
+     "url": "https://github.com/opengeos/solara-geospatial",
+     "description": "A collection of solara web apps for geospatial applications"
+    },
+    {
+     "name": "solara-template",
+     "url": "https://github.com/opengeos/solara-template",
+     "description": "A template for Solara web apps"
+    },
+    {
+     "name": "solara-maxar",
+     "url": "https://github.com/opengeos/solara-maxar",
+     "description": "A Solara web app for visualizing Maxar Open Data"
+    },
+    {
+     "name": "voila-geospatial",
+     "url": "https://github.com/opengeos/voila-geospatial",
+     "description": "A collection of Voila web apps for geospatial applications"
+    },
+    {
+     "name": "geospatial-dataviz",
+     "url": "https://github.com/opengeos/geospatial-dataviz",
+     "description": "An interactive Solara web app for visualizing geospatial data"
+    },
+    {
+     "name": "surface-water-app",
+     "url": "https://github.com/opengeos/surface-water-app",
+     "description": "An interactive web app for mapping surface water dynamics"
+    }
+   ]
+  },
+  {
+   "id": "useful-resources",
+   "title": {
+    "en": "Useful Resources",
+    "ka": "სასარგებლო რესურსები"
+   },
+   "items": [
+    {
+     "name": "Awesome-GEE",
+     "url": "https://github.com/opengeos/Awesome-GEE",
+     "description": "A curated list of Google Earth Engine resources"
+    },
+    {
+     "name": "python-geospatial",
+     "url": "https://github.com/opengeos/python-geospatial",
+     "description": "A collection of Python packages for geospatial analysis with binder-ready notebook examples"
+    }
+   ]
+  }
+ ]
+}

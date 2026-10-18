@@ -27,6 +27,46 @@ ETCHER_PACKAGE = "balena-etcher"
 CACHE = os.path.join("~", ".cache", "linux-scripts", "downloads")
 X86 = ("amd64", "x86_64")
 
+# ---- the list of "other programs" lives in programs.json next to this file ----
+PROGRAMS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "programs.json")
+KINDS = {"claude", "vscode", "discord", "brave", "etcher", "github", "package"}      # the recipe that installs it
+NEEDED = {"github": ("display", "repo", "package", "cmd", "asset"), "package": ("display", "cmd")}
+
+
+def load_programs(path=None):
+    """The programs.json entries, checked: a typo there must say what is wrong, not crash later in a dialog."""
+    with open(path or PROGRAMS_FILE, encoding="utf-8") as f:
+        data = json.load(f)
+    seen = set()
+    for p in data["programs"]:
+        i = p.get("id", "?")
+        if i in seen:
+            raise ValueError(f"programs.json: {i} appears twice")
+        seen.add(i)
+        if p.get("kind") not in KINDS:
+            raise ValueError(f"programs.json: {i}: kind must be one of {sorted(KINDS)}")
+        if p.get("group") not in data["groups"]:
+            raise ValueError(f"programs.json: {i}: group must be one of {data['groups']}")
+        for lang in ("en", "ka"):
+            if not p.get("name", {}).get(lang) or not p.get("info", {}).get(lang):
+                raise ValueError(f"programs.json: {i}: name and info need both en and ka")
+        for key in NEEDED.get(p["kind"], ()):
+            if not p.get(key):
+                raise ValueError(f"programs.json: {i}: kind {p['kind']} needs '{key}'")
+        for d in p.get("data", []):
+            if not d.startswith("~/") or ".." in d:
+                raise ValueError(f"programs.json: {i}: data paths must start with ~/ and stay inside it ({d})")
+    return data
+
+
+PROGRAMS = load_programs()["programs"]
+GITHUB_APPS = {p["id"]: {"name": p["display"], "repo": p["repo"], "package": p["package"], "cmd": p["cmd"], "asset": p["asset"]}
+               for p in PROGRAMS if p["kind"] == "github"}
+PACKAGE_APPS = {p["id"]: {"cmd": p["cmd"], "name": p["display"]} for p in PROGRAMS if p["kind"] == "package"}
+FLATPAK_IDS = {p["id"]: p["flatpak"] for p in PROGRAMS if p.get("flatpak")}
+DATA_DIRS = {p["id"]: p.get("data", []) for p in PROGRAMS}
+
+
 
 def fetch_json(url, timeout=20, opener=urllib.request.urlopen):
     req = urllib.request.Request(url, headers={"User-Agent": "linux-scripts-installer", "Accept": "application/vnd.github+json"})
@@ -68,7 +108,7 @@ command -v sha256sum >/dev/null 2>&1 || {{ echo "sha256sum is not installed (pac
 mkdir -p {q(d)}
 cd {q(d)}
 trap 'rm -f {q(name)}.part' EXIT
-curl -fL --proto '{proto}' --tlsv1.2 -o {q(name)}.part {q(asset['url'])}
+curl -fL --progress-bar --proto '{proto}' --tlsv1.2 -o {q(name)}.part {q(asset['url'])}
 echo "{asset['sha256']}  {name}.part" | sha256sum -c - >/dev/null || {{ echo "CHECKSUM MISMATCH - the download is not what the publisher published; nothing was installed" >&2; exit 1; }}
 echo "SHA-256 verified: {asset['sha256']}"
 mv {q(name)}.part {q(name)}
@@ -93,7 +133,7 @@ def etcher_steps(release, pm, arch, cache_dir=None):
 
 
 def etcher_remove_steps(pm):
-    cmd = {"apt-get": f"apt-get remove -y {ETCHER_PACKAGE}", "dnf": f"dnf remove -y {ETCHER_PACKAGE}",
+    cmd = {"apt-get": f"apt-get purge -y {ETCHER_PACKAGE}", "dnf": f"dnf remove -y {ETCHER_PACKAGE}",
            "zypper": f"zypper --non-interactive remove {ETCHER_PACKAGE}"}.get(pm)
     return [{"root": True, "sh": f"set -u\n{cmd}\n"}] if cmd else []
 
@@ -146,8 +186,8 @@ def brave_steps(script_path):
 
 def brave_remove_steps(pm):
     """Package plus the repository files the script added (apt); rpm distributions keep their repo file."""
-    cmds = {"apt-get": "apt-get remove -y brave-browser\nrm -f /etc/apt/sources.list.d/brave-browser-release.sources "
-                       "/usr/share/keyrings/brave-browser-archive-keyring.gpg\napt-get update",
+    cmds = {"apt-get": "apt-get purge -y brave-browser\nrm -f /etc/apt/sources.list.d/brave-browser-release.sources "
+                       "/usr/share/keyrings/brave-browser-archive-keyring.gpg\napt-get update || true",
             "dnf": "dnf remove -y brave-browser", "yum": "yum remove -y brave-browser",
             "zypper": "zypper --non-interactive remove brave-browser",
             "pacman": "pacman -R --noconfirm brave-browser || pacman -R --noconfirm brave-bin"}
@@ -197,9 +237,14 @@ apt-get install -y claude-desktop
     return [{"root": True, "sh": sh}], {"fingerprint": fpr, "url": url, "repo": line, "key": keyring}
 
 
-def claude_remove_steps(pm):
-    """The package's own removal also drops the repository entry and key it registered (vendor docs)."""
-    return [{"root": True, "sh": "set -u\napt-get remove -y claude-desktop\n"}] if pm == "apt-get" else []
+def claude_remove_steps(pm, keyring=None, listfile=None):
+    """Purge the package, then drop the repository entry and key this installer registered (the package's own removal does
+    the same per the vendor docs; removing the files again is harmless)."""
+    if pm != "apt-get":
+        return []
+    q = shlex.quote
+    return [{"root": True, "sh": f"set -u\napt-get purge -y claude-desktop\nrm -f {q(listfile or CLAUDE_LIST)} {q(keyring or CLAUDE_KEYRING)}\n"
+                                 "apt-get update || true\n"}]
 
 
 def claude_installed(which=shutil.which):
@@ -209,17 +254,6 @@ def claude_installed(which=shutil.which):
 # ---- programs published as a .deb on GitHub releases: RustDesk, Tabby, WinBoat, ArtCraft Launcher ----
 # Same safety as balenaEtcher: HTTPS download from the project's own GitHub release, SHA-256 checked against the digest
 # GitHub publishes for that exact asset, then apt installs it.  Debian-based systems only; elsewhere the project page is shown.
-GITHUB_APPS = {
-    "rustdesk": {"name": "RustDesk", "repo": "rustdesk/rustdesk", "package": "rustdesk", "cmd": "rustdesk",
-                 "asset": {"x86": "rustdesk-{v}-x86_64.deb", "arm": "rustdesk-{v}-aarch64.deb"}},
-    "tabby": {"name": "Tabby", "repo": "Eugeny/tabby", "package": "tabby-terminal", "cmd": "tabby",
-              "asset": {"x86": "tabby-{v}-linux-x64.deb", "arm": "tabby-{v}-linux-arm64.deb"}},
-    "winboat": {"name": "WinBoat", "repo": "TibixDev/winboat", "package": "winboat", "cmd": "winboat",
-                "asset": {"x86": "winboat-{v}-amd64.deb"}},
-    "artcraft": {"name": "ArtCraft Launcher", "repo": "storytold/craft-launcher", "package": "artcraft-launcher",
-                 "cmd": "artcraft-launcher", "asset": {"x86": "artcraft-launcher-{v}-linux-x86_64.deb",
-                                                       "arm": "artcraft-launcher-{v}-linux-aarch64.deb"}},
-}
 
 
 def github_release(app_id, fetch=fetch_json):
@@ -307,7 +341,7 @@ def outdated(installed=installed_version, github=None, etcher=None):
 
 
 def apt_remove_steps(package, pm):
-    return [{"root": True, "sh": f"set -u\napt-get remove -y {package}\n"}] if pm == "apt-get" else []
+    return [{"root": True, "sh": f"set -u\napt-get purge -y {package}\n"}] if pm == "apt-get" else []
 
 
 # ---- Visual Studio Code: Microsoft's apt repository, key fingerprint checked ----
@@ -347,6 +381,74 @@ apt-get install -y code
 """
     return [{"root": True, "sh": sh}], {"fingerprint": fpr, "url": url, "key": keyring}
 
+def vscode_remove_steps(pm, sources_dir="/etc/apt/sources.list.d", keyring=None, listfile=None):
+    """Purge `code`, then remove Microsoft's source file for it (and the key when nothing else in apt's sources uses it):
+    a system without VS Code should not keep checking Microsoft's repository."""
+    if pm != "apt-get":
+        return []
+    q = shlex.quote
+    keyring, listfile = keyring or VSCODE_KEYRING, listfile or VSCODE_LIST
+    sh = f"""set -u
+apt-get purge -y code
+if ! dpkg -s code-insiders >/dev/null 2>&1; then
+  rm -f {q(listfile)} {q(sources_dir)}/vscode.list
+  if ! grep -rqs {q(os.path.basename(keyring))} {q(sources_dir)} /etc/apt/sources.list 2>/dev/null; then rm -f {q(keyring)}; fi
+fi
+apt-get update || true
+"""
+    return [{"root": True, "sh": sh}]
+
+# ---- the user's own data of these programs: only ever offered, never removed silently ----
+
+
+def _size(path):
+    total = 0
+    for dirpath, _dirs, files in os.walk(path):
+        for f in files:
+            try:
+                total += os.lstat(os.path.join(dirpath, f)).st_size
+            except OSError:
+                pass
+    return total
+
+
+def data_paths(app_ids, home=None):
+    """-> [(path, bytes)]: the folders / files of these programs that really exist in the home folder (nothing is touched)."""
+    home = os.path.realpath(home or os.path.expanduser("~"))
+    out, seen = [], set()
+    for app_id in app_ids:
+        flatpak_data = [f"~/.var/app/{FLATPAK_IDS[app_id]}"] if app_id in FLATPAK_IDS else []
+        for p in DATA_DIRS.get(app_id, []) + flatpak_data:
+            path = os.path.join(home, p[2:])
+            if path in seen or not os.path.lexists(path):
+                continue
+            seen.add(path)
+            out.append((path, os.lstat(path).st_size if os.path.isfile(path) or os.path.islink(path) else _size(path)))
+    return out
+
+
+def remove_data(paths, home=None):
+    """Delete the given paths, but only those that lie inside the home folder (a symlink is removed itself, never followed).
+    -> (removed, [(path, error)])"""
+    home = os.path.realpath(home or os.path.expanduser("~"))
+    done, failed = [], []
+    for path in paths:
+        parent = os.path.realpath(os.path.dirname(path))
+        if not (parent == home or parent.startswith(home + os.sep)):      # inside the home folder only (so never the folder itself)
+            failed.append((path, "outside the home folder - not touched"))
+            continue
+        try:
+            if os.path.islink(path) or os.path.isfile(path):
+                os.unlink(path)
+            elif os.path.isdir(path):
+                shutil.rmtree(path)
+            else:
+                continue
+            done.append(path)
+        except OSError as e:
+            failed.append((path, str(e)))
+    return done, failed
+
 
 # ---- Discord: the publisher's own .deb (https://discord.com/download).  Discord publishes no checksum, so only HTTPS protects it ----
 DISCORD_URL = "https://discord.com/api/download?platform=linux&format=deb"
@@ -363,7 +465,7 @@ def discord_steps(pm, arch, cache_dir=None, proto="=https", url=None):
 command -v curl >/dev/null 2>&1 || {{ echo "curl is not installed (Debian/Ubuntu: sudo apt install curl)" >&2; exit 1; }}
 mkdir -p {q(d)}
 trap 'rm -f {q(path)}.part' EXIT
-curl -fL --proto '{proto}' --proto-redir '{proto}' --tlsv1.2 -o {q(path)}.part {q(url or DISCORD_URL)}
+curl -fL --progress-bar --proto '{proto}' --proto-redir '{proto}' --tlsv1.2 -o {q(path)}.part {q(url or DISCORD_URL)}
 dpkg-deb -f {q(path)}.part Package | grep -qx discord || {{ echo "the download is not the Discord package - nothing was installed" >&2; exit 1; }}
 mv {q(path)}.part {q(path)}
 """
@@ -373,13 +475,10 @@ mv {q(path)}.part {q(path)}
 
 
 # programs that simply come from the distribution's own repositories (no download, nothing to verify by hand)
-PACKAGE_APPS = {"brasero": {"cmd": "brasero", "name": "Brasero"},
-                "xfburn": {"cmd": "xfburn", "name": "Xfburn"},
-                "k3b": {"cmd": "k3b", "name": "K3b"}}
 _INSTALL = {"apt-get": "apt-get install -y {p}", "dnf": "dnf install -y {p}", "yum": "yum install -y {p}",
             "pacman": "pacman -S --noconfirm {p}", "zypper": "zypper --non-interactive install {p}",
             "apk": "apk add {p}", "xbps-install": "xbps-install -y {p}"}
-_REMOVE = {"apt-get": "apt-get remove -y {p}", "dnf": "dnf remove -y {p}", "yum": "yum remove -y {p}",
+_REMOVE = {"apt-get": "apt-get purge -y {p}", "dnf": "dnf remove -y {p}", "yum": "yum remove -y {p}",
            "pacman": "pacman -R --noconfirm {p}", "zypper": "zypper --non-interactive remove {p}",
            "apk": "apk del {p}", "xbps-install": "xbps-remove -y {p}"}
 
@@ -406,6 +505,163 @@ def package_steps(app, pm, remove=False):
 
 def package_installed(app, which=shutil.which):
     return bool(which(PACKAGE_APPS[app]["cmd"]))
+
+
+# ---- GIS catalogue (installer/gis.json): OSGeo projects and community projects ----
+GIS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "gis.json")
+GIS_PMS = {"apt-get", "dnf", "pacman", "zypper"}                       # the package managers the names were checked for
+
+
+def load_gis(path=None):
+    """gis.json, checked: every entry needs id, category (known), name and url; packages only for known package managers."""
+    with open(path or GIS_FILE, encoding="utf-8") as f:
+        data = json.load(f)
+    seen = set()
+    for sec in data["sections"]:
+        if not all(sec.get("title", {}).get(lang) for lang in ("en", "ka")):
+            raise ValueError(f"gis.json: section {sec.get('id')}: title needs en and ka")
+        for p in sec["programs"]:
+            i = p.get("id", "?")
+            if i in seen:
+                raise ValueError(f"gis.json: {i} appears twice")
+            seen.add(i)
+            if p.get("category") not in data["categories"]:
+                raise ValueError(f"gis.json: {i}: category must be one of {sorted(data['categories'])}")
+            if not p.get("name") or not str(p.get("url", "")).startswith("https://"):
+                raise ValueError(f"gis.json: {i}: needs a name and an https url")
+            for pm, names in p.get("packages", {}).items():
+                if pm not in GIS_PMS or not names or not all(isinstance(n, str) and n and " " not in n for n in names):
+                    raise ValueError(f"gis.json: {i}: bad packages for '{pm}'")
+    return data
+
+
+def gis_programs(data=None):
+    """Flat {id: entry} over both sections."""
+    data = data or load_gis()
+    return {p["id"]: p for sec in data["sections"] for p in sec["programs"]}
+
+
+def gis_packages(item, pm):
+    """The distribution packages for this system, or None (link-only entry, or no package under this package manager)."""
+    return item.get("packages", {}).get(pm) or None
+
+
+def gis_steps(item, pm, remove=False):
+    """[{'root': True, 'sh': ...}] installing / removing the packages, [] when there is nothing to install here."""
+    names = gis_packages(item, pm)
+    fmt = (_REMOVE if remove else _INSTALL).get(pm)
+    if not names or not fmt:
+        return []
+    return [{"root": True, "sh": "set -u\n" + fmt.format(p=" ".join(names)) + "\n"}]
+
+
+def gis_installed(item, pm, run=subprocess.run, which=shutil.which):
+    """True when every package of this entry is installed (dpkg / rpm / pacman), False otherwise or when unknown."""
+    names = gis_packages(item, pm)
+    if not names:
+        return False
+    for n in names:
+        if pm == "apt-get" and which("dpkg-query"):
+            cmd, ok = ["dpkg-query", "-W", "-f=${Status}", n], lambda r: r.stdout.startswith("install ok installed")
+        elif pm in ("dnf", "zypper") and which("rpm"):
+            cmd, ok = ["rpm", "-q", n], lambda r: True
+        elif pm == "pacman" and which("pacman"):
+            cmd, ok = ["pacman", "-Q", n], lambda r: True
+        else:
+            return False
+        try:
+            r = run(cmd, capture_output=True, text=True, timeout=30)
+        except Exception:  # noqa: BLE001
+            return False
+        if r.returncode != 0 or not ok(r):
+            return False
+    return True
+
+
+
+# ---- OpenGeos (https://github.com/opengeos): a catalogue shown as cards, links only ----
+OPENGEOS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "opengeos.json")
+
+
+def load_opengeos(path=None):
+    """opengeos.json, checked: every section has en/ka titles and items with a name and an https url."""
+    with open(path or OPENGEOS_FILE, encoding="utf-8") as f:
+        data = json.load(f)
+    seen = set()
+    for sec in data["sections"]:
+        if sec["id"] in seen:
+            raise ValueError(f"opengeos.json: section {sec['id']} appears twice")
+        seen.add(sec["id"])
+        if not all(sec.get("title", {}).get(lang) for lang in ("en", "ka")):
+            raise ValueError(f"opengeos.json: section {sec['id']}: title needs en and ka")
+        for it in sec["items"]:
+            if not it.get("name") or not str(it.get("url", "")).startswith("https://"):
+                raise ValueError(f"opengeos.json: {sec['id']}: every item needs a name and an https url")
+    if not all(data.get("intro", {}).get(lang) for lang in ("en", "ka")):
+        raise ValueError("opengeos.json: intro needs en and ka")
+    return data
+
+
+def opengeos_filter(data, needle="", section=None):
+    """[(section, [items])] whose name / description / section title contains the text, optionally only one section id."""
+    needle = needle.strip().lower()
+    out = []
+    for sec in data["sections"]:
+        if section and sec["id"] != section:
+            continue
+        items = [it for it in sec["items"] if not needle or needle in (it["name"] + " " + it.get("description", "") + " " +
+                                                                        sec["title"]["en"] + " " + sec["title"]["ka"]).lower()]
+        if items:
+            out.append((sec, items))
+    return out
+
+
+
+# ---- Flatpak (Flathub) for systems where the publisher's .deb / apt repository does not apply (Fedora, openSUSE, Arch ...) ----
+# Flathub's own signed remote; installed for the user (no administrator password) once flatpak itself is there.
+FLATHUB_REPO = "https://dl.flathub.org/repo/flathub.flatpakrepo"
+FLATPAK_SETUP = "https://flatpak.org/setup/"
+
+
+def flatpak_scopes(app_id, run=subprocess.run, which=shutil.which):
+    """{'user', 'system'}: where this program is installed as a flatpak (empty when not, or when flatpak is missing)."""
+    fid = FLATPAK_IDS.get(app_id)
+    if not fid or not which("flatpak"):
+        return set()
+    out = set()
+    for scope in ("user", "system"):
+        try:
+            if run(["flatpak", "info", f"--{scope}", fid], capture_output=True, text=True, timeout=30).returncode == 0:
+                out.add(scope)
+        except Exception:  # noqa: BLE001
+            pass
+    return out
+
+
+def flatpak_steps(app_id, pm, have_flatpak, remove_scopes=None):
+    """-> (steps, info). Install: [flatpak from the system's own repositories if missing (administrator)] + add Flathub for
+    the user + install for the user.  Remove (remove_scopes given): uninstall in each scope it is installed in.
+    steps is [] with info['manual'] when this program has no Flathub entry or flatpak cannot be installed here."""
+    fid = FLATPAK_IDS.get(app_id)
+    if not fid:
+        return [], {"manual": FLATPAK_SETUP}
+    q = shlex.quote
+    if remove_scopes is not None:
+        steps = []
+        if "user" in remove_scopes:
+            steps.append({"root": False, "sh": f"set -u\nflatpak uninstall -y --user {q(fid)}\n"})
+        if "system" in remove_scopes:
+            steps.append({"root": True, "sh": f"set -u\nflatpak uninstall -y --system {q(fid)}\n"})
+        return steps, {"id": fid}
+    steps = []
+    if not have_flatpak:
+        cmd = _INSTALL.get(pm)
+        if not cmd:
+            return [], {"manual": FLATPAK_SETUP}
+        steps.append({"root": True, "sh": "set -eu\n" + cmd.format(p="flatpak") + "\n"})
+    steps.append({"root": False, "sh": f"set -eu\nflatpak remote-add --user --if-not-exists flathub {q(FLATHUB_REPO)}\n"
+                                       f"flatpak install -y --user flathub {q(fid)}\n"})
+    return steps, {"id": fid, "needs_flatpak": not have_flatpak, "source": "flathub.org"}
 
 
 def main(argv):
