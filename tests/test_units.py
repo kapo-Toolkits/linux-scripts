@@ -1587,6 +1587,49 @@ class GisCatalogue(unittest.TestCase):
             self.assertIn(needle, str(cm.exception))
 
 
+class OpenGeos(unittest.TestCase):
+    ex = Installer.m.extras
+
+    def test_the_catalogue_has_every_group_of_the_organisations_readme(self):
+        data = self.ex.load_opengeos()
+        titles = [sec["title"]["en"] for sec in data["sections"]]
+        self.assertEqual(titles, ["GIS Platforms", "Python Packages", "Data Catalogs", "QGIS Plugins", "MapLibre GL JS Plugins",
+                                  "R Packages", "ArcGIS Toolboxes", "Web Apps", "Useful Resources"])
+        items = {it["name"] for sec in data["sections"] for it in sec["items"]}
+        for n in ("GeoLibre", "leafmap", "segment-geospatial", "whitebox-python", "Basemaps", "maplibre-gl-swipe", "whiteboxR", "streamlit-geospatial"):
+            self.assertIn(n, items)
+        self.assertTrue(all(it["url"].startswith("https://") for sec in data["sections"] for it in sec["items"]))
+        self.assertEqual(data["org"], "https://github.com/opengeos")
+
+    def test_filter_by_text_and_category(self):
+        data = self.ex.load_opengeos()
+        every = self.ex.opengeos_filter(data)
+        self.assertEqual(sum(len(i) for _s, i in every), sum(len(s["items"]) for s in data["sections"]))
+        hit = self.ex.opengeos_filter(data, "LEAFMAP")                                 # case-insensitive
+        self.assertTrue(any(it["name"] == "leafmap" for _s, items in hit for it in items))
+        only = self.ex.opengeos_filter(data, "", "r-packages")
+        self.assertEqual([(s["id"], [i["name"] for i in items]) for s, items in only], [("r-packages", ["whiteboxR"])])
+        self.assertEqual(self.ex.opengeos_filter(data, "zzzz-nothing-zzzz"), [])
+
+    def test_mistakes_are_named(self):
+        with open(self.ex.OPENGEOS_FILE, encoding="utf-8") as f:
+            base = json.load(f)
+        for mutate, needle in (
+                (lambda d: d["sections"].append(dict(d["sections"][0])), "appears twice"),
+                (lambda d: d["sections"][0]["title"].pop("ka"), "title needs"),
+                (lambda d: d["sections"][0]["items"][0].update(url="http://x"), "https url"),
+                (lambda d: d["intro"].pop("en"), "intro needs")):
+            data = json.loads(json.dumps(base))
+            mutate(data)
+            with tempfile.TemporaryDirectory() as d:
+                path = os.path.join(d, "o.json")
+                with open(path, "w", encoding="utf-8") as f:
+                    json.dump(data, f)
+                with self.assertRaises(ValueError) as cm:
+                    self.ex.load_opengeos(path)
+            self.assertIn(needle, str(cm.exception))
+
+
 class ClaudeDesktop(unittest.TestCase):
     ex = Installer.m.extras
 
