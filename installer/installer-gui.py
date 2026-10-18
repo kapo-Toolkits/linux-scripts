@@ -6,7 +6,9 @@ so nothing is hidden.  For yourself (~/.local) no password is needed; for everyo
 administrator password through pkexec.
 """
 import os
+import re
 import shutil
+import signal
 import subprocess
 import sys
 import threading
@@ -59,56 +61,7 @@ TOOLS = [
 GROUP_TEXT = {"dev": "g_dev", "net": "g_net", "disk": "g_disk", "more": "g_more"}
 
 # installed from the publisher (not by install.sh): shown in their own block, never ticked by default
-EXTRAS = [
-    {"id": "claude", "group": "dev",
-     "name": {"en": "Claude Desktop (beta)", "ka": "Claude Desktop (ბეტა)"},
-     "info": {"en": "the Claude app: Chat, Cowork, Claude Code; Ubuntu / Debian / Mint; from Anthropic's apt repository",
-              "ka": "Claude-ის აპლიკაცია: Chat, Cowork, Claude Code; Ubuntu / Debian / Mint; Anthropic-ის apt რეპოზიტორიიდან"}},
-    {"id": "vscode", "group": "dev",
-     "name": {"en": "Visual Studio Code", "ka": "Visual Studio Code"},
-     "info": {"en": "code editor; from Microsoft's apt repository (key fingerprint checked); updates via apt",
-              "ka": "კოდის რედაქტორი; Microsoft-ის apt რეპოზიტორიიდან (გასაღების თითის ანაბეჭდი მოწმდება); განახლება apt-ით"}},
-    {"id": "tabby", "group": "dev",
-     "name": {"en": "Tabby", "ka": "Tabby"},
-     "info": {"en": "terminal with SSH / serial; .deb from GitHub, SHA-256 checked (~130 MB)",
-              "ka": "ტერმინალი SSH / serial-ით; .deb GitHub-იდან, SHA-256 მოწმდება (~130 MB)"}},
-    {"id": "discord", "group": "net",
-     "name": {"en": "Discord", "ka": "Discord"},
-     "info": {"en": "chat and voice; the publisher's own .deb (no checksum is published, only HTTPS)",
-              "ka": "ჩატი და ხმა; გამომცემლის საკუთარი .deb (კონტროლური ჯამი არ ქვეყნდება, მხოლოდ HTTPS)"}},
-    {"id": "rustdesk", "group": "net",
-     "name": {"en": "RustDesk", "ka": "RustDesk"},
-     "info": {"en": "remote desktop; .deb from the project's GitHub release, SHA-256 checked",
-              "ka": "დისტანციური სამუშაო მაგიდა; .deb პროექტის GitHub-იდან, SHA-256 მოწმდება"}},
-    {"id": "brave", "group": "net",
-     "name": {"en": "Brave Browser", "ka": "Brave Browser"},
-     "info": {"en": "web browser; runs Brave's own install script (you see it first), adds Brave's repository",
-              "ka": "ბრაუზერი; უშვებს Brave-ის საკუთარ ინსტალაციის სკრიპტს (წინასწარ ნახავთ), ამატებს Brave-ის რეპოზიტორიას"}},
-    {"id": "etcher", "group": "disk",
-     "name": {"en": "balenaEtcher", "ka": "balenaEtcher"},
-     "info": {"en": "write an OS image to a USB stick / SD card (downloads ~120 MB from the publisher)",
-              "ka": "OS-ის იმიჯის ჩაწერა USB ფლეშკაზე / SD ბარათზე (ჩამოტვირთავს ~120 MB გამომცემლისგან)"}},
-    {"id": "brasero", "group": "disk",
-     "name": {"en": "Brasero", "ka": "Brasero"},
-     "info": {"en": "burn CDs and DVDs (from your distribution's repositories)",
-              "ka": "CD და DVD დისკების ჩაწერა (თქვენი დისტრიბუციის რეპოზიტორიიდან)"}},
-    {"id": "xfburn", "group": "disk",
-     "name": {"en": "Xfburn", "ka": "Xfburn"},
-     "info": {"en": "light CD/DVD burner (Xfce); from your distribution's repositories",
-              "ka": "მსუბუქი CD/DVD ჩამწერი (Xfce); თქვენი დისტრიბუციის რეპოზიტორიიდან"}},
-    {"id": "k3b", "group": "disk",
-     "name": {"en": "K3b", "ka": "K3b"},
-     "info": {"en": "full CD/DVD/Blu-ray burner (KDE, brings many KDE libraries); from your distribution's repositories",
-              "ka": "სრული CD/DVD/Blu-ray ჩამწერი (KDE, ბევრ KDE ბიბლიოთეკას მოიტანს); თქვენი დისტრიბუციის რეპოზიტორიიდან"}},
-    {"id": "winboat", "group": "more",
-     "name": {"en": "WinBoat", "ka": "WinBoat"},
-     "info": {"en": "run Windows apps on Linux (needs Docker + KVM); .deb from GitHub, SHA-256 checked (~120 MB)",
-              "ka": "Windows-ის აპების გაშვება Linux-ზე (სჭირდება Docker + KVM); .deb GitHub-იდან, SHA-256 მოწმდება (~120 MB)"}},
-    {"id": "artcraft", "group": "more",
-     "name": {"en": "ArtCraft Launcher", "ka": "ArtCraft Launcher"},
-     "info": {"en": "ArtCraft launcher; .deb from GitHub, SHA-256 checked",
-              "ka": "ArtCraft-ის გამშვები; .deb GitHub-იდან, SHA-256 მოწმდება"}},
-]
+EXTRAS = [{k: x[k] for k in ("id", "group", "name", "info")} for x in extras.PROGRAMS]      # from installer/programs.json
 
 USER_PREFIX = os.path.join(os.path.expanduser("~"), ".local")
 SYSTEM_PREFIX = "/usr/local"
@@ -128,8 +81,8 @@ STR = {
  "confirm_un": "Remove the selected programs ({where})?\n\n{names}", "no_pkexec": "pkexec is not available. Run this in a terminal instead:\n\n{cmd}",
  "venv": "PrintHub needs the Python ‘venv’ package (or pip), and neither is installed.\n\nInstall it first:\n\n  sudo apt install python3-venv\n\nthen click Install again.",
  "heavy": "PrintHub downloads about 200 MB (PySide6). Continue?",
- "c_other": "Other programs (from their publishers)", "looking": "Looking up the latest balenaEtcher…",
- "lookup_fail": "Could not look up balenaEtcher (no internet, or GitHub is unreachable):\n{e}",
+ "c_other": "Other programs (from their publishers)", "looking": "Looking up the latest version…",
+ "lookup_fail": "Could not look up the latest version (no internet, or GitHub is unreachable):\n{e}",
  "etcher_ask": "Install balenaEtcher {version}?\n\nDownload: {file} ({mb} MB)\nFrom: {source}\nChecked with SHA-256 before installing:\n{sha}\n\nThen installed with the system package manager (administrator password).",
  "etcher_manual": "balenaEtcher has no official package for this system here.\n\nGet it from the publisher:\n{url}",
  "gh_ask": "Install {name} {version}?\n\nDownload: {file} ({mb} MB)\nFrom: {source}\nChecked with SHA-256 before installing:\n{sha}\n\nThen installed with apt (administrator password).",
@@ -156,6 +109,20 @@ STR = {
  "prog_ticked": "Ticked. Press “Install selected” in the main window to update them.",
  "g_dev": "AI and development", "g_net": "Internet and remote", "g_disk": "Disks and burning", "g_more": "More", "search": "Search:", "no_match": "Nothing matches.",
  "dup_hint": "Some programs are installed twice (for you and for everyone). To drop the system copy: tick them, choose “For everyone” and press Uninstall.",
+ "data_ask": "Also delete your personal data of the program(s) you are uninstalling?\n\n{list}\n\nThis cannot be undone (settings, logins, history, downloaded data).\nNo = keep them, so a later reinstall finds everything as it was.",
+ "data_done": "Personal data removed: {n} item(s).", "data_fail": "Could not remove: {p} ({e})",
+ "flatpak_ask": "Install {name} as a Flatpak?\n\nFrom Flathub ({source}), id {fid}. Installed for you only, no administrator password.{extra}",
+ "flatpak_need": "\n\nFlatpak itself is not installed yet: it is installed first from your distribution's repositories (administrator password).",
+ "cancel": "Cancel", "cancelling": "Cancelling…", "cancelled": "Cancelled. Nothing further was run.", "downloading": "Downloading… {pct}%",
+ "upd_apply": "Install updates automatically at start-up (only when nothing was changed here; the window restarts)",
+ "log_open": "Open log folder", "log_copy": "Copy log", "log_where": "Logs are in:\n{p}",
+ "log_none": "Nothing was logged today yet.\n{p}", "log_copied": "Copied the last {n} lines to the clipboard. Paste them into a bug report.\nFile: {p}",
+ "gis_btn": "GIS", "gis_title": "GIS programs", "gis_open_tool": "Open", "gis_nopkg": "no package for this system",
+ "gis_intro": "OSGeo projects and community projects. Ticked entries are installed from your distribution's repositories (administrator password); ↗ opens the project's page.",
+ "gis_install": "Install selected", "gis_uninstall": "Uninstall selected", "gis_tool_missing": "Could not start {tool}.",
+ "gis_broken": "The GIS list could not be read:\n{e}",
+ "gis_ask_install": "Install with {pm}?\n\n{list}\n\n(administrator password)",
+ "gis_ask_uninstall": "Remove with {pm}?\n\n{list}",
  "repo_url": "Could not open a browser. The project page:\n{url}",
  "upd_nogit": "git is not installed on this computer: updating works without it (Python downloads GitHub's snapshot).",
  "upd_archive": "This copy: GitHub commit {short} (updated without git)\nFolder: {folder}",
@@ -186,8 +153,8 @@ STR = {
  "no_pkexec": "pkexec არ არის. გაუშვით ტერმინალში:\n\n{cmd}".replace("\\\n", "\n"),
  "venv": "PrintHub-ს სჭირდება Python-ის ‘venv’ პაკეტი (ან pip), მაგრამ არცერთი არ არის დაყენებული.\n\nჯერ დააყენეთ:\n\n  sudo apt install python3-venv\n\nმერე ისევ დააჭირეთ „დაყენებას“.".replace("\\\n", "\n"),
  "heavy": "PrintHub-ი დაახლოებით 200 MB-ს ჩამოტვირთავს (PySide6). გავაგრძელო?",
- "c_other": "სხვა პროგრამები (გამომცემლისგან)", "looking": "ვეძებ balenaEtcher-ის უახლეს ვერსიას…",
- "lookup_fail": "balenaEtcher-ის მოძებნა ვერ მოხერხდა (ინტერნეტი არ არის ან GitHub მიუწვდომელია):\n{e}",
+ "c_other": "სხვა პროგრამები (გამომცემლისგან)", "looking": "ვეძებ უახლეს ვერსიას…",
+ "lookup_fail": "უახლესი ვერსიის მოძებნა ვერ მოხერხდა (ინტერნეტი არ არის ან GitHub მიუწვდომელია):\n{e}",
  "etcher_ask": "დავაყენო balenaEtcher {version}?\n\nჩამოტვირთვა: {file} ({mb} MB)\nსაიდან: {source}\nდაყენებამდე შემოწმდება SHA-256-ით:\n{sha}\n\nმერე დაყენდება სისტემის პაკეტ-მენეჯერით (ადმინისტრატორის პაროლი).",
  "etcher_manual": "balenaEtcher-ს ამ სისტემისთვის ოფიციალური პაკეტი აქ არ აქვს.\n\nაიღეთ გამომცემლის გვერდიდან:\n{url}",
  "gh_ask": "დავაყენო {name} {version}?\n\nჩამოტვირთვა: {file} ({mb} MB)\nსაიდან: {source}\nდაყენებამდე შემოწმდება SHA-256-ით:\n{sha}\n\nმერე დაყენდება apt-ით (ადმინისტრატორის პაროლი).",
@@ -205,15 +172,29 @@ STR = {
  "upd_reinstall": "განახლების შემდეგ ხელახლა დავაყენო ჩემთვის დაყენებული პროგრამები",
  "upd_adopt_ask": "ეს საქაღალდე უბრალო ასლია. მივაერთო GitHub-ს და გავაახლო ბოლო ვერსიამდე?\n\nფაილები, რასაც git აკონტროლებს, ჩანაცვლდება უახლესით; სხვა ფაილები (მაგ. start-installer.desktop) დარჩება.",
  "upd_done": "განახლდა. ინსტალერი ახლა თავიდან გაიხსნება.", "upd_failed": "ვერ განახლდა:\n{e}",
- "upd_unknown": "ამ ასლის ვერსია ჯერ უცნობია. GitHub-ის უახლესისგან {n} ფაილით განსხვავდება (სია ქვემოთაა; ჩანაცვლებულ ფაილებს წინასწარ ვინახავ).",
+ "upd_unknown": "ამ ასლის ვერსია ჯერ უცნობია. GitHub-ის უახლესისგან {n} ფაილით განსხვავდება (სია ქვემოთაა; ჩასანაცვლებელ ფაილებს წინასწარ შევინახავ).",
  "upd_unknown_same": "ეს ასლი GitHub-ის უახლესი ვერსიის იდენტურია.",
  "upd_archive_ask": "ჩამოვტვირთო GitHub-იდან უახლესი ვერსია და ჩავანაცვლო ჩამოთვლილი ფაილები?\n\nძველი ასლები წინასწარ შეინახება ~/.cache/linux-scripts/update-backup/-ში. თქვენი სხვა ფაილები არ შეიცვლება.",
  "prog_check": "პროგრამების განახლების შემოწმება", "prog_checking": "ვეკითხები GitHub-ს თქვენს დაყენებულ პროგრამებზე…",
  "prog_none": "GitHub-იდან დაყენებული ყველა პროგრამა ახალია.", "prog_found": "{n} პროგრამას ახალი ვერსია აქვს:",
- "prog_fail": "ვერ შევამოწმე: {ids}", "prog_tick": "მონიშნე მთავარ ფანჯარაში",
+ "prog_fail": "ვერ შევამოწმე: {ids}", "prog_tick": "მონიშნეთ მთავარ ფანჯარაში",
  "prog_ticked": "მონიშნულია. განახლებისთვის მთავარ ფანჯარაში დააჭირეთ „მონიშნულის დაყენებას“.",
  "g_dev": "AI და დეველოპმენტი", "g_net": "ინტერნეტი და დისტანციური წვდომა", "g_disk": "დისკები და ჩაწერა", "g_more": "სხვა", "search": "ძებნა:", "no_match": "არაფერი ემთხვევა.",
  "dup_hint": "ზოგი პროგრამა ორჯერ არის დაყენებული (თქვენთვის და ყველასთვის). სისტემური ასლის მოსაცილებლად: მონიშნეთ ისინი, აირჩიეთ „ყველასთვის“ და დააჭირეთ წაშლას.",
+ "data_ask": "წავშალო თქვენი პირადი მონაცემებიც იმ პროგრამებისა, რომლებსაც წაშლით?\n\n{list}\n\nეს ვეღარ აღდგება (პარამეტრები, ანგარიშები, ისტორია, ჩამოტვირთული მონაცემები).\nარა = დარჩება, რომ მოგვიანებით ხელახლა დაყენებისას ყველაფერი ისე დახვდეთ.",
+ "data_done": "პირადი მონაცემები წაიშალა: {n}.", "data_fail": "ვერ წავშალე: {p} ({e})",
+ "flatpak_ask": "დავაყენო {name} Flatpak-ად?\n\nFlathub-იდან ({source}), id {fid}. დაყენდება მხოლოდ თქვენთვის, ადმინისტრატორის პაროლის გარეშე.{extra}",
+ "flatpak_need": "\n\nთვითონ Flatpak ჯერ დაყენებული არ არის: ჯერ დაყენდება თქვენი დისტრიბუციის რეპოზიტორიიდან (ადმინისტრატორის პაროლი).",
+ "cancel": "გაუქმება", "cancelling": "ვაუქმებ…", "cancelled": "გაუქმდა. მეტი არაფერი გაშვებულა.", "downloading": "მიმდინარეობს ჩამოტვირთვა… {pct}%",
+ "upd_apply": "განახლებების ავტომატური დაყენება გახსნისას (მხოლოდ თუ აქ არაფერია შეცვლილი; ფანჯარა თავიდან გაიხსნება)",
+ "log_open": "ჟურნალის საქაღალდე", "log_copy": "ჟურნალის კოპირება", "log_where": "ჟურნალები აქ არის:\n{p}",
+ "log_none": "დღეს ჯერ არაფერი ჩაწერილა.\n{p}", "log_copied": "ბოლო {n} ხაზი დაკოპირდა ბუფერში. ჩასვით შეცდომის შეტყობინებაში.\nფაილი: {p}",
+ "gis_btn": "GIS", "gis_title": "GIS პროგრამები", "gis_open_tool": "გახსნა", "gis_nopkg": "ამ სისტემისთვის პაკეტი არ არის",
+ "gis_intro": "OSGeo-ს პროექტები და Community პროექტები. მონიშნული დაყენდება თქვენი დისტრიბუციის რეპოზიტორიიდან (ადმინისტრატორის პაროლი); ↗ პროექტის გვერდს ხსნის.",
+ "gis_install": "მონიშნულის დაყენება", "gis_uninstall": "მონიშნულის წაშლა", "gis_tool_missing": "{tool}-ის გაშვება ვერ მოხერხდა.",
+ "gis_broken": "GIS სიის წაკითხვა ვერ მოხერხდა:\n{e}",
+ "gis_ask_install": "დავაყენო {pm}-ით?\n\n{list}\n\n(ადმინისტრატორის პაროლი)",
+ "gis_ask_uninstall": "წავშალო {pm}-ით?\n\n{list}",
  "repo_url": "ბრაუზერის გახსნა ვერ მოხერხდა. პროექტის გვერდი:\n{url}",
  "upd_nogit": "ამ კომპიუტერზე git დაყენებული არ არის: განახლება მის გარეშეც მუშაობს (Python ჩამოტვირთავს GitHub-ის ასლს).",
  "upd_archive": "ეს ასლი: GitHub-ის კომიტი {short} (განახლებულია git-ის გარეშე)\nსაქაღალდე: {folder}",
@@ -273,6 +254,41 @@ def elevate(cmd, which=shutil.which, euid=None):
     return ["pkexec"] + list(cmd) if which("pkexec") else None
 
 
+LOG_KEEP = 10                                          # newest log files kept
+
+
+def log_dir():
+    return os.path.join(os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache"), "linux-scripts", "logs")
+
+
+def log_path(day=None):
+    return os.path.join(log_dir(), f"installer-{day or time.strftime('%Y%m%d')}.log")
+
+
+def log_line(text, path=None):
+    """Append one line (with the time) to today's log file; never raises: a full disk must not break an installation."""
+    try:
+        path = path or log_path()
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(time.strftime("%H:%M:%S ") + str(text).rstrip("\n") + "\n")
+        old = sorted(x for x in os.listdir(os.path.dirname(path)) if x.startswith("installer-") and x.endswith(".log"))
+        for name in old[:-LOG_KEEP]:
+            os.remove(os.path.join(os.path.dirname(path), name))
+        return True
+    except OSError:
+        return False
+
+
+def read_log(path=None, max_lines=400):
+    """The newest part of today's log (for 'Copy log'), or ''."""
+    try:
+        with open(path or log_path(), encoding="utf-8", errors="replace") as f:
+            return "".join(f.readlines()[-max_lines:])
+    except OSError:
+        return ""
+
+
 def shell_line(cmd):
     import shlex
     return " ".join(shlex.quote(c) for c in cmd)
@@ -310,14 +326,23 @@ def prereq_command(pm):
     return ["sh", "-c", sh] if sh else None
 
 
-def run_jobs(jobs, on_line):
-    """Run commands one after another; stop at the first failure. -> exit code of the last one run."""
+def run_jobs(jobs, on_line, ctl=None):
+    """Run commands one after another; stop at the first failure or when the user cancelled (ctl["cancel"]).
+    -> exit code of the last one run (130 = cancelled)."""
     rc = 0
     for job in jobs:
-        rc = run_command(job, on_line)
+        if ctl and ctl.get("cancel"):
+            return 130
+        rc = run_command(job, on_line, ctl)
         if rc != 0:
             return rc
     return rc
+
+
+def progress_percent(line):
+    """curl's --progress-bar line ('######## 45.3%') -> 45.3, anything else -> None."""
+    m = re.search(r"#.*?(\d{1,3}(?:\.\d)?)%\s*$", line)
+    return min(100.0, float(m.group(1))) if m else None
 
 
 def tool_path(tool_id, where, home=None, exists=os.path.exists):
@@ -328,16 +353,38 @@ def tool_path(tool_id, where, home=None, exists=os.path.exists):
     return path if exists(path) else None
 
 
-def run_command(cmd, on_line):
-    """Run and stream every output line; returns the exit code (127 when it could not start)."""
+def stop_process(p):
+    """End a command and everything it started (a download is a child of the shell that runs it)."""
     try:
-        p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, cwd=ROOT)
+        os.killpg(os.getpgid(p.pid), signal.SIGTERM)
+    except (OSError, ProcessLookupError):
+        try:
+            p.terminate()
+        except OSError:
+            pass
+
+
+def run_command(cmd, on_line, ctl=None):
+    """Run and stream every output line; returns the exit code (127 when it could not start, 130 when cancelled).
+    ctl is the window's control dict: ctl["cancel"] stops a command that runs as the user (never one that runs through
+    pkexec / sudo: killing only the wrapper would leave the administrator's command running half-way)."""
+    try:
+        p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, cwd=ROOT, start_new_session=True)
     except OSError:
         return 127
+    if ctl is not None:
+        ctl["proc"], ctl["elevated"] = p, os.path.basename(cmd[0]) in ("pkexec", "sudo")
+    cancelled = False
     with p:
         for line in p.stdout:
             on_line(line)
-    return p.wait()
+            if ctl and ctl.get("cancel") and not ctl.get("elevated") and not cancelled:
+                cancelled = True
+                stop_process(p)
+    rc = p.wait()
+    if ctl is not None:
+        ctl["proc"] = None
+    return 130 if (cancelled or (ctl and ctl.get("cancel") and not ctl.get("elevated") and rc != 0)) else rc
 
 
 def banner_for(res, settings, now):
@@ -352,6 +399,16 @@ def banner_for(res, settings, now):
     if res["mode"] == "adopt" and float(settings.get("update_snooze_until", 0) or 0) <= now:
         return ("plain", None)
     return None
+
+
+def should_auto_apply(res, settings):
+    """Automatic updating is opt-in and only for the clear cases: a git checkout with nothing changed locally, or a copy whose
+    GitHub commit is known (archive mode). Never for an unknown version (the user must see the file list first)."""
+    if not settings.get("auto_apply_update", False) or not res or not res.get("behind"):
+        return False
+    if res["mode"] == "git":
+        return not res["local"].get("dirty") and not res.get("ahead")
+    return res["mode"] == "archive"
 
 
 def reinstall_ids(tools, installed_fn):
@@ -411,6 +468,9 @@ class App(tk.Tk):
         self.btn_lang.pack(side="right")
         self.btn_set = ttk.Button(top, width=3, text="⚙", command=self.open_settings)
         self.btn_set.pack(side="right", padx=(0, 6))
+        self.btn_gis = ttk.Button(top, command=self.open_gis)
+        self.btn_gis.pack(side="right", padx=(0, 6))
+        self.gis_vars = {}
         self.top = top
         self.banner = ttk.Frame(self)                           # shown only when GitHub has something new (see start_quiet_check)
         self.lbl_banner = ttk.Label(self.banner, foreground="#1a5fb4", font=("", 9, "bold"))
@@ -489,6 +549,12 @@ class App(tk.Tk):
         # the status line is packed first, from the bottom, so a small window shortens the log and never cuts the status
         self.lbl_status = ttk.Label(self, foreground="#555555", wraplength=w - 30)
         self.lbl_status.pack(side="bottom", anchor="w", padx=12, pady=(0, 6))
+        self.runbar = ttk.Frame(self)                            # shown only while something runs: progress + cancel
+        self.prog = ttk.Progressbar(self.runbar, mode="indeterminate")
+        self.prog.pack(side="left", fill="x", expand=True)
+        self.b_cancel = ttk.Button(self.runbar, command=self.cancel_run)
+        self.b_cancel.pack(side="left", padx=(8, 0))
+        self.run_ctl = {}
         self.log = scrolledtext.ScrolledText(self, height=2, state="disabled", wrap="word", font=("TkFixedFont", 9))
         self.log.pack(fill="both", expand=True, padx=10, pady=(2, 2))
         self.apply_lang()
@@ -504,6 +570,8 @@ class App(tk.Tk):
         self.f_tools.config(text=t("c_tools"))
         self.f_extra_box.config(text=t("c_other"))
         self.lbl_search.config(text=t("search"))
+        self.b_cancel.config(text=t("cancel"))
+        self.btn_gis.config(text=t("gis_btn"))
         self.f_where.config(text=t("f_where"))
         self.rb_user.config(text=t("w_user"))
         self.rb_sys.config(text=t("w_sys"))
@@ -542,6 +610,57 @@ class App(tk.Tk):
         ttk.Label(parent, text=info, foreground="#666666", font=("", 8), wraplength=self.wrap, justify="left").grid(
             row=base + 1, column=0, columnspan=2, sticky="w", padx=(24, 4), pady=(0, 2))
 
+    def ex_native_state(self, ex_id):
+        """Installed through the system (apt / dnf ...): the version or 'yes', else None."""
+        if ex_id == "etcher":
+            return extras.etcher_installed()
+        if ex_id == "brave":
+            return t("yes") if extras.brave_installed() else None
+        if ex_id == "claude":
+            return t("yes") if extras.claude_installed() else None
+        if ex_id == "vscode":
+            return t("yes") if extras.deb_installed("code", "code") else None
+        if ex_id == "discord":
+            return t("yes") if extras.deb_installed("discord", "discord") else None
+        if ex_id in extras.GITHUB_APPS:
+            g = extras.GITHUB_APPS[ex_id]
+            return t("yes") if extras.deb_installed(g["package"], g["cmd"]) else None
+        return t("yes") if extras.package_installed(ex_id) else None
+
+    def ex_state(self, ex_id):
+        """What the list shows: installed natively, or as a Flatpak."""
+        return self.ex_native_state(ex_id) or (t("yes") if extras.flatpak_scopes(ex_id) else None)
+
+    def flatpak_jobs(self, action, ex_id):
+        """Flatpak route for programs whose .deb / apt repository does not apply here, and removal of a flatpak install.
+        -> (handled, jobs): handled False means 'use the normal route'; jobs None means cancelled / impossible."""
+        import platform
+        if ex_id not in extras.FLATPAK_IDS:
+            return False, []
+        name = next(x["name"][LANG] for x in EXTRAS if x["id"] == ex_id)
+        pm = detect_pm()
+        if action == "uninstall":
+            scopes = extras.flatpak_scopes(ex_id)
+            if not scopes:
+                return False, []
+            steps, _info = extras.flatpak_steps(ex_id, pm, True, remove_scopes=scopes)
+            jobs = self.steps_to_jobs(steps)
+            if jobs is None:
+                return True, None
+            if self.ex_native_state(ex_id):                           # installed both ways: take both away
+                return False, jobs
+            return True, jobs
+        if pm == "apt-get" and platform.machine() in ("amd64", "x86_64", "arm64", "aarch64"):
+            return False, []
+        steps, info = extras.flatpak_steps(ex_id, pm, bool(shutil.which("flatpak")))
+        if not steps:
+            messagebox.showinfo(t("title"), t("gh_manual", name=name, url=info["manual"]))
+            return True, None
+        if not messagebox.askyesno(t("title"), t("flatpak_ask", name=name, fid=info["id"], source=info["source"],
+                                                  extra=t("flatpak_need") if info["needs_flatpak"] else "")):
+            return True, None
+        return True, self.steps_to_jobs(steps)
+
     def render(self):
         for frame in (self.f_tools, self.f_extra):
             for w in frame.winfo_children():
@@ -560,21 +679,7 @@ class App(tk.Tk):
                 ttk.Label(self.f_extra, text=t(GROUP_TEXT[shown_group]), font=("", 9, "bold"), foreground="#444444").grid(
                     row=row, column=0, columnspan=2, sticky="w", padx=4, pady=(6, 0))
                 row += 1
-            if ex["id"] == "etcher":
-                ver = extras.etcher_installed()
-            elif ex["id"] == "brave":
-                ver = t("yes") if extras.brave_installed() else None
-            elif ex["id"] == "claude":
-                ver = t("yes") if extras.claude_installed() else None
-            elif ex["id"] == "vscode":
-                ver = t("yes") if extras.deb_installed("code", "code") else None
-            elif ex["id"] == "discord":
-                ver = t("yes") if extras.deb_installed("discord", "discord") else None
-            elif ex["id"] in extras.GITHUB_APPS:
-                g = extras.GITHUB_APPS[ex["id"]]
-                ver = t("yes") if extras.deb_installed(g["package"], g["cmd"]) else None
-            else:
-                ver = t("yes") if extras.package_installed(ex["id"]) else None
+            ver = self.ex_state(ex["id"])
             self.item_row(self.f_extra, row, self.extra_vars[ex["id"]], ex["name"][LANG], ex["info"][LANG], ver or t("none"), bool(ver))
             row += 2
             hits += 1
@@ -623,6 +728,7 @@ class App(tk.Tk):
         return [x["id"] for x in EXTRAS if self.extra_vars[x["id"]].get()]
 
     def say(self, text):
+        log_line(text)
         self.log.config(state="normal")
         self.log.insert("end", str(text).rstrip("\n") + "\n")
         self.log.see("end")
@@ -659,6 +765,12 @@ class App(tk.Tk):
                 return
         extra_jobs = []
         for ex_id in extra_ids:
+            handled, fp_jobs = self.flatpak_jobs(action, ex_id)
+            if fp_jobs is None:
+                return
+            if handled:
+                extra_jobs += fp_jobs
+                continue
             jobs_for = (self.etcher_jobs(action) if ex_id == "etcher" else
                         self.brave_jobs(action) if ex_id == "brave" else
                         self.claude_jobs(action) if ex_id == "claude" else
@@ -667,7 +779,15 @@ class App(tk.Tk):
                         self.github_jobs(action, ex_id) if ex_id in extras.GITHUB_APPS else self.package_jobs(action, ex_id))
             if jobs_for is None:
                 return
-            extra_jobs += jobs_for
+            extra_jobs += fp_jobs + jobs_for
+        self.pending_data = None
+        if action == "uninstall" and extra_ids:                       # asked on its own, default "no": this cannot be undone
+            found = extras.data_paths(extra_ids)
+            if found:
+                listing = "\n".join(f"• {p}  ({max(1, round(n / 1048576))} MB)" for p, n in found[:12]) + (
+                    f"\n… (+{len(found) - 12})" if len(found) > 12 else "")
+                if messagebox.askyesno(t("title"), t("data_ask", list=listing), default="no"):
+                    self.pending_data = [p for p, _n in found]
         cmd, shown = None, ""
         if ids:
             cmd = build_command(ROOT, ids, action, self.where.get(), self.v_desk.get(), self.v_fold.get())
@@ -676,8 +796,12 @@ class App(tk.Tk):
                 cmd = elevate(cmd)
                 if cmd is None:
                     return messagebox.showwarning(t("title"), t("no_pkexec", cmd="sudo " + shown))
-        jobs = ([prereq] if prereq else []) + ([cmd] if cmd else []) + extra_jobs
-        self.start_printhub = action == "install" and "printhub" in ids
+        self.start_jobs(([prereq] if prereq else []) + ([cmd] if cmd else []) + extra_jobs, prereq, shown,
+                        printhub=action == "install" and "printhub" in ids)
+
+    def start_jobs(self, jobs, prereq=None, shown="", printhub=False):
+        """Run the prepared commands in the window's log with progress and Cancel (shared by the main list and the GIS window)."""
+        self.start_printhub = printhub
         self.busy = True
         for b in (self.b_inst, self.b_un):
             b.state(["disabled"])
@@ -694,10 +818,38 @@ class App(tk.Tk):
             except (RuntimeError, tk.TclError):       # the window was closed while the install was still running
                 pass
 
+        self.run_ctl = {"cancel": False}
+        self.runbar.pack(side="bottom", fill="x", padx=10, pady=(0, 2), before=self.lbl_status)
+        self.prog.config(mode="indeterminate")
+        self.prog.start(12)
+
+        def on_line(ln):
+            pct = progress_percent(ln)
+            if pct is None:
+                to_ui(self.say, ln)
+            else:
+                to_ui(self.show_progress, pct)
+
         def work():
-            rc = run_jobs(jobs, lambda ln: to_ui(self.say, ln))
+            rc = run_jobs(jobs, on_line, self.run_ctl)
             to_ui(self.finish, rc)
         threading.Thread(target=work, daemon=True).start()
+
+    def show_progress(self, pct):
+        """A download is running: the bar becomes a percentage."""
+        self.prog.stop()
+        self.prog.config(mode="determinate", value=pct)
+        self.lbl_status.config(text=t("downloading", pct=round(pct)))
+
+    def cancel_run(self):
+        """Stop at once what runs as the user (a download), and before the next step; an administrator step in progress
+        is allowed to finish (it is never killed half-way)."""
+        self.run_ctl["cancel"] = True
+        self.b_cancel.state(["disabled"])
+        self.lbl_status.config(text=t("cancelling"))
+        proc = self.run_ctl.get("proc")
+        if proc and not self.run_ctl.get("elevated"):
+            stop_process(proc)
 
     def confirm_script(self, info):
         """Show the downloaded script in full and ask. True = run it. (A window of its own: nothing runs unseen.)"""
@@ -811,9 +963,19 @@ class App(tk.Tk):
             st["last_update_check"] = time.time()
             updater.save_settings(st)
             found = banner_for(res, st, time.time())
-            if found:
+            if found and found[0] == "behind" and should_auto_apply(res, st):
+                self.ui(self.auto_apply, res, st.get("reinstall_after_update", True))
+            elif found:
                 self.ui(self.show_banner, found)
         threading.Thread(target=work, daemon=True).start()
+
+    def auto_apply(self, res, reinstall):
+        """The user switched on 'install updates automatically': bring the toolkit up to date now (the window restarts)."""
+        if self.busy:
+            return self.show_banner(("behind", res["behind"]))
+        self.busy = True
+        self.lbl_status.config(text=t("upd_working"))
+        threading.Thread(target=self.do_update, args=(res, reinstall), daemon=True).start()
 
     def show_banner(self, found):
         kind, n = found
@@ -841,13 +1003,16 @@ class App(tk.Tk):
         settings = updater.load_settings()
         v_auto = tk.BooleanVar(value=settings.get("auto_update_check", True))
         v_re = tk.BooleanVar(value=settings.get("reinstall_after_update", True))
+        v_apply = tk.BooleanVar(value=settings.get("auto_apply_update", False))
 
         def persist():
             st = updater.load_settings()
             st["auto_update_check"], st["reinstall_after_update"] = v_auto.get(), v_re.get()
+            st["auto_apply_update"] = v_apply.get()
             updater.save_settings(st)
         ttk.Checkbutton(win, text=t("upd_auto"), variable=v_auto, command=persist).pack(anchor="w", padx=12)
         ttk.Checkbutton(win, text=t("upd_reinstall"), variable=v_re, command=persist).pack(anchor="w", padx=12)
+        ttk.Checkbutton(win, text=t("upd_apply"), variable=v_apply, command=persist).pack(anchor="w", padx=12)
         ttk.Button(win, text="GitHub ↗  " + updater.REPO_PAGE.split("://", 1)[1], command=self.open_repo).pack(anchor="w", padx=12, pady=(6, 0))
         bar = ttk.Frame(win)
         bar.pack(fill="x", padx=12, pady=(10, 4))
@@ -861,6 +1026,10 @@ class App(tk.Tk):
         b_tick = ttk.Button(bar2, text=t("prog_tick"), state="disabled")
         b_prog.pack(side="left")
         b_tick.pack(side="left", padx=8)
+        bar3 = ttk.Frame(win)
+        bar3.pack(fill="x", padx=12, pady=(4, 0))
+        ttk.Button(bar3, text=t("log_open"), command=self.open_log_folder).pack(side="left")
+        ttk.Button(bar3, text=t("log_copy"), command=self.copy_log).pack(side="left", padx=8)
         ttk.Button(bar, text=t("set_close"), command=win.destroy).pack(side="right")
         state = {"res": None}
 
@@ -958,6 +1127,123 @@ class App(tk.Tk):
         b_check.config(command=do_check)
         b_now.config(command=do_now)
         do_check()
+
+    # ---- GIS catalogue: OSGeo projects and community projects (installer/gis.json)
+    def open_gis(self):
+        """A window of its own: two tabs (OSGeo / Community), each grouped by category. Entries with a package for this system
+        can be ticked and installed; the others are a link to the project page (or open a tool of this toolkit)."""
+        import webbrowser
+        try:
+            data = extras.load_gis()
+        except (OSError, ValueError) as e:
+            return messagebox.showwarning(t("title"), t("gis_broken", e=e))
+        pm = detect_pm()
+        win = tk.Toplevel(self)
+        win.title(t("gis_title"))
+        win.geometry("760x560")
+        win.transient(self)
+        ttk.Label(win, text=t("gis_intro"), wraplength=720, justify="left", foreground="#555555").pack(anchor="w", padx=12, pady=(10, 4))
+        nb = ttk.Notebook(win)
+        nb.pack(fill="both", expand=True, padx=10, pady=4)
+        self.gis_vars = {}
+        installed = {}
+
+        def open_url(url):
+            try:
+                ok = webbrowser.open(url)
+            except Exception:  # noqa: BLE001
+                ok = False
+            if not ok:
+                messagebox.showinfo(t("title"), t("repo_url", url=url), parent=win)
+
+        def open_tool(tool):
+            path = os.path.join(ROOT, tool, tool + "-gui.py")
+            cmd = ["python3", path] if os.path.isfile(path) else [tool]
+            try:
+                subprocess.Popen(cmd, start_new_session=True)
+            except OSError:
+                messagebox.showinfo(t("title"), t("gis_tool_missing", tool=tool), parent=win)
+
+        for sec in data["sections"]:
+            tab = ttk.Frame(nb)
+            nb.add(tab, text=sec["title"][LANG])
+            cv = tk.Canvas(tab, highlightthickness=0)
+            sb = ttk.Scrollbar(tab, orient="vertical", command=cv.yview)
+            cv.configure(yscrollcommand=sb.set)
+            sb.pack(side="right", fill="y")
+            cv.pack(side="left", fill="both", expand=True)
+            inner = ttk.Frame(cv)
+            wid = cv.create_window((0, 0), window=inner, anchor="nw")
+            inner.bind("<Configure>", lambda e, c=cv: c.configure(scrollregion=c.bbox("all")))
+            cv.bind("<Configure>", lambda e, c=cv, w=wid: c.itemconfigure(w, width=e.width))
+            for seq, d in (("<Button-4>", -1), ("<Button-5>", 1), ("<MouseWheel>", None)):
+                cv.bind(seq, lambda e, c=cv, d=d: c.yview_scroll(d if d is not None else (-1 if e.delta > 0 else 1), "units"))
+                inner.bind(seq, lambda e, c=cv, d=d: c.yview_scroll(d if d is not None else (-1 if e.delta > 0 else 1), "units"))
+            inner.columnconfigure(0, weight=1)
+            row, cat = 0, None
+            for item in sec["programs"]:
+                if item["category"] != cat:
+                    cat = item["category"]
+                    ttk.Label(inner, text=data["categories"][cat] if LANG == "ka" else cat, font=("", 10, "bold"),
+                              foreground="#444444").grid(row=row, column=0, columnspan=3, sticky="w", padx=8, pady=(10, 2))
+                    row += 1
+                names = extras.gis_packages(item, pm)
+                if names:
+                    var = tk.BooleanVar(value=False)
+                    self.gis_vars[item["id"]] = var
+                    have = installed[item["id"]] = extras.gis_installed(item, pm)
+                    ttk.Checkbutton(inner, text=item["name"], variable=var).grid(row=row, column=0, sticky="w", padx=(18, 4))
+                    ttk.Label(inner, text=t("yes") if have else t("none"), font=("", 8),
+                              foreground="#1a7f37" if have else "#888888").grid(row=row, column=1, padx=6)
+                elif item.get("tool"):
+                    ttk.Label(inner, text=item["name"]).grid(row=row, column=0, sticky="w", padx=(22, 4))
+                    ttk.Button(inner, text=t("gis_open_tool"), command=lambda tl=item["tool"]: open_tool(tl)).grid(row=row, column=1, padx=6)
+                else:
+                    ttk.Label(inner, text=item["name"] + ("  · " + t("gis_nopkg") if item.get("packages") else ""),
+                              foreground="#555555").grid(row=row, column=0, sticky="w", padx=(22, 4))
+                ttk.Button(inner, text="↗", width=3, command=lambda u=item["url"]: open_url(u)).grid(row=row, column=2, padx=(0, 8))
+                row += 1
+        bar = ttk.Frame(win)
+        bar.pack(fill="x", padx=12, pady=8)
+        ttk.Button(bar, text=t("gis_install"), command=lambda: self.gis_go("install", data, pm, win)).pack(side="left")
+        ttk.Button(bar, text=t("gis_uninstall"), command=lambda: self.gis_go("uninstall", data, pm, win)).pack(side="left", padx=8)
+        ttk.Button(bar, text=t("set_close"), command=win.destroy).pack(side="right")
+
+    def gis_go(self, action, data, pm, win):
+        """Install / remove the ticked GIS programs through the distribution's package manager (administrator password)."""
+        if self.busy:
+            return
+        items = extras.gis_programs(data)
+        chosen = [items[i] for i, v in self.gis_vars.items() if v.get()]
+        if not chosen:
+            return messagebox.showinfo(t("title"), t("nothing"), parent=win)
+        steps, listing = [], []
+        for item in chosen:
+            steps += extras.gis_steps(item, pm, remove=(action == "uninstall"))
+            listing.append(f"• {item['name']}  ({' '.join(extras.gis_packages(item, pm))})")
+        if not messagebox.askyesno(t("title"), t("gis_ask_install" if action == "install" else "gis_ask_uninstall", list="\n".join(listing), pm=pm), parent=win):
+            return
+        jobs = self.steps_to_jobs(steps)
+        if jobs is None:
+            return
+        win.destroy()
+        self.start_jobs(jobs, shown=f"{pm}: " + ", ".join(i["name"] for i in chosen))
+
+    def open_log_folder(self):
+        os.makedirs(log_dir(), exist_ok=True)
+        try:
+            subprocess.Popen(["xdg-open", log_dir()], start_new_session=True)
+        except OSError:
+            messagebox.showinfo(t("settings"), t("log_where", p=log_dir()))
+
+    def copy_log(self):
+        """Put the newest part of today's log on the clipboard, to paste into a bug report (only on this click)."""
+        text = read_log()
+        if not text:
+            return messagebox.showinfo(t("settings"), t("log_none", p=log_dir()))
+        self.clipboard_clear()
+        self.clipboard_append(text)
+        messagebox.showinfo(t("settings"), t("log_copied", n=text.count("\n"), p=log_path()))
 
     def open_repo(self):
         """Open the project's GitHub page in the default browser; when that is not possible, show the address."""
@@ -1060,7 +1346,7 @@ class App(tk.Tk):
         import platform
         pm = detect_pm()
         if action == "uninstall":
-            steps = extras.apt_remove_steps("code", pm)
+            steps = extras.vscode_remove_steps(pm)
         else:
             steps, info = extras.vscode_steps(pm, platform.machine())
             if steps and not messagebox.askyesno(t("title"), t("vscode_ask", fpr=info["fingerprint"])):
@@ -1125,8 +1411,19 @@ class App(tk.Tk):
         self.busy = False
         for b in (self.b_inst, self.b_un):
             b.state(["!disabled"])
-        self.say(t("done_ok") if rc == 0 else t("done_fail", rc=rc))
-        self.lbl_status.config(text=t("done_ok") if rc == 0 else t("done_fail", rc=rc))
+        self.prog.stop()
+        self.runbar.pack_forget()
+        self.b_cancel.state(["!disabled"])
+        done = t("done_ok") if rc == 0 else t("cancelled") if rc == 130 else t("done_fail", rc=rc)
+        self.say(done)
+        self.lbl_status.config(text=done)
+        if rc == 0 and getattr(self, "pending_data", None):           # only after the programs themselves went away
+            done, failed = extras.remove_data(self.pending_data)
+            if done:
+                self.say(t("data_done", n=len(done)))
+            for path, err in failed:
+                self.say(t("data_fail", p=path, e=err))
+        self.pending_data = None
         self.render()
         if rc == 0 and getattr(self, "start_printhub", False):       # "install it and it runs"
             path = tool_path("printhub", self.where.get())

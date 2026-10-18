@@ -1,0 +1,256 @@
+{
+ "_comment": "The 'other programs' of the installer window. Add a program here (kind: github = .deb from a GitHub release with SHA-256, package = the distribution's own package, or one of the special recipes in extras.py). Order = order on screen.",
+ "groups": [
+  "dev",
+  "net",
+  "disk",
+  "more"
+ ],
+ "programs": [
+  {
+   "id": "claude",
+   "group": "dev",
+   "kind": "claude",
+   "name": {
+    "en": "Claude Desktop (beta)",
+    "ka": "Claude Desktop (ბეტა)"
+   },
+   "info": {
+    "en": "the Claude app: Chat, Cowork, Claude Code; Ubuntu / Debian / Mint; from Anthropic's apt repository",
+    "ka": "Claude-ის აპლიკაცია: Chat, Cowork, Claude Code; Ubuntu / Debian / Mint; Anthropic-ის apt რეპოზიტორიიდან"
+   },
+   "data": [
+    "~/.config/Claude",
+    "~/.cache/Claude"
+   ],
+   "shortcut": "claude-desktop"
+  },
+  {
+   "id": "vscode",
+   "group": "dev",
+   "kind": "vscode",
+   "name": {
+    "en": "Visual Studio Code",
+    "ka": "Visual Studio Code"
+   },
+   "info": {
+    "en": "code editor; from Microsoft's apt repository (key fingerprint checked); updates via apt",
+    "ka": "კოდის რედაქტორი; Microsoft-ის apt რეპოზიტორიიდან (გასაღების თითის ანაბეჭდი მოწმდება); განახლება apt-ით"
+   },
+   "flatpak": "com.visualstudio.code",
+   "data": [
+    "~/.config/Code",
+    "~/.vscode",
+    "~/.vscode-shared",
+    "~/.cache/Code"
+   ]
+  },
+  {
+   "id": "tabby",
+   "group": "dev",
+   "kind": "github",
+   "name": {
+    "en": "Tabby",
+    "ka": "Tabby"
+   },
+   "info": {
+    "en": "terminal with SSH / serial; .deb from GitHub, SHA-256 checked (~130 MB)",
+    "ka": "ტერმინალი SSH / serial-ით; .deb GitHub-იდან, SHA-256 მოწმდება (~130 MB)"
+   },
+   "display": "Tabby",
+   "repo": "Eugeny/tabby",
+   "package": "tabby-terminal",
+   "cmd": "tabby",
+   "asset": {
+    "x86": "tabby-{v}-linux-x64.deb",
+    "arm": "tabby-{v}-linux-arm64.deb"
+   },
+   "data": [
+    "~/.config/tabby"
+   ]
+  },
+  {
+   "id": "discord",
+   "group": "net",
+   "kind": "discord",
+   "name": {
+    "en": "Discord",
+    "ka": "Discord"
+   },
+   "info": {
+    "en": "chat and voice; the publisher's own .deb (no checksum is published, only HTTPS)",
+    "ka": "ჩატი და ხმა; გამომცემლის საკუთარი .deb (კონტროლური ჯამი არ ქვეყნდება, მხოლოდ HTTPS)"
+   },
+   "flatpak": "com.discordapp.Discord",
+   "data": [
+    "~/.config/discord"
+   ]
+  },
+  {
+   "id": "rustdesk",
+   "group": "net",
+   "kind": "github",
+   "name": {
+    "en": "RustDesk",
+    "ka": "RustDesk"
+   },
+   "info": {
+    "en": "remote desktop; .deb from the project's GitHub release, SHA-256 checked",
+    "ka": "დისტანციური სამუშაო მაგიდა; .deb პროექტის GitHub-იდან, SHA-256 მოწმდება"
+   },
+   "display": "RustDesk",
+   "repo": "rustdesk/rustdesk",
+   "package": "rustdesk",
+   "cmd": "rustdesk",
+   "asset": {
+    "x86": "rustdesk-{v}-x86_64.deb",
+    "arm": "rustdesk-{v}-aarch64.deb"
+   },
+   "flatpak": "com.rustdesk.RustDesk",
+   "data": [
+    "~/.config/rustdesk",
+    "~/.local/share/logs/RustDesk"
+   ]
+  },
+  {
+   "id": "brave",
+   "group": "net",
+   "kind": "brave",
+   "name": {
+    "en": "Brave Browser",
+    "ka": "Brave Browser"
+   },
+   "info": {
+    "en": "web browser; runs Brave's own install script (you see it first), adds Brave's repository",
+    "ka": "ბრაუზერი; უშვებს Brave-ის საკუთარ ინსტალაციის სკრიპტს (წინასწარ ნახავთ), ამატებს Brave-ის რეპოზიტორიას"
+   },
+   "flatpak": "com.brave.Browser",
+   "data": [
+    "~/.config/BraveSoftware",
+    "~/.cache/BraveSoftware"
+   ]
+  },
+  {
+   "id": "etcher",
+   "group": "disk",
+   "kind": "etcher",
+   "name": {
+    "en": "balenaEtcher",
+    "ka": "balenaEtcher"
+   },
+   "info": {
+    "en": "write an OS image to a USB stick / SD card (downloads ~120 MB from the publisher)",
+    "ka": "OS-ის იმიჯის ჩაწერა USB ფლეშკაზე / SD ბარათზე (ჩამოტვირთავს ~120 MB გამომცემლისგან)"
+   },
+   "data": [
+    "~/.config/balenaEtcher"
+   ],
+   "shortcut": "balena-etcher"
+  },
+  {
+   "id": "brasero",
+   "group": "disk",
+   "kind": "package",
+   "name": {
+    "en": "Brasero",
+    "ka": "Brasero"
+   },
+   "info": {
+    "en": "burn CDs and DVDs (from your distribution's repositories)",
+    "ka": "CD და DVD დისკების ჩაწერა (თქვენი დისტრიბუციის რეპოზიტორიიდან)"
+   },
+   "display": "Brasero",
+   "cmd": "brasero",
+   "data": [
+    "~/.config/brasero"
+   ]
+  },
+  {
+   "id": "xfburn",
+   "group": "disk",
+   "kind": "package",
+   "name": {
+    "en": "Xfburn",
+    "ka": "Xfburn"
+   },
+   "info": {
+    "en": "light CD/DVD burner (Xfce); from your distribution's repositories",
+    "ka": "მსუბუქი CD/DVD ჩამწერი (Xfce); თქვენი დისტრიბუციის რეპოზიტორიიდან"
+   },
+   "display": "Xfburn",
+   "cmd": "xfburn",
+   "data": [
+    "~/.config/xfburn"
+   ]
+  },
+  {
+   "id": "k3b",
+   "group": "disk",
+   "kind": "package",
+   "name": {
+    "en": "K3b",
+    "ka": "K3b"
+   },
+   "info": {
+    "en": "full CD/DVD/Blu-ray burner (KDE, brings many KDE libraries); from your distribution's repositories",
+    "ka": "სრული CD/DVD/Blu-ray ჩამწერი (KDE, ბევრ KDE ბიბლიოთეკას მოიტანს); თქვენი დისტრიბუციის რეპოზიტორიიდან"
+   },
+   "display": "K3b",
+   "cmd": "k3b",
+   "data": [
+    "~/.config/k3brc",
+    "~/.local/share/k3b"
+   ]
+  },
+  {
+   "id": "winboat",
+   "group": "more",
+   "kind": "github",
+   "name": {
+    "en": "WinBoat",
+    "ka": "WinBoat"
+   },
+   "info": {
+    "en": "run Windows apps on Linux (needs Docker + KVM); .deb from GitHub, SHA-256 checked (~120 MB)",
+    "ka": "Windows-ის აპების გაშვება Linux-ზე (სჭირდება Docker + KVM); .deb GitHub-იდან, SHA-256 მოწმდება (~120 MB)"
+   },
+   "display": "WinBoat",
+   "repo": "TibixDev/winboat",
+   "package": "winboat",
+   "cmd": "winboat",
+   "asset": {
+    "x86": "winboat-{v}-amd64.deb"
+   },
+   "data": [
+    "~/.config/winboat",
+    "~/.winboat"
+   ]
+  },
+  {
+   "id": "artcraft",
+   "group": "more",
+   "kind": "github",
+   "name": {
+    "en": "ArtCraft Launcher",
+    "ka": "ArtCraft Launcher"
+   },
+   "info": {
+    "en": "ArtCraft launcher; .deb from GitHub, SHA-256 checked",
+    "ka": "ArtCraft-ის გამშვები; .deb GitHub-იდან, SHA-256 მოწმდება"
+   },
+   "display": "ArtCraft Launcher",
+   "repo": "storytold/craft-launcher",
+   "package": "artcraft-launcher",
+   "cmd": "artcraft-launcher",
+   "asset": {
+    "x86": "artcraft-launcher-{v}-linux-x86_64.deb",
+    "arm": "artcraft-launcher-{v}-linux-aarch64.deb"
+   },
+   "data": [
+    "~/.local/share/ai.storyteller.artcraft-launcher",
+    "~/.config/ai.storyteller.artcraft-launcher",
+    "~/.cache/ai.storyteller.artcraft-launcher"
+   ]
+  }
+ ]
+}
