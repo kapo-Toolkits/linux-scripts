@@ -15,6 +15,7 @@ for _p in reversed((os.path.join(_here, "..", "common"), os.path.join(_here, "..
     if os.path.isdir(_p):
         sys.path.insert(0, _p)
 from lscommon import ensure_tkinter, load_lang, run, save_lang, warn_missing  # noqa: E402
+import lsnet  # noqa: E402
 import lsqr  # noqa: E402
 
 ensure_tkinter()
@@ -28,6 +29,15 @@ LANG = load_lang()
 STR = {
     "en": {
         "title": "Wi-Fi Hotspot", "lang_btn": "ქართული",
+        "adapter": "Wi-Fi adapter (sends out the hotspot)", "uplink": "Share internet from", "refresh": "Refresh",
+        "uplink_auto": "Automatic (the computer's own default connection)",
+        "ap_yes": "can host a hotspot", "ap_no": "cannot host a hotspot", "ap_unknown": "hotspot support unknown",
+        "k_ethernet": "cable", "k_wifi": "Wi-Fi",
+        "no_ap": "{dev} cannot create a hotspot (its driver has no AP mode). Choose another adapter, for example the internal one - the other one can then be used as the network to share.",
+        "uplink_hint": "Only connected networks with internet access are listed.",
+        "uplink_set": "Hotspot traffic now goes through {dev}.", "uplink_auto_set": "Hotspot now shares the computer's default connection.",
+        "uplink_fail": "The network choice was not applied ({e}). The hotspot itself is saved.",
+        "uplink_nohelper": "hotspot-uplink.sh was not found - the network choice cannot be applied.",
         "iface": "Wi-Fi interface", "state": "Status", "on": "ON (AP)", "off": "OFF",
         "no_iface": "not found", "ssid": "Network name (SSID)", "psk": "Password (Latin, 8–63)",
         "show": "Show", "channel": "Channel (2.4 GHz)", "autostart": "Start at boot",
@@ -49,6 +59,15 @@ STR = {
     },
     "ka": {
         "title": "Wi-Fi Hotspot", "lang_btn": "English",
+        "adapter": "Wi-Fi ადაპტერი (ის გაავრცელებს Hotspot-ს)", "uplink": "ინტერნეტი აიღე აქედან", "refresh": "განახლება",
+        "uplink_auto": "ავტომატურად (კომპიუტერის ძირითადი კავშირი)",
+        "ap_yes": "ვარგისია Hotspot-ისთვის", "ap_no": "Hotspot-ისთვის არ ვარგა", "ap_unknown": "Hotspot-ის მხარდაჭერა უცნობია",
+        "k_ethernet": "კაბელი", "k_wifi": "Wi-Fi",
+        "no_ap": "{dev}-ს Hotspot-ის შექმნა არ შეუძლია (დრაივერს AP რეჟიმი არ აქვს). აირჩიეთ სხვა ადაპტერი, მაგალითად ჩაშენებული — მეორე კი შეიძლება გამოიყენოთ როგორც გასაზიარებელი ქსელი.",
+        "uplink_hint": "ჩანს მხოლოდ დაკავშირებული ქსელები, რომლებსაც ინტერნეტი აქვთ.",
+        "uplink_set": "Hotspot-ის ტრაფიკი ახლა {dev}-ზე გადის.", "uplink_auto_set": "Hotspot ახლა კომპიუტერის ძირითად კავშირს იზიარებს.",
+        "uplink_fail": "ქსელის არჩევანი ვერ გამოვიყენე ({e}). თვით Hotspot შენახულია.",
+        "uplink_nohelper": "hotspot-uplink.sh ვერ მოიძებნა — ქსელის არჩევანის გამოყენება შეუძლებელია.",
         "iface": "Wi-Fi ინტერფეისი", "state": "სტატუსი", "on": "ჩართულია (AP)", "off": "გამორთულია",
         "no_iface": "ვერ მოიძებნა", "ssid": "ქსელის სახელი (SSID)", "psk": "პაროლი (ლათინური, 8–63)",
         "show": "ჩვენება", "channel": "არხი (2.4 GHz)", "autostart": "ჩართვისას ავტომატურად",
@@ -85,6 +104,20 @@ def wifi_iface():
         if typ == "wifi":
             return dev
     return ""
+
+
+def profile_iface():
+    """The adapter the saved profile is bound to ('' when there is none)."""
+    rc, out = run(["nmcli", "-g", "connection.interface-name", "con", "show", CON])
+    return out.strip() if rc == 0 else ""
+
+
+def pick_adapter(adapters, saved=""):
+    """The adapter to preselect: the one the profile already uses, else the first that can host a hotspot, else the first."""
+    for a in adapters:
+        if saved and a["dev"] == saved:
+            return a
+    return next((a for a in adapters if a.get("ap")), adapters[0] if adapters else None)
 
 
 def profile_exists():
@@ -193,9 +226,9 @@ def list_clients(iface):
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.geometry("560x700")
-        self.minsize(520, 620)
-        self.iface = wifi_iface()
+        self.geometry("620x760")
+        self.minsize(560, 680)
+        self.iface = ''
         self.busy = False
 
         top = ttk.Frame(self)
@@ -207,14 +240,29 @@ class App(tk.Tk):
 
         info = ttk.Frame(self)
         info.pack(fill="x", padx=12)
-        self.lbl_iface = ttk.Label(info)
-        self.lbl_iface.grid(row=0, column=0, sticky="w")
-        self.val_iface = ttk.Label(info)
-        self.val_iface.grid(row=0, column=1, sticky="w", padx=8)
-        self.lbl_state = ttk.Label(info)
-        self.lbl_state.grid(row=1, column=0, sticky="w")
-        self.val_state = ttk.Label(info, font=("", 10, "bold"))
-        self.val_state.grid(row=1, column=1, sticky="w", padx=8)
+        info.columnconfigure(0, weight=1)
+        self.lbl_iface = ttk.Label(info, font=("", 9, "bold"))
+        self.lbl_iface.grid(row=0, column=0, columnspan=2, sticky="w", pady=(2, 0))
+        self.v_adapter = tk.StringVar()
+        self.cmb_adapter = ttk.Combobox(info, textvariable=self.v_adapter, state="readonly")
+        self.cmb_adapter.grid(row=1, column=0, sticky="ew")
+        self.cmb_adapter.bind("<<ComboboxSelected>>", self.on_adapter)
+        self.btn_refresh = ttk.Button(info, width=3, text="↻", command=self.scan_devices)
+        self.btn_refresh.grid(row=1, column=1, padx=(6, 0))
+        self.lbl_uplink = ttk.Label(info, font=("", 9, "bold"))
+        self.lbl_uplink.grid(row=2, column=0, columnspan=2, sticky="w", pady=(8, 0))
+        self.v_uplink = tk.StringVar()
+        self.cmb_uplink = ttk.Combobox(info, textvariable=self.v_uplink, state="readonly")
+        self.cmb_uplink.grid(row=3, column=0, sticky="ew")
+        self.lbl_uphint = ttk.Label(info, foreground="#888888", font=("", 8), wraplength=560, justify="left")
+        self.lbl_uphint.grid(row=4, column=0, columnspan=2, sticky="w")
+        state_row = ttk.Frame(info)
+        state_row.grid(row=5, column=0, columnspan=2, sticky="w", pady=(8, 0))
+        self.lbl_state = ttk.Label(state_row)
+        self.lbl_state.pack(side="left")
+        self.val_state = ttk.Label(state_row, font=("", 10, "bold"))
+        self.val_state.pack(side="left", padx=8)
+        self.adapters, self.uplinks = [], []
 
         form = ttk.Frame(self)
         form.pack(fill="x", padx=12, pady=10)
@@ -268,6 +316,7 @@ class App(tk.Tk):
         self.log.pack(fill="both", expand=True, padx=12, pady=(0, 12))
 
         self.apply_lang()
+        self.scan_devices()
         self.load_profile()
         self.update_status()
 
@@ -280,7 +329,11 @@ class App(tk.Tk):
         for col, key in (("ip", "c_ip"), ("mac", "c_mac"), ("sig", "c_sig"), ("time", "c_time"), ("data", "c_data")):
             self.tree.heading(col, text=t(key))
         self.refresh_clients()
-        self.lbl_iface.config(text=t("iface") + ":")
+        self.lbl_iface.config(text=t("adapter") + ":")
+        self.lbl_uplink.config(text=t("uplink") + ":")
+        self.lbl_uphint.config(text=t("uplink_hint"))
+        if self.adapters or self.uplinks:
+            self.fill_device_lists()
         self.lbl_state.config(text=t("state") + ":")
         self.lbl_ssid.config(text=t("ssid"))
         self.lbl_psk.config(text=t("psk"))
@@ -292,8 +345,44 @@ class App(tk.Tk):
         self.btn_stop.config(text=t("stop"))
         self.btn_qr.config(text=t("qr"))
         self.lbl_log.config(text=t("log"))
-        self.val_iface.config(text=self.iface or t("no_iface"))
         self.refresh_state_label()
+
+    # --- adapters and the network to share
+    def scan_devices(self):
+        """Look at the Wi-Fi adapters and connected networks (also when the user plugged in a USB adapter and pressed ↻)."""
+        keep_adapter = self.iface or profile_iface()
+        self.adapters = lsnet.wifi_adapters()
+        chosen = pick_adapter(self.adapters, keep_adapter)
+        self.iface = chosen["dev"] if chosen else ""
+        self.uplinks = lsnet.uplink_choices(self.iface, CON)
+        self.fill_device_lists(keep_uplink=lsnet.current_uplink())
+
+    def adapter_text(self, a):
+        return lsnet.adapter_label(a, t("ap_yes"), t("ap_no"), t("ap_unknown"))
+
+    def fill_device_lists(self, keep_uplink=None):
+        self.cmb_adapter.config(values=[self.adapter_text(a) for a in self.adapters])
+        cur = next((a for a in self.adapters if a["dev"] == self.iface), None)
+        self.v_adapter.set(self.adapter_text(cur) if cur else t("no_iface"))
+        kinds = {"ethernet": t("k_ethernet"), "wifi": t("k_wifi")}
+        self.uplink_values = [("", t("uplink_auto"))] + [(u["dev"], lsnet.uplink_label(u, kinds)) for u in self.uplinks]
+        selected = keep_uplink if keep_uplink is not None else self.uplink_dev()
+        if selected and selected not in [d for d, _ in self.uplink_values]:
+            selected = ""
+        self.cmb_uplink.config(values=[label for _d, label in self.uplink_values])
+        self.v_uplink.set(next(label for d, label in self.uplink_values if d == (selected or "")))
+
+    def uplink_dev(self):
+        """The device chosen in the 'share internet from' list ('' = automatic)."""
+        label = self.v_uplink.get()
+        return next((d for d, lb in getattr(self, "uplink_values", []) if lb == label), "")
+
+    def on_adapter(self, _e=None):
+        idx = self.cmb_adapter.current()
+        if 0 <= idx < len(self.adapters):
+            self.iface = self.adapters[idx]["dev"]
+            self.uplinks = lsnet.uplink_choices(self.iface, CON)          # the adapter itself cannot also be the network to share
+            self.fill_device_lists()
 
     def toggle_lang(self):
         global LANG
@@ -379,6 +468,9 @@ class App(tk.Tk):
         ch = self.channel.get().strip()
         if not self.iface:
             return messagebox.showerror(t("err"), t("no_wifi"))
+        chosen = next((a for a in self.adapters if a["dev"] == self.iface), None)
+        if chosen and chosen.get("ap") is False:
+            return messagebox.showerror(t("err"), t("no_ap", dev=self.iface))
         if not ssid:
             return messagebox.showerror(t("err"), t("bad_ssid"))
         if not valid_psk(psk):
@@ -386,12 +478,13 @@ class App(tk.Tk):
         if not (ch.isdigit() and 1 <= int(ch) <= 11):
             return messagebox.showerror(t("err"), t("bad_ch"))
         auto = "yes" if self.autostart.get() else "no"
+        want_uplink, iface = self.uplink_dev(), self.iface          # read here: Tk variables belong to the main thread
 
         def work():
             run(["nmcli", "con", "down", CON])
             run(["nmcli", "con", "delete", CON])
             steps = [
-                ["nmcli", "con", "add", "type", "wifi", "ifname", self.iface, "con-name", CON,
+                ["nmcli", "con", "add", "type", "wifi", "ifname", iface, "con-name", CON,
                  "autoconnect", auto, "ssid", ssid],
                 ["nmcli", "con", "modify", CON, "802-11-wireless.mode", "ap", "802-11-wireless.band", "bg",
                  "802-11-wireless.channel", ch, "802-11-wireless.powersave", "2", "ipv4.method", "shared"],
@@ -404,8 +497,20 @@ class App(tk.Tk):
                 rc, out = run(s)
                 if rc != 0:
                     return False, out
-            return True, t("saved")
+            return True, t("saved") + self.apply_uplink(want_uplink)
         self.bg("saving", work)
+
+    def apply_uplink(self, want):
+        """Make the 'share internet from' choice real (one administrator prompt, only when it changed). -> text for the log."""
+        if want == lsnet.current_uplink():
+            return ""
+        helper = lsnet.helper_path(_here)
+        if not helper:
+            return "\n" + t("uplink_nohelper")
+        rc, out = run(["pkexec", "sh", helper, "install", want or "auto", CON])
+        if rc != 0:
+            return "\n" + t("uplink_fail", e=out.splitlines()[-1] if out else rc)
+        return "\n" + (t("uplink_set", dev=want) if want else t("uplink_auto_set"))
 
     def on_start(self):
         if not profile_exists():

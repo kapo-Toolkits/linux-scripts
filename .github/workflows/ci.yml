@@ -14,6 +14,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: shellcheck
         run: shellcheck -S warning install.sh get.sh usb-eject/usb-eject.sh wifi-hotspot/hotspot.sh tests/run-qgis-containers.sh
+
+        run: shellcheck -S warning install.sh wifi-hotspot/hotspot-uplink.sh usb-eject/usb-eject.sh wifi-hotspot/hotspot.sh tests/run-qgis-containers.sh
       - name: syntax of generated/embedded shell is covered by unit tests; compile all python
         run: python3 -m compileall -q common usb-eject wifi-hotspot printer-setup qgis-installer tests
       - name: unit tests (offline)
@@ -28,13 +30,16 @@ jobs:
           xvfb-run -a python3 tests/test_qgis_gui.py
       - name: "installer window (real Tk under a virtual display, search, groups, settings, progress, cancel, small screens)"
         run: xvfb-run -a python3 tests/test_installer_window.py
+
+      - name: "hotspot window (real Tk under a virtual display, adapter and network choice)"
+        run: xvfb-run -a python3 tests/test_hotspot_window.py
       - name: qgis-installer distribution paths (Fedora/Atomic, openSUSE, Arch/AUR, containers, Nix)
         run: python3 tests/test_qgis_distros.py
       - name: install.sh into a temp prefix and back
         run: |
           p=$(mktemp -d)
           ./install.sh --prefix "$p" all
-          test -x "$p/bin/qgis-installer" && test -x "$p/bin/qgis-installer-cli" && test -f "$p/lib/linux-scripts/lscommon.py"
+          test -x "$p/bin/qgis-installer" && test -x "$p/bin/qgis-installer-cli" && test -f "$p/lib/linux-scripts/lscommon.py" && test -f "$p/lib/linux-scripts/lsnet.py"
           test -f "$p/lib/linux-scripts/qgis_installer/cli.py"
           "$p/bin/qgis-installer-cli" --lang en --json info | python3 -c 'import json,sys; assert json.load(sys.stdin)["schema"] == 1'
           ./install.sh --prefix "$p" --uninstall all
@@ -101,6 +106,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: tests/retry-on-network.sh tests/run-real-install.sh
+
+  hotspot-uplink:
+    # real kernel routing (dummy interfaces in a privileged container): the hotspot's traffic goes through the chosen network,
+    # the computer's own traffic does not move, rules vanish when the network or the hotspot goes away
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: tests/retry-on-network.sh tests/run-hotspot-uplink.sh
 
   guide-drift:
     # weekly: has the QGIS installation guide moved on (new release, LTR, Ubuntu/Debian codename, signing key)?

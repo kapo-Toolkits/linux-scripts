@@ -4,6 +4,7 @@
 #
 # Usage:  ./hotspot.sh <step>        (run without arguments for the list)
 # Env:    IFACE=wlp3s0  SSID=MyHotspot  CHANNEL=1  HOTSPOT_PSK=...  CON=Hotspot
+#         (IFACE = the Wi-Fi adapter that sends out the hotspot; with two adapters see:  ./hotspot.sh devices)
 #
 # Tested on: Linux Mint XFCE, Dell Precision M4700, Intel Centrino Advanced-N 6205 (iwlwifi).
 
@@ -12,7 +13,13 @@ set -uo pipefail
 CON="${CON:-Hotspot}"
 SSID="${SSID:-MyHotspot}"
 CHANNEL="${CHANNEL:-1}"
-IFACE="${IFACE:-$(nmcli -t -f DEVICE,TYPE device 2>/dev/null | awk -F: '$2=="wifi"{print $1; exit}')}"
+wifi_devices() { nmcli -t -f DEVICE,TYPE device 2>/dev/null | awk -F: '$2=="wifi"{print $1}'; }
+# can this adapter's radio create an access point (hotspot)?
+can_ap() { local phy; phy=$(cat "/sys/class/net/$1/phy80211/name" 2>/dev/null) || return 1
+           iw phy "$phy" info 2>/dev/null | awk '/Supported interface modes/{f=1;next} f&&/^[ \t]+\* /{if($2=="AP")ok=1;next} f{f=0} END{exit ok?0:1}'; }
+# the adapter to use: the first that can host a hotspot (a second, USB adapter often cannot), else the first Wi-Fi device
+pick_iface() { local d first=""; for d in $(wifi_devices); do [[ -n "$first" ]] || first="$d"; can_ap "$d" && { echo "$d"; return; }; done; echo "$first"; }
+IFACE="${IFACE:-$(pick_iface)}"
 
 say()  { printf '\n\033[1m== %s\033[0m\n' "$*"; }
 die()  { printf '\033[31m%s\033[0m\n' "$*" >&2; exit 1; }
@@ -181,6 +188,36 @@ step_qr() {
   python3 "$lsqr" --wifi "$ssid" "$psk"
 }
 
+step_devices() {
+  say "Wi-Fi adapters (the hotspot is sent out by ONE of them: IFACE=<name> $0 setup)"
+  local d phy drv ap
+  for d in $(wifi_devices); do
+    phy=$(cat "/sys/class/net/$d/phy80211/name" 2>/dev/null || echo "?")
+    drv=$(basename "$(readlink -f "/sys/class/net/$d/device/driver" 2>/dev/null)" 2>/dev/null)
+    can_ap "$d" && ap="can host a hotspot" || ap="cannot host a hotspot (no AP mode)"
+    printf '  %-18s %-6s %-12s %s%s\n' "$d" "$phy" "${drv:-?}" "$ap" "$([[ "$d" == "$IFACE" ]] && echo '   <- selected')"
+  done
+  say "Networks that could be shared (connected, with a default route)"
+  ip -4 route show default | awk '{for(i=1;i<NF;i++){if($i=="dev")d=$(i+1); if($i=="via")g=$(i+1)} print "  " d "  gateway " g}'
+  say "Currently shared network"; helper status
+}
+
+hotspot_helper() {
+  local here d; here="$(dirname "$(readlink -f "$0")")"
+  for d in "$here" "$here/../lib/linux-scripts" /usr/local/lib/linux-scripts /usr/lib/linux-scripts; do
+    [[ -f "$d/hotspot-uplink.sh" ]] && { echo "$d/hotspot-uplink.sh"; return; }
+  done
+}
+helper() { local h; h=$(hotspot_helper); [[ -n "$h" ]] || die "hotspot-uplink.sh not found - use the repository checkout or ./install.sh wifi-hotspot"; sh "$h" "$@"; }
+
+step_uplink() {   # ./hotspot.sh uplink eno1   |   uplink auto   |   uplink (show)
+  local dev="${1:-}"
+  if [[ -z "$dev" ]]; then helper status; return; fi
+  local h; h=$(hotspot_helper); [[ -n "$h" ]] || die "hotspot-uplink.sh not found"
+  say "Sending the hotspot's internet through: $dev  (needs administrator rights)"
+  sudo sh "$h" install "$dev" "$CON"
+}
+
 step_logs() { journalctl -u wpa_supplicant -b --no-pager | tail -30; }
 
 step_setup() { step_create && step_secure; }
@@ -201,6 +238,8 @@ Hotspot steps (run in this order on a fresh install):
   autostart-on   9  start at boot via NetworkManager   (autostart-off to undo)
   service-on        start at boot via systemd service   (fallback)
   clients           list devices connected to the running hotspot (IP, signal, time, traffic)
+  devices           list Wi-Fi adapters (which can host a hotspot) and the networks that could be shared
+  uplink [dev|auto] choose which network the hotspot shares (e.g. eno1 = cable, or a second Wi-Fi adapter); no argument = show
   qr                show a QR code to join the hotspot (phone camera)
   logs              last wpa_supplicant log lines (real error reasons)
 
@@ -214,6 +253,6 @@ case "$step" in
   secure) step_secure;; qr) step_qr;; clients) step_clients;; setup) step_setup;; up) step_up;; down) step_down;; status) step_status;;
   passwd) step_passwd;; ssid) step_ssid "$@";; docker-fix) step_docker_fix;;
   autostart-on) step_autostart_on;; autostart-off) step_autostart_off;;
-  service-on) step_service_on;; logs) step_logs;;
+  service-on) step_service_on;; logs) step_logs;; devices) step_devices;; uplink) step_uplink "$@";;
   *) usage;;
 esac
