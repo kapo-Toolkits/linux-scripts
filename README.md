@@ -52,3 +52,13 @@ CI (GitHub Actions) runs both on every push and weekly.
 | [shortcuts](shortcuts/) | Simple GUI (EN/KA): tick toolkit programs and put their launchers on the Desktop (or remove them) |
 | [installer](installer/) | Window around `install.sh` (EN/KA): tick programs, choose “for me / for everyone”, click Install; `--make-launcher` makes a double-click icon in this folder |
 
+## One-file start on a new computer
+
+No git, no unpacking by hand: download the small bootstrap script, read it, run it.
+
+```bash
+curl -fsSLO https://raw.githubusercontent.com/kapo-Toolkits/linux-scripts/main/get.sh
+sh get.sh
+```
+
+`get.sh` asks GitHub for the newest commit of `main`, downloads exactly that snapshot over HTTPS, unpacks it into `~/linux-scripts` (`sh get.sh FOLDER` for another place; an existing copy is backed up first, your own files stay), makes the double-click launcher and opens the installer window. It never uses root and never touches a folder that is not a toolkit folder. Later updates come from **Settings** inside the window.

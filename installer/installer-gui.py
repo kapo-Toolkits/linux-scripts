@@ -61,56 +61,7 @@ TOOLS = [
 GROUP_TEXT = {"dev": "g_dev", "net": "g_net", "disk": "g_disk", "more": "g_more"}
 
 # installed from the publisher (not by install.sh): shown in their own block, never ticked by default
-EXTRAS = [
-    {"id": "claude", "group": "dev",
-     "name": {"en": "Claude Desktop (beta)", "ka": "Claude Desktop (ბეტა)"},
-     "info": {"en": "the Claude app: Chat, Cowork, Claude Code; Ubuntu / Debian / Mint; from Anthropic's apt repository",
-              "ka": "Claude-ის აპლიკაცია: Chat, Cowork, Claude Code; Ubuntu / Debian / Mint; Anthropic-ის apt რეპოზიტორიიდან"}},
-    {"id": "vscode", "group": "dev",
-     "name": {"en": "Visual Studio Code", "ka": "Visual Studio Code"},
-     "info": {"en": "code editor; from Microsoft's apt repository (key fingerprint checked); updates via apt",
-              "ka": "კოდის რედაქტორი; Microsoft-ის apt რეპოზიტორიიდან (გასაღების თითის ანაბეჭდი მოწმდება); განახლება apt-ით"}},
-    {"id": "tabby", "group": "dev",
-     "name": {"en": "Tabby", "ka": "Tabby"},
-     "info": {"en": "terminal with SSH / serial; .deb from GitHub, SHA-256 checked (~130 MB)",
-              "ka": "ტერმინალი SSH / serial-ით; .deb GitHub-იდან, SHA-256 მოწმდება (~130 MB)"}},
-    {"id": "discord", "group": "net",
-     "name": {"en": "Discord", "ka": "Discord"},
-     "info": {"en": "chat and voice; the publisher's own .deb (no checksum is published, only HTTPS)",
-              "ka": "ჩატი და ხმა; გამომცემლის საკუთარი .deb (კონტროლური ჯამი არ ქვეყნდება, მხოლოდ HTTPS)"}},
-    {"id": "rustdesk", "group": "net",
-     "name": {"en": "RustDesk", "ka": "RustDesk"},
-     "info": {"en": "remote desktop; .deb from the project's GitHub release, SHA-256 checked",
-              "ka": "დისტანციური სამუშაო მაგიდა; .deb პროექტის GitHub-იდან, SHA-256 მოწმდება"}},
-    {"id": "brave", "group": "net",
-     "name": {"en": "Brave Browser", "ka": "Brave Browser"},
-     "info": {"en": "web browser; runs Brave's own install script (you see it first), adds Brave's repository",
-              "ka": "ბრაუზერი; უშვებს Brave-ის საკუთარ ინსტალაციის სკრიპტს (წინასწარ ნახავთ), ამატებს Brave-ის რეპოზიტორიას"}},
-    {"id": "etcher", "group": "disk",
-     "name": {"en": "balenaEtcher", "ka": "balenaEtcher"},
-     "info": {"en": "write an OS image to a USB stick / SD card (downloads ~120 MB from the publisher)",
-              "ka": "OS-ის იმიჯის ჩაწერა USB ფლეშკაზე / SD ბარათზე (ჩამოტვირთავს ~120 MB გამომცემლისგან)"}},
-    {"id": "brasero", "group": "disk",
-     "name": {"en": "Brasero", "ka": "Brasero"},
-     "info": {"en": "burn CDs and DVDs (from your distribution's repositories)",
-              "ka": "CD და DVD დისკების ჩაწერა (თქვენი დისტრიბუციის რეპოზიტორიიდან)"}},
-    {"id": "xfburn", "group": "disk",
-     "name": {"en": "Xfburn", "ka": "Xfburn"},
-     "info": {"en": "light CD/DVD burner (Xfce); from your distribution's repositories",
-              "ka": "მსუბუქი CD/DVD ჩამწერი (Xfce); თქვენი დისტრიბუციის რეპოზიტორიიდან"}},
-    {"id": "k3b", "group": "disk",
-     "name": {"en": "K3b", "ka": "K3b"},
-     "info": {"en": "full CD/DVD/Blu-ray burner (KDE, brings many KDE libraries); from your distribution's repositories",
-              "ka": "სრული CD/DVD/Blu-ray ჩამწერი (KDE, ბევრ KDE ბიბლიოთეკას მოიტანს); თქვენი დისტრიბუციის რეპოზიტორიიდან"}},
-    {"id": "winboat", "group": "more",
-     "name": {"en": "WinBoat", "ka": "WinBoat"},
-     "info": {"en": "run Windows apps on Linux (needs Docker + KVM); .deb from GitHub, SHA-256 checked (~120 MB)",
-              "ka": "Windows-ის აპების გაშვება Linux-ზე (სჭირდება Docker + KVM); .deb GitHub-იდან, SHA-256 მოწმდება (~120 MB)"}},
-    {"id": "artcraft", "group": "more",
-     "name": {"en": "ArtCraft Launcher", "ka": "ArtCraft Launcher"},
-     "info": {"en": "ArtCraft launcher; .deb from GitHub, SHA-256 checked",
-              "ka": "ArtCraft-ის გამშვები; .deb GitHub-იდან, SHA-256 მოწმდება"}},
-]
+EXTRAS = [{k: x[k] for k in ("id", "group", "name", "info")} for x in extras.PROGRAMS]      # from installer/programs.json
 
 USER_PREFIX = os.path.join(os.path.expanduser("~"), ".local")
 SYSTEM_PREFIX = "/usr/local"
@@ -164,6 +115,8 @@ STR = {
  "flatpak_need": "\n\nFlatpak itself is not installed yet: it is installed first from your distribution's repositories (administrator password).",
  "cancel": "Cancel", "cancelling": "Cancelling…", "cancelled": "Cancelled. Nothing further was run.", "downloading": "Downloading… {pct}%",
  "upd_apply": "Install updates automatically at start-up (only when nothing was changed here; the window restarts)",
+ "log_open": "Open log folder", "log_copy": "Copy log", "log_where": "Logs are in:\n{p}",
+ "log_none": "Nothing was logged today yet.\n{p}", "log_copied": "Copied the last {n} lines to the clipboard. Paste them into a bug report.\nFile: {p}",
  "repo_url": "Could not open a browser. The project page:\n{url}",
  "upd_nogit": "git is not installed on this computer: updating works without it (Python downloads GitHub's snapshot).",
  "upd_archive": "This copy: GitHub commit {short} (updated without git)\nFolder: {folder}",
@@ -228,6 +181,8 @@ STR = {
  "flatpak_need": "\n\nთვითონ Flatpak ჯერ დაყენებული არ არის: ჯერ დაყენდება თქვენი დისტრიბუციის რეპოზიტორიიდან (ადმინისტრატორის პაროლი).",
  "cancel": "გაუქმება", "cancelling": "ვაუქმებ…", "cancelled": "გაუქმდა. მეტი არაფერი გაშვებულა.", "downloading": "მიმდინარეობს ჩამოტვირთვა… {pct}%",
  "upd_apply": "განახლებების ავტომატური დაყენება გახსნისას (მხოლოდ თუ აქ არაფერია შეცვლილი; ფანჯარა თავიდან გაიხსნება)",
+ "log_open": "ჟურნალის საქაღალდე", "log_copy": "ჟურნალის კოპირება", "log_where": "ჟურნალები აქ არის:\n{p}",
+ "log_none": "დღეს ჯერ არაფერი ჩაწერილა.\n{p}", "log_copied": "ბოლო {n} ხაზი დაკოპირდა ბუფერში. ჩასვით შეცდომის შეტყობინებაში.\nფაილი: {p}",
  "repo_url": "ბრაუზერის გახსნა ვერ მოხერხდა. პროექტის გვერდი:\n{url}",
  "upd_nogit": "ამ კომპიუტერზე git დაყენებული არ არის: განახლება მის გარეშეც მუშაობს (Python ჩამოტვირთავს GitHub-ის ასლს).",
  "upd_archive": "ეს ასლი: GitHub-ის კომიტი {short} (განახლებულია git-ის გარეშე)\nსაქაღალდე: {folder}",
@@ -285,6 +240,41 @@ def elevate(cmd, which=shutil.which, euid=None):
     if euid == 0:
         return list(cmd)
     return ["pkexec"] + list(cmd) if which("pkexec") else None
+
+
+LOG_KEEP = 10                                          # newest log files kept
+
+
+def log_dir():
+    return os.path.join(os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache"), "linux-scripts", "logs")
+
+
+def log_path(day=None):
+    return os.path.join(log_dir(), f"installer-{day or time.strftime('%Y%m%d')}.log")
+
+
+def log_line(text, path=None):
+    """Append one line (with the time) to today's log file; never raises: a full disk must not break an installation."""
+    try:
+        path = path or log_path()
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(time.strftime("%H:%M:%S ") + str(text).rstrip("\n") + "\n")
+        old = sorted(x for x in os.listdir(os.path.dirname(path)) if x.startswith("installer-") and x.endswith(".log"))
+        for name in old[:-LOG_KEEP]:
+            os.remove(os.path.join(os.path.dirname(path), name))
+        return True
+    except OSError:
+        return False
+
+
+def read_log(path=None, max_lines=400):
+    """The newest part of today's log (for 'Copy log'), or ''."""
+    try:
+        with open(path or log_path(), encoding="utf-8", errors="replace") as f:
+            return "".join(f.readlines()[-max_lines:])
+    except OSError:
+        return ""
 
 
 def shell_line(cmd):
@@ -722,6 +712,7 @@ class App(tk.Tk):
         return [x["id"] for x in EXTRAS if self.extra_vars[x["id"]].get()]
 
     def say(self, text):
+        log_line(text)
         self.log.config(state="normal")
         self.log.insert("end", str(text).rstrip("\n") + "\n")
         self.log.see("end")
@@ -1015,6 +1006,10 @@ class App(tk.Tk):
         b_tick = ttk.Button(bar2, text=t("prog_tick"), state="disabled")
         b_prog.pack(side="left")
         b_tick.pack(side="left", padx=8)
+        bar3 = ttk.Frame(win)
+        bar3.pack(fill="x", padx=12, pady=(4, 0))
+        ttk.Button(bar3, text=t("log_open"), command=self.open_log_folder).pack(side="left")
+        ttk.Button(bar3, text=t("log_copy"), command=self.copy_log).pack(side="left", padx=8)
         ttk.Button(bar, text=t("set_close"), command=win.destroy).pack(side="right")
         state = {"res": None}
 
@@ -1112,6 +1107,22 @@ class App(tk.Tk):
         b_check.config(command=do_check)
         b_now.config(command=do_now)
         do_check()
+
+    def open_log_folder(self):
+        os.makedirs(log_dir(), exist_ok=True)
+        try:
+            subprocess.Popen(["xdg-open", log_dir()], start_new_session=True)
+        except OSError:
+            messagebox.showinfo(t("settings"), t("log_where", p=log_dir()))
+
+    def copy_log(self):
+        """Put the newest part of today's log on the clipboard, to paste into a bug report (only on this click)."""
+        text = read_log()
+        if not text:
+            return messagebox.showinfo(t("settings"), t("log_none", p=log_dir()))
+        self.clipboard_clear()
+        self.clipboard_append(text)
+        messagebox.showinfo(t("settings"), t("log_copied", n=text.count("\n"), p=log_path()))
 
     def open_repo(self):
         """Open the project's GitHub page in the default browser; when that is not possible, show the address."""

@@ -1487,6 +1487,166 @@ class AutoApply(unittest.TestCase):
         self.assertFalse(self.f(None, {"auto_apply_update": True}))
 
 
+class InstallerLog(unittest.TestCase):
+    m = Installer.m
+
+    def test_lines_are_appended_old_files_are_pruned(self):
+        with tempfile.TemporaryDirectory() as d:
+            for i in range(14):
+                with open(os.path.join(d, f"installer-202601{i + 10:02d}.log"), "w") as f:
+                    f.write("old\n")
+            path = os.path.join(d, "installer-20260201.log")
+            self.assertTrue(self.m.log_line("first", path))
+            self.assertTrue(self.m.log_line("second\n", path))
+            text = self.m.read_log(path)
+            self.assertIn("first\n", text)
+            self.assertTrue(text.splitlines()[1].endswith(" second"))
+            self.assertEqual(len([x for x in os.listdir(d) if x.endswith(".log")]), self.m.LOG_KEEP)
+            self.assertTrue(os.path.exists(path))                            # the newest survives
+
+    def test_it_never_raises(self):
+        self.assertFalse(self.m.log_line("x", "/proc/nope/installer-1.log"))
+        self.assertEqual(self.m.read_log("/nonexistent/installer.log"), "")
+
+    def test_read_log_returns_only_the_tail(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "installer-x.log")
+            with open(path, "w") as f:
+                f.write("".join(f"line{i}\n" for i in range(1000)))
+            tail = self.m.read_log(path, max_lines=5)
+            self.assertEqual(tail.splitlines(), [f"line{i}" for i in range(995, 1000)])
+
+    def test_log_dir_honours_xdg_cache(self):
+        with mock.patch.dict(os.environ, {"XDG_CACHE_HOME": "/x/cache"}):
+            self.assertEqual(self.m.log_dir(), "/x/cache/linux-scripts/logs")
+
+
+class ProgramsRegistry(unittest.TestCase):
+    ex = Installer.m.extras
+
+    def base(self):
+        with open(self.ex.PROGRAMS_FILE, encoding="utf-8") as f:
+            return json.load(f)
+
+    def load(self, data):
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "programs.json")
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(data, f)
+            return self.ex.load_programs(path)
+
+    def test_the_shipped_file_is_valid_and_drives_everything(self):
+        progs = self.ex.PROGRAMS
+        self.assertGreaterEqual(len(progs), 12)
+        self.assertEqual([x["id"] for x in Installer.m.EXTRAS], [p["id"] for p in progs])
+        self.assertEqual(set(self.ex.GITHUB_APPS), {p["id"] for p in progs if p["kind"] == "github"})
+        self.assertEqual(set(Installer.m.GROUP_TEXT), set(self.base()["groups"]))
+
+    def test_every_program_has_a_shortcut_entry_so_the_two_lists_cannot_drift(self):
+        sc = {x["id"] for x in load("shortcuts/shortcuts-gui.py").TOOLS}
+        for p in self.ex.PROGRAMS:
+            sid = p.get("shortcut", p["id"])   # the shortcuts tool names a few programs differently
+            self.assertIn(sid, sc, p["id"])
+
+    def test_adding_a_program_is_one_entry(self):
+        data = self.base()
+        data["programs"].append({"id": "newapp", "group": "more", "kind": "github", "display": "NewApp", "repo": "o/r",
+                                 "package": "newapp", "cmd": "newapp", "asset": {"x86": "newapp-{v}.deb"},
+                                 "name": {"en": "NewApp", "ka": "NewApp"}, "info": {"en": "x", "ka": "y"}, "data": ["~/.config/newapp"]})
+        loaded = self.load(data)
+        self.assertEqual(loaded["programs"][-1]["id"], "newapp")
+
+    def test_mistakes_are_named(self):
+        for mutate, needle in (
+                (lambda d: d["programs"].append(dict(d["programs"][0])), "appears twice"),
+                (lambda d: d["programs"][0].update(kind="nonsense"), "kind must be"),
+                (lambda d: d["programs"][0].update(group="nope"), "group must be"),
+                (lambda d: d["programs"][0]["name"].pop("ka"), "both en and ka"),
+                (lambda d: next(p for p in d["programs"] if p["kind"] == "github").pop("repo"), "needs 'repo'"),
+                (lambda d: d["programs"][0].update(data=["/etc"]), "data paths"),
+                (lambda d: d["programs"][0].update(data=["~/../etc"]), "data paths")):
+            data = self.base()
+            mutate(data)
+            with self.assertRaises(ValueError) as cm:
+                self.load(data)
+            self.assertIn(needle, str(cm.exception))
+
+
+class GetScript(unittest.TestCase):
+    """get.sh: the one-file bootstrap. GitHub is replaced by a local snapshot (LS_SNAPSHOT), everything else is real."""
+
+    def snapshot(self, d):
+        snap = os.path.join(d, "snap.tar.gz")
+        top = os.path.join(d, "top")
+        os.makedirs(top)
+        os.symlink(ROOT, os.path.join(top, "linux-scripts"))
+        subprocess.run(["tar", "-czhf", snap, "-C", top, "--exclude=.git", "--exclude=__pycache__", "--exclude=.installed-sha",
+                        "--exclude=start-installer.desktop", "linux-scripts"], check=True, capture_output=True)
+        return snap
+
+    def run_get(self, d, *args, snap=None):
+        env = dict(os.environ, HOME=os.path.join(d, "home"), LS_SNAPSHOT=snap or self.snapshot(d), LS_SHA="a" * 40,
+                   XDG_CACHE_HOME=os.path.join(d, "cache"), XDG_DATA_HOME=os.path.join(d, "data"))
+        os.makedirs(env["HOME"], exist_ok=True)
+        return subprocess.run(["sh", os.path.join(ROOT, "get.sh"), *args], capture_output=True, text=True, env=env, timeout=120)
+
+    def test_syntax(self):
+        self.assertEqual(subprocess.run(["sh", "-n", os.path.join(ROOT, "get.sh")], capture_output=True).returncode, 0)
+
+    def test_fresh_install_into_a_folder(self):
+        with tempfile.TemporaryDirectory() as d:
+            dest = os.path.join(d, "home", "linux-scripts")
+            r = self.run_get(d, "--no-start")
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            for f in ("install.sh", "installer/start.sh", "installer/installer-gui.py", "installer/programs.json"):
+                self.assertTrue(os.path.isfile(os.path.join(dest, f)), f)
+            with open(os.path.join(dest, ".installed-sha")) as fh:
+                self.assertEqual(fh.read().strip(), "a" * 40)                  # the updater can tell what this copy is
+            self.assertTrue(os.path.isfile(os.path.join(dest, "start-installer.desktop")))       # launcher for THIS folder
+
+    def test_an_existing_copy_is_backed_up_and_own_files_stay(self):
+        with tempfile.TemporaryDirectory() as d:
+            snap = self.snapshot(d)
+            self.assertEqual(self.run_get(d, "--no-start", snap=snap).returncode, 0)
+            dest = os.path.join(d, "home", "linux-scripts")
+            with open(os.path.join(dest, "my-notes.txt"), "w") as f:
+                f.write("mine")
+            with open(os.path.join(dest, "install.sh"), "w") as f:
+                f.write("edited")
+            r = self.run_get(d, "--no-start", snap=snap)
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            backups = [x for x in os.listdir(os.path.join(d, "home")) if x.startswith("linux-scripts.backup-")]
+            self.assertEqual(len(backups), 1)
+            with open(os.path.join(d, "home", backups[0], "install.sh")) as f:
+                self.assertEqual(f.read(), "edited")
+            with open(os.path.join(dest, "install.sh")) as f:
+                self.assertNotEqual(f.read(), "edited")                        # replaced by the snapshot's
+            self.assertTrue(os.path.exists(os.path.join(dest, "my-notes.txt")))
+
+    def test_an_unrelated_folder_is_never_touched(self):
+        with tempfile.TemporaryDirectory() as d:
+            other = os.path.join(d, "stuff")
+            os.makedirs(other)
+            with open(os.path.join(other, "important.txt"), "w") as f:
+                f.write("x")
+            r = self.run_get(d, other, "--no-start")
+            self.assertNotEqual(r.returncode, 0)
+            self.assertIn("not a toolkit folder", r.stderr)
+            self.assertEqual(os.listdir(other), ["important.txt"])
+
+    def test_a_wrong_download_is_refused(self):
+        with tempfile.TemporaryDirectory() as d:
+            bad = os.path.join(d, "bad.tar.gz")
+            os.makedirs(os.path.join(d, "t", "x"))
+            with open(os.path.join(d, "t", "x", "readme"), "w") as f:
+                f.write("not the toolkit")
+            subprocess.run(["tar", "-czf", bad, "-C", os.path.join(d, "t"), "x"], check=True)
+            r = self.run_get(d, "--no-start", snap=bad)
+            self.assertNotEqual(r.returncode, 0)
+            self.assertIn("does not look like", r.stderr)
+            self.assertFalse(os.path.exists(os.path.join(d, "home", "linux-scripts", "install.sh")))
+
+
 class ClaudeDesktop(unittest.TestCase):
     ex = Installer.m.extras
 
