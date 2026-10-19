@@ -155,9 +155,13 @@ if [ "$ACTION" = install ] && [ "$(id -u)" != 0 ]; then
   mkdir -p "$HOME/.config/linux-scripts" && printf '%s\n' "$here" > "$HOME/.config/linux-scripts/root"
 fi
 if [ "$ACTION" = install ]; then
-  for m in lscommon lsqr; do
+  for m in lscommon lsqr lsnet; do
     $SUDO install -D -m 644 "$here/common/$m.py" "$PREFIX/lib/linux-scripts/$m.py"
   done
+  # the hotspot's "which network to share" helper (the window runs it with administrator rights when you choose a network)
+  case " ${TOOLS[*]} " in
+    *" wifi-hotspot "*) $SUDO install -D -m 755 "$here/wifi-hotspot/hotspot-uplink.sh" "$PREFIX/lib/linux-scripts/hotspot-uplink.sh";;
+  esac
   # the qgis_installer package (logic shared by qgis-installer and qgis-installer-cli)
   case " ${TOOLS[*]} " in
     *" qgis-installer "*)
@@ -167,6 +171,14 @@ if [ "$ACTION" = install ]; then
   esac
 fi
 if [ "$ACTION" = uninstall ]; then
+  case " ${TOOLS[*]} " in
+    *" wifi-hotspot "*)
+      # a chosen "network to share" lives in /etc (routing rule + NetworkManager dispatcher): take it away with the tool
+      if [ -e /etc/NetworkManager/dispatcher.d/90-linux-scripts-hotspot-uplink ] && [ -f "$PREFIX/lib/linux-scripts/hotspot-uplink.sh" ]; then
+        $SUDO sh "$PREFIX/lib/linux-scripts/hotspot-uplink.sh" install auto || true
+      fi
+      $SUDO rm -f "$PREFIX/lib/linux-scripts/hotspot-uplink.sh";;
+  esac
   case " ${TOOLS[*]} " in *" qgis-installer "*) $SUDO rm -rf "$PREFIX/lib/linux-scripts/qgis_installer";; esac
   guis=0; for g in usb-eject-gui hotspot-gui printer-setup qgis-installer qgis-installer-cli bluetooth-setup toolkit-shortcuts; do [ -e "$PREFIX/bin/$g" ] && guis=1; done
   [ "$guis" = 0 ] && $SUDO rm -rf "$PREFIX/lib/linux-scripts" && echo "removed shared helper"

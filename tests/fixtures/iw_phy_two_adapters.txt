@@ -1,0 +1,11 @@
+Wiphy phy1
+	Supported interface modes:
+		 * managed
+		 * monitor
+Wiphy phy0
+	Supported interface modes:
+		 * IBSS
+		 * managed
+		 * AP
+		 * AP/VLAN
+		 * monitor

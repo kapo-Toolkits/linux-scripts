@@ -34,6 +34,24 @@ GUI არ აკეთებს `driver` და `docker-fix` ნაბიჯე
 ./install.sh wifi-hotspot
 ```
 
+## რომელი ადაპტერი და რომელი ქსელი / Which adapter, which network
+
+Two Wi-Fi adapters, or cable + Wi-Fi? The window has two drop-downs (↻ rescans, e.g. after plugging in a USB adapter):
+
+* **Wi-Fi adapter** – the one that sends out the hotspot. Each entry shows model, driver, bus and whether its radio can host a hotspot at all (AP mode): many USB adapters (e.g. MediaTek MT7601U, `mt7601u`) cannot, and the window refuses to build the profile on them and says why. The adapter that can is preselected (or the one the saved profile already uses).
+* **Share internet from** – *Automatic* (whatever the computer's default connection is, as NetworkManager does it) or one of the connected networks that have internet: the cable, or a **second Wi-Fi adapter connected to another network** (cable → Wi-Fi hotspot, or Wi-Fi (USB) → Wi-Fi hotspot (internal)). The hotspot adapter itself is never offered.
+
+Choosing a network applies a small policy-routing rule (administrator password, asked once, only when the choice changes): only the **hotspot clients'** traffic goes through the chosen network, the computer's own traffic is not moved, and the rule disappears when that network or the hotspot goes down (a NetworkManager dispatcher script re-checks it on every network event). Choosing *Automatic* removes everything again. Command line:
+
+```bash
+./hotspot.sh devices              # adapters (which can host a hotspot) and shareable networks
+IFACE=wlp3s0 ./hotspot.sh setup   # build the hotspot on a specific adapter
+./hotspot.sh uplink eno1          # share the cable      |  ./hotspot.sh uplink wlx6070721c3312  → the second adapter
+./hotspot.sh uplink auto          # back to automatic    |  ./hotspot.sh uplink  → show what is set
+```
+
+Files: `/etc/linux-scripts/hotspot-uplink`, `/etc/NetworkManager/dispatcher.d/90-linux-scripts-hotspot-uplink`, routing table 4242; `./install.sh --uninstall wifi-hotspot` removes them. The routing is tested against the real kernel (dummy interfaces in a privileged container, `tests/run-hotspot-uplink.sh`).
+
 ## დაკავშირებული მოწყობილობები / Connected devices
 
 ```bash
