@@ -26,7 +26,7 @@ jobs:
         run: |
           sudo apt-get install -y -qq python3-tk xvfb
           xvfb-run -a python3 tests/test_qgis_gui.py
-      - name: hotspot window (real Tk under a virtual display: adapter and network choice)
+      - name: "hotspot window (real Tk under a virtual display, adapter and network choice)"
         run: xvfb-run -a python3 tests/test_hotspot_window.py
       - name: qgis-installer distribution paths (Fedora/Atomic, openSUSE, Arch/AUR, containers, Nix)
         run: python3 tests/test_qgis_distros.py
