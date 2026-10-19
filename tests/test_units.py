@@ -671,7 +671,7 @@ class Installer(unittest.TestCase):
         calls = {"jobs": None, "asked": [], "popen": []}
         patches = dict(venv_ready=lambda *a, **k: False, detect_pm=lambda: "apt-get",
                        elevate=lambda c, **k: ["pkexec"] + list(c),
-                       run_jobs=lambda jobs, on_line: calls.__setitem__("jobs", jobs) or 0,
+                       run_jobs=lambda jobs, on_line, ctl=None: calls.__setitem__("jobs", jobs) or 0,
                        tool_path=lambda *a, **k: "/h/.local/bin/printhub")
         class FakeApp:                                     # only what go() touches, no display needed
             pass
@@ -693,6 +693,9 @@ class Installer(unittest.TestCase):
             app.lbl_status = types.SimpleNamespace(config=lambda **k: None)
             app.say = lambda *a: None
             app.render = lambda: None
+            quiet = types.SimpleNamespace(pack=lambda **k: None, pack_forget=lambda: None, config=lambda **k: None,
+                                          start=lambda *a: None, stop=lambda: None, state=lambda *a: None)
+            app.runbar, app.prog, app.b_cancel = quiet, quiet, quiet
             app.finish = lambda rc: m.App.finish(app, rc)
             app.after = lambda ms, fn, *a: fn(*a)           # run the "UI" hand-off inline
             m.threading = types.SimpleNamespace(Thread=lambda target, daemon: types.SimpleNamespace(start=target))
@@ -1342,6 +1345,146 @@ class PersonalData(unittest.TestCase):
         for paths in self.ex.DATA_DIRS.values():
             for p in paths:
                 self.assertTrue(p.startswith("~/") and ".." not in p)
+
+
+class FlatpakRoute(unittest.TestCase):
+    ex = Installer.m.extras
+    App = Installer.m.App
+
+    def test_install_steps(self):
+        steps, info = self.ex.flatpak_steps("discord", "dnf", False)
+        self.assertEqual([x["root"] for x in steps], [True, False])
+        self.assertIn("dnf install -y flatpak", steps[0]["sh"])
+        self.assertIn("flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo", steps[1]["sh"])
+        self.assertIn("flatpak install -y --user flathub com.discordapp.Discord", steps[1]["sh"])
+        self.assertTrue(info["needs_flatpak"])
+        steps, info = self.ex.flatpak_steps("vscode", "pacman", True)
+        self.assertEqual([x["root"] for x in steps], [False])               # no administrator password at all
+        for st in steps:
+            self.assertEqual(subprocess.run(["sh", "-n", "-c", st["sh"]], capture_output=True).returncode, 0)
+
+    def test_no_flathub_entry_or_no_way_to_get_flatpak_means_the_manual_page(self):
+        self.assertEqual(self.ex.flatpak_steps("winboat", "dnf", True)[0], [])
+        self.assertEqual(self.ex.flatpak_steps("discord", "unknown-pm", False)[0], [])
+        self.assertEqual(self.ex.flatpak_steps("discord", "unknown-pm", False)[1]["manual"], self.ex.FLATPAK_SETUP)
+
+    def test_remove_steps_follow_the_scope(self):
+        steps, _ = self.ex.flatpak_steps("rustdesk", "dnf", True, remove_scopes={"user"})
+        self.assertEqual([x["root"] for x in steps], [False])
+        steps, _ = self.ex.flatpak_steps("rustdesk", "dnf", True, remove_scopes={"user", "system"})
+        self.assertEqual([x["root"] for x in steps], [False, True])
+
+    def test_scopes_come_from_flatpak_info(self):
+        def run(cmd, **k):
+            return types.SimpleNamespace(returncode=0 if "--user" in cmd else 1)
+        self.assertEqual(self.ex.flatpak_scopes("discord", run=run, which=lambda c: "/x"), {"user"})
+        self.assertEqual(self.ex.flatpak_scopes("discord", run=run, which=lambda c: None), set())
+        self.assertEqual(self.ex.flatpak_scopes("winboat", run=run, which=lambda c: "/x"), set())
+
+    def test_every_flatpak_program_is_known_and_has_its_data_folder_listed(self):
+        ids = {x["id"] for x in Installer.m.EXTRAS}
+        self.assertTrue(set(self.ex.FLATPAK_IDS) <= ids)
+        with tempfile.TemporaryDirectory() as d:
+            os.makedirs(os.path.join(d, ".var/app/com.discordapp.Discord/config"))
+            found = [os.path.relpath(p, os.path.realpath(d)) for p, _n in self.ex.data_paths(["discord"], home=d)]
+            self.assertEqual(found, [".var/app/com.discordapp.Discord"])
+
+    def fake_app(self, native, scopes, pm, asked=True):
+        app = types.SimpleNamespace()
+        app.ex_native_state = lambda i: "yes" if native else None
+        app.steps_to_jobs = lambda steps: [["job"] for _ in steps]
+        m = Installer.m
+        return app, mock.patch.multiple(m, detect_pm=lambda: pm, messagebox=mock.Mock(askyesno=lambda *a, **k: asked, showinfo=mock.Mock()),
+                                        t=lambda k, **kw: k), mock.patch.object(self.ex, "flatpak_scopes", lambda i: scopes)
+
+    def test_routing(self):
+        with mock.patch("platform.machine", return_value="x86_64"):
+            app, p1, p2 = self.fake_app(False, set(), "apt-get")
+            with p1, p2:
+                self.assertEqual(self.App.flatpak_jobs(app, "install", "discord"), (False, []))        # apt: the normal route
+            app, p1, p2 = self.fake_app(False, set(), "dnf")
+            with p1, p2, mock.patch("shutil.which", return_value="/usr/bin/flatpak"):
+                handled, jobs = self.App.flatpak_jobs(app, "install", "discord")
+                self.assertTrue(handled)
+                self.assertEqual(len(jobs), 1)
+            app, p1, p2 = self.fake_app(False, set(), "dnf", asked=False)
+            with p1, p2, mock.patch("shutil.which", return_value="/usr/bin/flatpak"):
+                self.assertEqual(self.App.flatpak_jobs(app, "install", "discord"), (True, None))       # declined
+            app, p1, p2 = self.fake_app(False, {"user"}, "dnf")
+            with p1, p2:
+                self.assertEqual(self.App.flatpak_jobs(app, "uninstall", "discord")[0], True)           # flatpak only: that is all
+            app, p1, p2 = self.fake_app(True, {"user"}, "apt-get")
+            with p1, p2:
+                handled, jobs = self.App.flatpak_jobs(app, "uninstall", "discord")
+                self.assertEqual((handled, len(jobs)), (False, 1))                                      # both: flatpak + the normal route
+            app, p1, p2 = self.fake_app(True, set(), "apt-get")
+            with p1, p2:
+                self.assertEqual(self.App.flatpak_jobs(app, "uninstall", "discord"), (False, []))
+            with p1, p2:
+                self.assertEqual(self.App.flatpak_jobs(app, "install", "claude"), (False, []))          # no flatpak for it
+
+
+class RunControl(unittest.TestCase):
+    m = Installer.m
+
+    def test_curl_progress_lines_become_percentages(self):
+        f = self.m.progress_percent
+        self.assertEqual(f("######                                                     10.5%\n"), 10.5)
+        self.assertEqual(f("#################################################### 100.0%"), 100.0)
+        self.assertIsNone(f("SHA-256 verified: 5ea2"))
+        self.assertIsNone(f("Reading package lists... 100%"))            # not curl's bar (no '#')
+        self.assertIsNone(f(""))
+
+    def test_cancel_stops_a_user_command_and_the_next_steps(self):
+        import threading
+        import time as _t
+        ctl = {"cancel": False}
+        lines = []
+        threading.Timer(0.6, lambda: (ctl.update(cancel=True), self.m.stop_process(ctl["proc"]))).start()
+        t0 = _t.time()
+        rc = self.m.run_jobs([["sh", "-c", "echo start; sleep 30"], ["sh", "-c", "echo SHOULD-NOT-RUN"]], lines.append, ctl)
+        self.assertLess(_t.time() - t0, 10)
+        self.assertEqual(rc, 130)
+        self.assertIn("start\n", lines)
+        self.assertNotIn("SHOULD-NOT-RUN\n", lines)
+
+    def test_cancel_between_steps(self):
+        ctl = {"cancel": True}
+        lines = []
+        self.assertEqual(self.m.run_jobs([["sh", "-c", "echo no"]], lines.append, ctl), 130)
+        self.assertEqual(lines, [])
+
+    def test_an_elevated_command_is_not_killed(self):
+        ctl = {"cancel": True}
+        lines = []
+        with mock.patch.object(self.m, "ROOT", "/"):
+            rc = self.m.run_command(["sh", "-c", "echo done"], lines.append, dict(ctl, elevated=False))
+        self.assertEqual(lines, ["done\n"])
+        # a command named pkexec / sudo sets ctl["elevated"], so the cancel flag never terminates it
+        fake = os.path.join(tempfile.mkdtemp(), "sudo")
+        with open(fake, "w") as f:
+            f.write("#!/bin/sh\nsleep 1\necho finished\n")
+        os.chmod(fake, 0o755)
+        ctl2 = {"cancel": True}
+        lines2 = []
+        rc2 = self.m.run_command([fake], lines2.append, ctl2)
+        self.assertEqual((rc2, lines2), (0, ["finished\n"]))
+
+
+class AutoApply(unittest.TestCase):
+    f = staticmethod(Installer.m.should_auto_apply)
+
+    def test_it_is_opt_in_and_only_for_clear_cases(self):
+        git = {"mode": "git", "behind": 2, "local": {"dirty": []}}
+        self.assertFalse(self.f(git, {}))                                       # off by default
+        self.assertTrue(self.f(git, {"auto_apply_update": True}))
+        self.assertFalse(self.f(dict(git, local={"dirty": ["install.sh"]}), {"auto_apply_update": True}))   # local changes
+        self.assertFalse(self.f(dict(git, ahead=1), {"auto_apply_update": True}))                           # local commits
+        self.assertFalse(self.f(dict(git, behind=0), {"auto_apply_update": True}))
+        self.assertTrue(self.f({"mode": "archive", "behind": 3, "local": {}}, {"auto_apply_update": True}))
+        self.assertFalse(self.f({"mode": "archive", "behind": None, "local": {}}, {"auto_apply_update": True}))  # unknown: show list first
+        self.assertFalse(self.f({"mode": "adopt", "behind": None, "local": {}}, {"auto_apply_update": True}))
+        self.assertFalse(self.f(None, {"auto_apply_update": True}))
 
 
 class ClaudeDesktop(unittest.TestCase):

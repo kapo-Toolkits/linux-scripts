@@ -68,7 +68,7 @@ command -v sha256sum >/dev/null 2>&1 || {{ echo "sha256sum is not installed (pac
 mkdir -p {q(d)}
 cd {q(d)}
 trap 'rm -f {q(name)}.part' EXIT
-curl -fL --proto '{proto}' --tlsv1.2 -o {q(name)}.part {q(asset['url'])}
+curl -fL --progress-bar --proto '{proto}' --tlsv1.2 -o {q(name)}.part {q(asset['url'])}
 echo "{asset['sha256']}  {name}.part" | sha256sum -c - >/dev/null || {{ echo "CHECKSUM MISMATCH - the download is not what the publisher published; nothing was installed" >&2; exit 1; }}
 echo "SHA-256 verified: {asset['sha256']}"
 mv {q(name)}.part {q(name)}
@@ -372,12 +372,13 @@ apt-get update || true
 # ---- the user's own data of these programs: only ever offered, never removed silently ----
 DATA_DIRS = {
     "claude": ["~/.config/Claude", "~/.cache/Claude"],
-    "vscode": ["~/.config/Code", "~/.vscode", "~/.cache/Code"],
+    "vscode": ["~/.config/Code", "~/.vscode", "~/.vscode-shared", "~/.cache/Code"],
     "discord": ["~/.config/discord"],
     "rustdesk": ["~/.config/rustdesk", "~/.local/share/logs/RustDesk"],
     "tabby": ["~/.config/tabby"],
     "winboat": ["~/.config/winboat", "~/.winboat"],
-    "artcraft": ["~/.config/artcraft-launcher", "~/.local/share/artcraft-launcher"],
+    "artcraft": ["~/.local/share/ai.storyteller.artcraft-launcher", "~/.config/ai.storyteller.artcraft-launcher",
+                 "~/.cache/ai.storyteller.artcraft-launcher"],
     "etcher": ["~/.config/balenaEtcher"],
     "brave": ["~/.config/BraveSoftware", "~/.cache/BraveSoftware"],
     "brasero": ["~/.config/brasero"],
@@ -402,7 +403,8 @@ def data_paths(app_ids, home=None):
     home = os.path.realpath(home or os.path.expanduser("~"))
     out, seen = [], set()
     for app_id in app_ids:
-        for p in DATA_DIRS.get(app_id, []):
+        flatpak_data = [f"~/.var/app/{FLATPAK_IDS[app_id]}"] if app_id in FLATPAK_IDS else []
+        for p in DATA_DIRS.get(app_id, []) + flatpak_data:
             path = os.path.join(home, p[2:])
             if path in seen or not os.path.lexists(path):
                 continue
@@ -449,7 +451,7 @@ def discord_steps(pm, arch, cache_dir=None, proto="=https", url=None):
 command -v curl >/dev/null 2>&1 || {{ echo "curl is not installed (Debian/Ubuntu: sudo apt install curl)" >&2; exit 1; }}
 mkdir -p {q(d)}
 trap 'rm -f {q(path)}.part' EXIT
-curl -fL --proto '{proto}' --proto-redir '{proto}' --tlsv1.2 -o {q(path)}.part {q(url or DISCORD_URL)}
+curl -fL --progress-bar --proto '{proto}' --proto-redir '{proto}' --tlsv1.2 -o {q(path)}.part {q(url or DISCORD_URL)}
 dpkg-deb -f {q(path)}.part Package | grep -qx discord || {{ echo "the download is not the Discord package - nothing was installed" >&2; exit 1; }}
 mv {q(path)}.part {q(path)}
 """
@@ -492,6 +494,55 @@ def package_steps(app, pm, remove=False):
 
 def package_installed(app, which=shutil.which):
     return bool(which(PACKAGE_APPS[app]["cmd"]))
+
+
+# ---- Flatpak (Flathub) for systems where the publisher's .deb / apt repository does not apply (Fedora, openSUSE, Arch ...) ----
+# Flathub's own signed remote; installed for the user (no administrator password) once flatpak itself is there.
+FLATPAK_IDS = {"discord": "com.discordapp.Discord", "rustdesk": "com.rustdesk.RustDesk",
+               "vscode": "com.visualstudio.code", "brave": "com.brave.Browser"}
+FLATHUB_REPO = "https://dl.flathub.org/repo/flathub.flatpakrepo"
+FLATPAK_SETUP = "https://flatpak.org/setup/"
+
+
+def flatpak_scopes(app_id, run=subprocess.run, which=shutil.which):
+    """{'user', 'system'}: where this program is installed as a flatpak (empty when not, or when flatpak is missing)."""
+    fid = FLATPAK_IDS.get(app_id)
+    if not fid or not which("flatpak"):
+        return set()
+    out = set()
+    for scope in ("user", "system"):
+        try:
+            if run(["flatpak", "info", f"--{scope}", fid], capture_output=True, text=True, timeout=30).returncode == 0:
+                out.add(scope)
+        except Exception:  # noqa: BLE001
+            pass
+    return out
+
+
+def flatpak_steps(app_id, pm, have_flatpak, remove_scopes=None):
+    """-> (steps, info). Install: [flatpak from the system's own repositories if missing (administrator)] + add Flathub for
+    the user + install for the user.  Remove (remove_scopes given): uninstall in each scope it is installed in.
+    steps is [] with info['manual'] when this program has no Flathub entry or flatpak cannot be installed here."""
+    fid = FLATPAK_IDS.get(app_id)
+    if not fid:
+        return [], {"manual": FLATPAK_SETUP}
+    q = shlex.quote
+    if remove_scopes is not None:
+        steps = []
+        if "user" in remove_scopes:
+            steps.append({"root": False, "sh": f"set -u\nflatpak uninstall -y --user {q(fid)}\n"})
+        if "system" in remove_scopes:
+            steps.append({"root": True, "sh": f"set -u\nflatpak uninstall -y --system {q(fid)}\n"})
+        return steps, {"id": fid}
+    steps = []
+    if not have_flatpak:
+        cmd = _INSTALL.get(pm)
+        if not cmd:
+            return [], {"manual": FLATPAK_SETUP}
+        steps.append({"root": True, "sh": "set -eu\n" + cmd.format(p="flatpak") + "\n"})
+    steps.append({"root": False, "sh": f"set -eu\nflatpak remote-add --user --if-not-exists flathub {q(FLATHUB_REPO)}\n"
+                                       f"flatpak install -y --user flathub {q(fid)}\n"})
+    return steps, {"id": fid, "needs_flatpak": not have_flatpak, "source": "flathub.org"}
 
 
 def main(argv):

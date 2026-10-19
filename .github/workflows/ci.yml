@@ -94,6 +94,14 @@ jobs:
       - uses: actions/checkout@v4
       - run: tests/retry-on-network.sh tests/run-recipes-containers.sh
 
+  real-install:
+    # the "other programs" recipes against the real publishers in a throwaway Ubuntu: Claude Desktop and VS Code repositories
+    # (key fingerprint, apt offers the package, removal takes the entry away), ArtCraft real download + SHA-256 + install + purge
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: tests/retry-on-network.sh tests/run-real-install.sh
+
   hotspot-uplink:
     # real kernel routing (dummy interfaces in a privileged container): the hotspot's traffic goes through the chosen network,
     # the computer's own traffic does not move, rules vanish when the network or the hotspot goes away
