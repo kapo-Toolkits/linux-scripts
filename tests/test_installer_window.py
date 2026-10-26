@@ -263,6 +263,58 @@ class Window(unittest.TestCase):
             gui.save_lang("en")
             app.destroy()
 
+    def test_opengeos_window_cards_search_filter_and_click(self):
+        app = gui.App()
+        try:
+            self.pump(app)
+            opened = []
+            with mock.patch("webbrowser.open", lambda url: opened.append(url) or True):
+                app.open_opengeos()
+                self.pump(app, 0.6)
+                top = [w for w in app.winfo_children() if w.winfo_class() == "Toplevel"][0]
+
+                def walk(w):
+                    for c in w.winfo_children():
+                        yield c
+                        yield from walk(c)
+                counts = lambda: [w.cget("text") for w in walk(top) if w.winfo_class() == "TLabel" and w.cget("text").endswith("projects")]   # noqa: E731
+                self.assertEqual(counts(), ["82 projects"])
+                entry = next(w for w in walk(top) if w.winfo_class() == "TEntry")
+                combo = next(w for w in walk(top) if w.winfo_class() == "TCombobox")
+                entry.insert(0, "leafmap")
+                self.pump(app, 0.5)
+                names = [w.cget("text") for w in walk(top) if w.winfo_class() == "Label" and w.cget("fg") == "#1a5fb4"]
+                self.assertIn("leafmap", names)
+                self.assertLess(len(names), 10)
+                entry.delete(0, "end")
+                combo.set("R Packages")
+                combo.event_generate("<<ComboboxSelected>>")
+                self.pump(app, 0.5)
+                names = [w.cget("text") for w in walk(top) if w.winfo_class() == "Label" and w.cget("fg") == "#1a5fb4"]
+                self.assertEqual(names, ["whiteboxR"])
+                card = next(w for w in walk(top) if w.winfo_class() == "Label" and w.cget("text") == "whiteboxR")
+                card.event_generate("<Button-1>")
+                self.pump(app, 0.2)
+            self.assertEqual(opened, ["https://github.com/opengeos/whiteboxR"])
+        finally:
+            app.destroy()
+
+    def test_opengeos_window_in_georgian_and_the_header_button(self):
+        gui.LANG = "ka"
+        app = gui.App()
+        try:
+            self.pump(app)
+            self.assertEqual(app.btn_og.cget("text"), "OpenGeos")
+            app.open_opengeos()
+            self.pump(app, 0.4)
+            top = [w for w in app.winfo_children() if w.winfo_class() == "Toplevel"][0]
+            labels_ = [w.cget("text") for w in top.winfo_children()[0].winfo_children() + top.winfo_children()
+                       if w.winfo_class() in ("TLabel", "Label")]
+            self.assertTrue(any("გეოსივრცული" in x for x in labels_))
+        finally:
+            gui.save_lang("en")
+            app.destroy()
+
     def test_the_log_file_gets_what_the_window_says(self):
         app = gui.App()
         try:

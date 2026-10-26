@@ -123,6 +123,7 @@ STR = {
  "gis_broken": "The GIS list could not be read:\n{e}",
  "gis_ask_install": "Install with {pm}?\n\n{list}\n\n(administrator password)",
  "gis_ask_uninstall": "Remove with {pm}?\n\n{list}",
+ "og_readme": "README ↗", "og_all": "All categories", "og_nodesc": "(no description)", "og_count": "{n} projects",
  "repo_url": "Could not open a browser. The project page:\n{url}",
  "upd_nogit": "git is not installed on this computer: updating works without it (Python downloads GitHub's snapshot).",
  "upd_archive": "This copy: GitHub commit {short} (updated without git)\nFolder: {folder}",
@@ -195,6 +196,7 @@ STR = {
  "gis_broken": "GIS სიის წაკითხვა ვერ მოხერხდა:\n{e}",
  "gis_ask_install": "დავაყენო {pm}-ით?\n\n{list}\n\n(ადმინისტრატორის პაროლი)",
  "gis_ask_uninstall": "წავშალო {pm}-ით?\n\n{list}",
+ "og_readme": "README ↗", "og_all": "ყველა კატეგორია", "og_nodesc": "(აღწერა არ არის)", "og_count": "{n} პროექტი",
  "repo_url": "ბრაუზერის გახსნა ვერ მოხერხდა. პროექტის გვერდი:\n{url}",
  "upd_nogit": "ამ კომპიუტერზე git დაყენებული არ არის: განახლება მის გარეშეც მუშაობს (Python ჩამოტვირთავს GitHub-ის ასლს).",
  "upd_archive": "ეს ასლი: GitHub-ის კომიტი {short} (განახლებულია git-ის გარეშე)\nსაქაღალდე: {folder}",
@@ -470,6 +472,8 @@ class App(tk.Tk):
         self.btn_set.pack(side="right", padx=(0, 6))
         self.btn_gis = ttk.Button(top, command=self.open_gis)
         self.btn_gis.pack(side="right", padx=(0, 6))
+        self.btn_og = ttk.Button(top, text="OpenGeos", command=self.open_opengeos)
+        self.btn_og.pack(side="right", padx=(0, 6))
         self.gis_vars = {}
         self.top = top
         self.banner = ttk.Frame(self)                           # shown only when GitHub has something new (see start_quiet_check)
@@ -1128,6 +1132,100 @@ class App(tk.Tk):
         b_now.config(command=do_now)
         do_check()
 
+    # ---- OpenGeos (installer/opengeos.json): the organisation's projects as cards
+    def open_opengeos(self):
+        """A window of its own: intro, search, category filter and the projects as cards (name, GitHub's description, link)."""
+        import webbrowser
+        try:
+            data = extras.load_opengeos()
+        except (OSError, ValueError) as e:
+            return messagebox.showwarning(t("title"), t("gis_broken", e=e))
+        win = tk.Toplevel(self)
+        win.title("OpenGeos")
+        win.geometry("940x640")
+        win.minsize(640, 420)
+        win.transient(self)
+        CARD_BG, CARD_BORDER, CARD_FG, NAME_FG, DESC_FG, SEC_FG = "#ffffff", "#cfd6dd", "#222222", "#1a5fb4", "#555555", "#26323f"
+
+        def open_url(url):
+            try:
+                ok = webbrowser.open(url)
+            except Exception:  # noqa: BLE001
+                ok = False
+            if not ok:
+                messagebox.showinfo(t("title"), t("repo_url", url=url), parent=win)
+
+        head = ttk.Frame(win)
+        head.pack(fill="x", padx=14, pady=(12, 4))
+        ttk.Label(head, text="OpenGeos", font=("", 16, "bold")).pack(side="left")
+        ttk.Button(head, text=t("og_readme"), command=lambda: open_url(data["readme"])).pack(side="right")
+        ttk.Button(head, text="GitHub ↗", command=lambda: open_url(data["org"])).pack(side="right", padx=8)
+        ttk.Label(win, text=data["intro"][LANG], wraplength=900, justify="left", foreground="#555555").pack(anchor="w", padx=14)
+        tools = ttk.Frame(win)
+        tools.pack(fill="x", padx=14, pady=8)
+        ttk.Label(tools, text=t("search")).pack(side="left")
+        v_q = tk.StringVar()
+        ttk.Entry(tools, textvariable=v_q, width=28).pack(side="left", padx=(4, 14))
+        every = t("og_all")
+        titles = {sec["title"][LANG]: sec["id"] for sec in data["sections"]}
+        v_sec = tk.StringVar(value=every)
+        box = ttk.Combobox(tools, textvariable=v_sec, values=[every] + list(titles), state="readonly", width=28)
+        box.pack(side="left")
+        lbl_count = ttk.Label(tools, foreground="#777777")
+        lbl_count.pack(side="right")
+
+        body = ttk.Frame(win)
+        body.pack(fill="both", expand=True, padx=10, pady=(0, 10))
+        cv = tk.Canvas(body, highlightthickness=0)
+        sb = ttk.Scrollbar(body, orient="vertical", command=cv.yview)
+        cv.configure(yscrollcommand=sb.set)
+        sb.pack(side="right", fill="y")
+        cv.pack(side="left", fill="both", expand=True)
+        inner = ttk.Frame(cv)
+        wid = cv.create_window((0, 0), window=inner, anchor="nw")
+        inner.bind("<Configure>", lambda e: cv.configure(scrollregion=cv.bbox("all")))
+        cv.bind("<Configure>", lambda e: cv.itemconfigure(wid, width=e.width))
+        inner.columnconfigure(0, weight=1, uniform="card")
+        inner.columnconfigure(1, weight=1, uniform="card")
+
+        def wheel(e, d=None):
+            cv.yview_scroll(d if d is not None else (-1 if e.delta > 0 else 1), "units")
+        for seq, d in (("<Button-4>", -1), ("<Button-5>", 1), ("<MouseWheel>", None)):
+            win.bind_all(seq, lambda e, d=d: wheel(e, d), add="+")
+
+        def card(parent, item, col, row):
+            c = tk.Frame(parent, bg=CARD_BG, highlightbackground=CARD_BORDER, highlightthickness=1, cursor="hand2")
+            c.grid(row=row, column=col, sticky="nsew", padx=5, pady=5)
+            tk.Label(c, text=item["name"], bg=CARD_BG, fg=NAME_FG, font=("", 10, "bold"), anchor="w").pack(fill="x", padx=10, pady=(8, 0))
+            d = item.get("description") or t("og_nodesc")
+            tk.Label(c, text=d, bg=CARD_BG, fg=DESC_FG, font=("", 9), anchor="nw", justify="left", wraplength=380).pack(
+                fill="x", expand=True, padx=10, pady=(2, 4))
+            link = item["url"].split("://", 1)[1].rstrip("/")
+            tk.Label(c, text=link, bg=CARD_BG, fg="#8a94a0", font=("", 8), anchor="w").pack(fill="x", padx=10, pady=(0, 8))
+            for w in (c,) + tuple(c.winfo_children()):
+                w.bind("<Button-1>", lambda e, u=item["url"]: open_url(u))
+
+        def rebuild(*_):
+            for w in inner.winfo_children():
+                w.destroy()
+            groups = extras.opengeos_filter(data, v_q.get(), titles.get(v_sec.get()))
+            row, total = 0, 0
+            for sec, items in groups:
+                tk.Label(inner, text=f"{sec['title'][LANG]}  ·  {len(items)}", fg=SEC_FG, font=("", 11, "bold"), anchor="w").grid(
+                    row=row, column=0, columnspan=2, sticky="w", padx=8, pady=(14, 2))
+                row += 1
+                for i, item in enumerate(items):
+                    card(inner, item, i % 2, row + i // 2)
+                row += (len(items) + 1) // 2
+                total += len(items)
+            if not total:
+                ttk.Label(inner, text=t("no_match")).grid(row=0, column=0, padx=10, pady=20)
+            lbl_count.config(text=t("og_count", n=total))
+            cv.yview_moveto(0)
+        v_q.trace_add("write", rebuild)
+        box.bind("<<ComboboxSelected>>", rebuild)
+        rebuild()
+
     # ---- GIS catalogue: OSGeo projects and community projects (installer/gis.json)
     def open_gis(self):
         """A window of its own: two tabs (OSGeo / Community), each grouped by category. Entries with a package for this system
@@ -1208,6 +1306,7 @@ class App(tk.Tk):
         ttk.Button(bar, text=t("gis_install"), command=lambda: self.gis_go("install", data, pm, win)).pack(side="left")
         ttk.Button(bar, text=t("gis_uninstall"), command=lambda: self.gis_go("uninstall", data, pm, win)).pack(side="left", padx=8)
         ttk.Button(bar, text=t("set_close"), command=win.destroy).pack(side="right")
+        ttk.Button(bar, text="OpenGeos →", command=self.open_opengeos).pack(side="right", padx=8)
 
     def gis_go(self, action, data, pm, win):
         """Install / remove the ticked GIS programs through the distribution's package manager (administrator password)."""

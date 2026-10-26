@@ -579,6 +579,44 @@ def gis_installed(item, pm, run=subprocess.run, which=shutil.which):
 
 
 
+# ---- OpenGeos (https://github.com/opengeos): a catalogue shown as cards, links only ----
+OPENGEOS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "opengeos.json")
+
+
+def load_opengeos(path=None):
+    """opengeos.json, checked: every section has en/ka titles and items with a name and an https url."""
+    with open(path or OPENGEOS_FILE, encoding="utf-8") as f:
+        data = json.load(f)
+    seen = set()
+    for sec in data["sections"]:
+        if sec["id"] in seen:
+            raise ValueError(f"opengeos.json: section {sec['id']} appears twice")
+        seen.add(sec["id"])
+        if not all(sec.get("title", {}).get(lang) for lang in ("en", "ka")):
+            raise ValueError(f"opengeos.json: section {sec['id']}: title needs en and ka")
+        for it in sec["items"]:
+            if not it.get("name") or not str(it.get("url", "")).startswith("https://"):
+                raise ValueError(f"opengeos.json: {sec['id']}: every item needs a name and an https url")
+    if not all(data.get("intro", {}).get(lang) for lang in ("en", "ka")):
+        raise ValueError("opengeos.json: intro needs en and ka")
+    return data
+
+
+def opengeos_filter(data, needle="", section=None):
+    """[(section, [items])] whose name / description / section title contains the text, optionally only one section id."""
+    needle = needle.strip().lower()
+    out = []
+    for sec in data["sections"]:
+        if section and sec["id"] != section:
+            continue
+        items = [it for it in sec["items"] if not needle or needle in (it["name"] + " " + it.get("description", "") + " " +
+                                                                        sec["title"]["en"] + " " + sec["title"]["ka"]).lower()]
+        if items:
+            out.append((sec, items))
+    return out
+
+
+
 # ---- Flatpak (Flathub) for systems where the publisher's .deb / apt repository does not apply (Fedora, openSUSE, Arch ...) ----
 # Flathub's own signed remote; installed for the user (no administrator password) once flatpak itself is there.
 FLATHUB_REPO = "https://dl.flathub.org/repo/flathub.flatpakrepo"
