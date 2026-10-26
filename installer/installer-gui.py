@@ -117,6 +117,12 @@ STR = {
  "upd_apply": "Install updates automatically at start-up (only when nothing was changed here; the window restarts)",
  "log_open": "Open log folder", "log_copy": "Copy log", "log_where": "Logs are in:\n{p}",
  "log_none": "Nothing was logged today yet.\n{p}", "log_copied": "Copied the last {n} lines to the clipboard. Paste them into a bug report.\nFile: {p}",
+ "gis_btn": "GIS", "gis_title": "GIS programs", "gis_open_tool": "Open", "gis_nopkg": "no package for this system",
+ "gis_intro": "OSGeo projects and community projects. Ticked entries are installed from your distribution's repositories (administrator password); ↗ opens the project's page.",
+ "gis_install": "Install selected", "gis_uninstall": "Uninstall selected", "gis_tool_missing": "Could not start {tool}.",
+ "gis_broken": "The GIS list could not be read:\n{e}",
+ "gis_ask_install": "Install with {pm}?\n\n{list}\n\n(administrator password)",
+ "gis_ask_uninstall": "Remove with {pm}?\n\n{list}",
  "repo_url": "Could not open a browser. The project page:\n{url}",
  "upd_nogit": "git is not installed on this computer: updating works without it (Python downloads GitHub's snapshot).",
  "upd_archive": "This copy: GitHub commit {short} (updated without git)\nFolder: {folder}",
@@ -183,6 +189,12 @@ STR = {
  "upd_apply": "განახლებების ავტომატური დაყენება გახსნისას (მხოლოდ თუ აქ არაფერია შეცვლილი; ფანჯარა თავიდან გაიხსნება)",
  "log_open": "ჟურნალის საქაღალდე", "log_copy": "ჟურნალის კოპირება", "log_where": "ჟურნალები აქ არის:\n{p}",
  "log_none": "დღეს ჯერ არაფერი ჩაწერილა.\n{p}", "log_copied": "ბოლო {n} ხაზი დაკოპირდა ბუფერში. ჩასვით შეცდომის შეტყობინებაში.\nფაილი: {p}",
+ "gis_btn": "GIS", "gis_title": "GIS პროგრამები", "gis_open_tool": "გახსნა", "gis_nopkg": "ამ სისტემისთვის პაკეტი არ არის",
+ "gis_intro": "OSGeo-ს პროექტები და Community პროექტები. მონიშნული დაყენდება თქვენი დისტრიბუციის რეპოზიტორიიდან (ადმინისტრატორის პაროლი); ↗ პროექტის გვერდს ხსნის.",
+ "gis_install": "მონიშნულის დაყენება", "gis_uninstall": "მონიშნულის წაშლა", "gis_tool_missing": "{tool}-ის გაშვება ვერ მოხერხდა.",
+ "gis_broken": "GIS სიის წაკითხვა ვერ მოხერხდა:\n{e}",
+ "gis_ask_install": "დავაყენო {pm}-ით?\n\n{list}\n\n(ადმინისტრატორის პაროლი)",
+ "gis_ask_uninstall": "წავშალო {pm}-ით?\n\n{list}",
  "repo_url": "ბრაუზერის გახსნა ვერ მოხერხდა. პროექტის გვერდი:\n{url}",
  "upd_nogit": "ამ კომპიუტერზე git დაყენებული არ არის: განახლება მის გარეშეც მუშაობს (Python ჩამოტვირთავს GitHub-ის ასლს).",
  "upd_archive": "ეს ასლი: GitHub-ის კომიტი {short} (განახლებულია git-ის გარეშე)\nსაქაღალდე: {folder}",
@@ -456,6 +468,9 @@ class App(tk.Tk):
         self.btn_lang.pack(side="right")
         self.btn_set = ttk.Button(top, width=3, text="⚙", command=self.open_settings)
         self.btn_set.pack(side="right", padx=(0, 6))
+        self.btn_gis = ttk.Button(top, command=self.open_gis)
+        self.btn_gis.pack(side="right", padx=(0, 6))
+        self.gis_vars = {}
         self.top = top
         self.banner = ttk.Frame(self)                           # shown only when GitHub has something new (see start_quiet_check)
         self.lbl_banner = ttk.Label(self.banner, foreground="#1a5fb4", font=("", 9, "bold"))
@@ -556,6 +571,7 @@ class App(tk.Tk):
         self.f_extra_box.config(text=t("c_other"))
         self.lbl_search.config(text=t("search"))
         self.b_cancel.config(text=t("cancel"))
+        self.btn_gis.config(text=t("gis_btn"))
         self.f_where.config(text=t("f_where"))
         self.rb_user.config(text=t("w_user"))
         self.rb_sys.config(text=t("w_sys"))
@@ -780,8 +796,12 @@ class App(tk.Tk):
                 cmd = elevate(cmd)
                 if cmd is None:
                     return messagebox.showwarning(t("title"), t("no_pkexec", cmd="sudo " + shown))
-        jobs = ([prereq] if prereq else []) + ([cmd] if cmd else []) + extra_jobs
-        self.start_printhub = action == "install" and "printhub" in ids
+        self.start_jobs(([prereq] if prereq else []) + ([cmd] if cmd else []) + extra_jobs, prereq, shown,
+                        printhub=action == "install" and "printhub" in ids)
+
+    def start_jobs(self, jobs, prereq=None, shown="", printhub=False):
+        """Run the prepared commands in the window's log with progress and Cancel (shared by the main list and the GIS window)."""
+        self.start_printhub = printhub
         self.busy = True
         for b in (self.b_inst, self.b_un):
             b.state(["disabled"])
@@ -1107,6 +1127,107 @@ class App(tk.Tk):
         b_check.config(command=do_check)
         b_now.config(command=do_now)
         do_check()
+
+    # ---- GIS catalogue: OSGeo projects and community projects (installer/gis.json)
+    def open_gis(self):
+        """A window of its own: two tabs (OSGeo / Community), each grouped by category. Entries with a package for this system
+        can be ticked and installed; the others are a link to the project page (or open a tool of this toolkit)."""
+        import webbrowser
+        try:
+            data = extras.load_gis()
+        except (OSError, ValueError) as e:
+            return messagebox.showwarning(t("title"), t("gis_broken", e=e))
+        pm = detect_pm()
+        win = tk.Toplevel(self)
+        win.title(t("gis_title"))
+        win.geometry("760x560")
+        win.transient(self)
+        ttk.Label(win, text=t("gis_intro"), wraplength=720, justify="left", foreground="#555555").pack(anchor="w", padx=12, pady=(10, 4))
+        nb = ttk.Notebook(win)
+        nb.pack(fill="both", expand=True, padx=10, pady=4)
+        self.gis_vars = {}
+        installed = {}
+
+        def open_url(url):
+            try:
+                ok = webbrowser.open(url)
+            except Exception:  # noqa: BLE001
+                ok = False
+            if not ok:
+                messagebox.showinfo(t("title"), t("repo_url", url=url), parent=win)
+
+        def open_tool(tool):
+            path = os.path.join(ROOT, tool, tool + "-gui.py")
+            cmd = ["python3", path] if os.path.isfile(path) else [tool]
+            try:
+                subprocess.Popen(cmd, start_new_session=True)
+            except OSError:
+                messagebox.showinfo(t("title"), t("gis_tool_missing", tool=tool), parent=win)
+
+        for sec in data["sections"]:
+            tab = ttk.Frame(nb)
+            nb.add(tab, text=sec["title"][LANG])
+            cv = tk.Canvas(tab, highlightthickness=0)
+            sb = ttk.Scrollbar(tab, orient="vertical", command=cv.yview)
+            cv.configure(yscrollcommand=sb.set)
+            sb.pack(side="right", fill="y")
+            cv.pack(side="left", fill="both", expand=True)
+            inner = ttk.Frame(cv)
+            wid = cv.create_window((0, 0), window=inner, anchor="nw")
+            inner.bind("<Configure>", lambda e, c=cv: c.configure(scrollregion=c.bbox("all")))
+            cv.bind("<Configure>", lambda e, c=cv, w=wid: c.itemconfigure(w, width=e.width))
+            for seq, d in (("<Button-4>", -1), ("<Button-5>", 1), ("<MouseWheel>", None)):
+                cv.bind(seq, lambda e, c=cv, d=d: c.yview_scroll(d if d is not None else (-1 if e.delta > 0 else 1), "units"))
+                inner.bind(seq, lambda e, c=cv, d=d: c.yview_scroll(d if d is not None else (-1 if e.delta > 0 else 1), "units"))
+            inner.columnconfigure(0, weight=1)
+            row, cat = 0, None
+            for item in sec["programs"]:
+                if item["category"] != cat:
+                    cat = item["category"]
+                    ttk.Label(inner, text=data["categories"][cat] if LANG == "ka" else cat, font=("", 10, "bold"),
+                              foreground="#444444").grid(row=row, column=0, columnspan=3, sticky="w", padx=8, pady=(10, 2))
+                    row += 1
+                names = extras.gis_packages(item, pm)
+                if names:
+                    var = tk.BooleanVar(value=False)
+                    self.gis_vars[item["id"]] = var
+                    have = installed[item["id"]] = extras.gis_installed(item, pm)
+                    ttk.Checkbutton(inner, text=item["name"], variable=var).grid(row=row, column=0, sticky="w", padx=(18, 4))
+                    ttk.Label(inner, text=t("yes") if have else t("none"), font=("", 8),
+                              foreground="#1a7f37" if have else "#888888").grid(row=row, column=1, padx=6)
+                elif item.get("tool"):
+                    ttk.Label(inner, text=item["name"]).grid(row=row, column=0, sticky="w", padx=(22, 4))
+                    ttk.Button(inner, text=t("gis_open_tool"), command=lambda tl=item["tool"]: open_tool(tl)).grid(row=row, column=1, padx=6)
+                else:
+                    ttk.Label(inner, text=item["name"] + ("  · " + t("gis_nopkg") if item.get("packages") else ""),
+                              foreground="#555555").grid(row=row, column=0, sticky="w", padx=(22, 4))
+                ttk.Button(inner, text="↗", width=3, command=lambda u=item["url"]: open_url(u)).grid(row=row, column=2, padx=(0, 8))
+                row += 1
+        bar = ttk.Frame(win)
+        bar.pack(fill="x", padx=12, pady=8)
+        ttk.Button(bar, text=t("gis_install"), command=lambda: self.gis_go("install", data, pm, win)).pack(side="left")
+        ttk.Button(bar, text=t("gis_uninstall"), command=lambda: self.gis_go("uninstall", data, pm, win)).pack(side="left", padx=8)
+        ttk.Button(bar, text=t("set_close"), command=win.destroy).pack(side="right")
+
+    def gis_go(self, action, data, pm, win):
+        """Install / remove the ticked GIS programs through the distribution's package manager (administrator password)."""
+        if self.busy:
+            return
+        items = extras.gis_programs(data)
+        chosen = [items[i] for i, v in self.gis_vars.items() if v.get()]
+        if not chosen:
+            return messagebox.showinfo(t("title"), t("nothing"), parent=win)
+        steps, listing = [], []
+        for item in chosen:
+            steps += extras.gis_steps(item, pm, remove=(action == "uninstall"))
+            listing.append(f"• {item['name']}  ({' '.join(extras.gis_packages(item, pm))})")
+        if not messagebox.askyesno(t("title"), t("gis_ask_install" if action == "install" else "gis_ask_uninstall", list="\n".join(listing), pm=pm), parent=win):
+            return
+        jobs = self.steps_to_jobs(steps)
+        if jobs is None:
+            return
+        win.destroy()
+        self.start_jobs(jobs, shown=f"{pm}: " + ", ".join(i["name"] for i in chosen))
 
     def open_log_folder(self):
         os.makedirs(log_dir(), exist_ok=True)

@@ -507,6 +507,78 @@ def package_installed(app, which=shutil.which):
     return bool(which(PACKAGE_APPS[app]["cmd"]))
 
 
+# ---- GIS catalogue (installer/gis.json): OSGeo projects and community projects ----
+GIS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "gis.json")
+GIS_PMS = {"apt-get", "dnf", "pacman", "zypper"}                       # the package managers the names were checked for
+
+
+def load_gis(path=None):
+    """gis.json, checked: every entry needs id, category (known), name and url; packages only for known package managers."""
+    with open(path or GIS_FILE, encoding="utf-8") as f:
+        data = json.load(f)
+    seen = set()
+    for sec in data["sections"]:
+        if not all(sec.get("title", {}).get(lang) for lang in ("en", "ka")):
+            raise ValueError(f"gis.json: section {sec.get('id')}: title needs en and ka")
+        for p in sec["programs"]:
+            i = p.get("id", "?")
+            if i in seen:
+                raise ValueError(f"gis.json: {i} appears twice")
+            seen.add(i)
+            if p.get("category") not in data["categories"]:
+                raise ValueError(f"gis.json: {i}: category must be one of {sorted(data['categories'])}")
+            if not p.get("name") or not str(p.get("url", "")).startswith("https://"):
+                raise ValueError(f"gis.json: {i}: needs a name and an https url")
+            for pm, names in p.get("packages", {}).items():
+                if pm not in GIS_PMS or not names or not all(isinstance(n, str) and n and " " not in n for n in names):
+                    raise ValueError(f"gis.json: {i}: bad packages for '{pm}'")
+    return data
+
+
+def gis_programs(data=None):
+    """Flat {id: entry} over both sections."""
+    data = data or load_gis()
+    return {p["id"]: p for sec in data["sections"] for p in sec["programs"]}
+
+
+def gis_packages(item, pm):
+    """The distribution packages for this system, or None (link-only entry, or no package under this package manager)."""
+    return item.get("packages", {}).get(pm) or None
+
+
+def gis_steps(item, pm, remove=False):
+    """[{'root': True, 'sh': ...}] installing / removing the packages, [] when there is nothing to install here."""
+    names = gis_packages(item, pm)
+    fmt = (_REMOVE if remove else _INSTALL).get(pm)
+    if not names or not fmt:
+        return []
+    return [{"root": True, "sh": "set -u\n" + fmt.format(p=" ".join(names)) + "\n"}]
+
+
+def gis_installed(item, pm, run=subprocess.run, which=shutil.which):
+    """True when every package of this entry is installed (dpkg / rpm / pacman), False otherwise or when unknown."""
+    names = gis_packages(item, pm)
+    if not names:
+        return False
+    for n in names:
+        if pm == "apt-get" and which("dpkg-query"):
+            cmd, ok = ["dpkg-query", "-W", "-f=${Status}", n], lambda r: r.stdout.startswith("install ok installed")
+        elif pm in ("dnf", "zypper") and which("rpm"):
+            cmd, ok = ["rpm", "-q", n], lambda r: True
+        elif pm == "pacman" and which("pacman"):
+            cmd, ok = ["pacman", "-Q", n], lambda r: True
+        else:
+            return False
+        try:
+            r = run(cmd, capture_output=True, text=True, timeout=30)
+        except Exception:  # noqa: BLE001
+            return False
+        if r.returncode != 0 or not ok(r):
+            return False
+    return True
+
+
+
 # ---- Flatpak (Flathub) for systems where the publisher's .deb / apt repository does not apply (Fedora, openSUSE, Arch ...) ----
 # Flathub's own signed remote; installed for the user (no administrator password) once flatpak itself is there.
 FLATHUB_REPO = "https://dl.flathub.org/repo/flathub.flatpakrepo"

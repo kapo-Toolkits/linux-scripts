@@ -697,6 +697,8 @@ class Installer(unittest.TestCase):
                                           start=lambda *a: None, stop=lambda: None, state=lambda *a: None)
             app.runbar, app.prog, app.b_cancel = quiet, quiet, quiet
             app.finish = lambda rc: m.App.finish(app, rc)
+            app.start_jobs = lambda *a, **k: m.App.start_jobs(app, *a, **k)
+            app.show_progress = lambda pct: None
             app.after = lambda ms, fn, *a: fn(*a)           # run the "UI" hand-off inline
             m.threading = types.SimpleNamespace(Thread=lambda target, daemon: types.SimpleNamespace(start=target))
             m.App.go(app, "install")
@@ -1645,6 +1647,80 @@ class GetScript(unittest.TestCase):
             self.assertNotEqual(r.returncode, 0)
             self.assertIn("does not look like", r.stderr)
             self.assertFalse(os.path.exists(os.path.join(d, "home", "linux-scripts", "install.sh")))
+
+
+class GisCatalogue(unittest.TestCase):
+    ex = Installer.m.extras
+
+    def base(self):
+        with open(self.ex.GIS_FILE, encoding="utf-8") as f:
+            return json.load(f)
+
+    def load(self, data):
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "gis.json")
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(data, f)
+            return self.ex.load_gis(path)
+
+    def test_the_two_lists_are_all_there(self):
+        data = self.ex.load_gis()
+        self.assertEqual([s["id"] for s in data["sections"]], ["osgeo", "community"])
+        names = {p["id"]: p["name"] for p in self.ex.gis_programs(data).values()}
+        osgeo = {p["name"] for p in data["sections"][0]["programs"]}
+        community = {p["name"] for p in data["sections"][1]["programs"]}
+        for n in ("GeoNode", "Marble", "gvSIG Desktop", "QGIS Desktop", "TorchGeo", "PROJ", "GDAL/OGR", "GEOS", "GRASS", "GeoNetwork",
+                  "pycsw", "OSGeoLive", "PostGIS", "pgRouting", "pygeoapi", "MapServer", "OpenLayers", "PyWPS", "GeoServer"):
+            self.assertIn(n, osgeo)
+        for n in ("OSGeo4W", "pygeometa", "SFCGAL", "OWSLib", "QField", "EOEPCA+", "MobilityDB", "rasdaman", "GeoGirafe", "istSOS"):
+            self.assertIn(n, community)
+        self.assertFalse(osgeo & community)
+        self.assertEqual(len(names), len(osgeo) + len(community))                    # ids are unique over both lists
+
+    def test_every_entry_has_a_project_page_and_categories_have_georgian_names(self):
+        data = self.ex.load_gis()
+        for p in self.ex.gis_programs(data).values():
+            self.assertTrue(p["url"].startswith("https://www.osgeo.org/projects/"), p["id"])
+            self.assertTrue(data["categories"][p["category"]])
+
+    def test_install_and_remove_steps(self):
+        g = self.ex.gis_programs()
+        self.assertEqual(self.ex.gis_steps(g["mapserver"], "apt-get")[0]["sh"], "set -u\napt-get install -y mapserver-bin cgi-mapserver\n")
+        self.assertIn("apt-get purge -y mapserver-bin cgi-mapserver", self.ex.gis_steps(g["mapserver"], "apt-get", remove=True)[0]["sh"])
+        self.assertIn("dnf install -y gdal", self.ex.gis_steps(g["gdal"], "dnf")[0]["sh"])
+        self.assertEqual(self.ex.gis_steps(g["grass-gis"], "pacman"), [])             # no package there: honest, no guess
+        self.assertEqual(self.ex.gis_steps(g["geoserver"], "apt-get"), [])             # link-only
+        for pm in ("apt-get", "dnf", "pacman", "zypper"):
+            for item in g.values():
+                for st in self.ex.gis_steps(item, pm):
+                    self.assertTrue(st["root"])
+                    self.assertEqual(subprocess.run(["sh", "-n", "-c", st["sh"]], capture_output=True).returncode, 0)
+
+    def test_installed_needs_every_package(self):
+        g = self.ex.gis_programs()
+        have = {"cgi-mapserver"}
+
+        def run(cmd, **k):
+            return types.SimpleNamespace(returncode=0, stdout="install ok installed" if cmd[-1] in have else "")
+        which = lambda c: "/x"            # noqa: E731
+        self.assertFalse(self.ex.gis_installed(g["mapserver"], "apt-get", run=run, which=which))
+        have.add("mapserver-bin")
+        self.assertTrue(self.ex.gis_installed(g["mapserver"], "apt-get", run=run, which=which))
+        self.assertFalse(self.ex.gis_installed(g["geoserver"], "apt-get", run=run, which=which))
+
+    def test_mistakes_are_named(self):
+        for mutate, needle in (
+                (lambda d: d["sections"][1]["programs"].append(dict(d["sections"][0]["programs"][0])), "appears twice"),
+                (lambda d: d["sections"][0]["programs"][0].update(category="Nope"), "category must be"),
+                (lambda d: d["sections"][0]["programs"][0].update(url="http://x"), "https url"),
+                (lambda d: d["sections"][0]["programs"][1].update(packages={"apt-get": ["a b"]}), "bad packages"),
+                (lambda d: d["sections"][0]["programs"][1].update(packages={"nix": ["a"]}), "bad packages"),
+                (lambda d: d["sections"][0]["title"].pop("ka"), "title needs")):
+            data = self.base()
+            mutate(data)
+            with self.assertRaises(ValueError) as cm:
+                self.load(data)
+            self.assertIn(needle, str(cm.exception))
 
 
 class ClaudeDesktop(unittest.TestCase):

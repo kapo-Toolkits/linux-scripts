@@ -211,6 +211,58 @@ class Window(unittest.TestCase):
         finally:
             app.destroy()
 
+    def test_gis_window_lists_both_projects_lists_and_installs_ticked_packages(self):
+        app = gui.App()
+        try:
+            self.pump(app)
+            started = {}
+            with mock.patch.object(gui, "detect_pm", lambda: "apt-get"), \
+                    mock.patch.object(gui.extras, "gis_installed", lambda *a, **k: False), \
+                    mock.patch.object(gui, "elevate", lambda cmd: ["pkexec"] + cmd), \
+                    mock.patch.object(app, "start_jobs", lambda jobs, **k: started.update(jobs=jobs, **k)):
+                app.open_gis()
+                self.pump(app, 0.5)
+                top = [w for w in app.winfo_children() if w.winfo_class() == "Toplevel"][0]
+
+                def find(w, cls):
+                    out = []
+                    for c in w.winfo_children():
+                        if c.winfo_class() == cls:
+                            out.append(c)
+                        out += find(c, cls)
+                    return out
+                tabs = find(top, "TNotebook")[0]
+                self.assertEqual([tabs.tab(i, "text") for i in range(tabs.index("end"))], ["OSGeo Projects", "Community projects"])
+                texts = [w.cget("text") for w in find(top, "TCheckbutton")]
+                self.assertIn("Marble", texts)
+                self.assertIn("GDAL/OGR", texts)
+                self.assertNotIn("GeoServer", texts)                           # link-only: no checkbox
+                self.assertIn("Desktop Applications", [w.cget("text") for w in find(top, "TLabel")])
+                app.gis_vars["marble"].set(True)
+                app.gis_vars["mapserver"].set(True)
+                buttons = {b.cget("text"): b for b in find(top, "TButton")}
+                buttons[gui.t("gis_install")].invoke()
+                self.pump(app, 0.3)
+            self.assertEqual(len(started["jobs"]), 2)
+            self.assertIn("apt-get install -y marble", " ".join(started["jobs"][0]))
+            self.assertIn("mapserver-bin cgi-mapserver", " ".join(started["jobs"][1]))
+            self.assertIn("Marble", started["shown"])
+        finally:
+            app.destroy()
+
+    def test_gis_window_in_georgian(self):
+        gui.LANG = "ka"
+        app = gui.App()
+        try:
+            self.pump(app)
+            app.open_gis()
+            self.pump(app, 0.4)
+            top = [w for w in app.winfo_children() if w.winfo_class() == "Toplevel"][0]
+            self.assertEqual(top.title(), gui.t("gis_title"))
+        finally:
+            gui.save_lang("en")
+            app.destroy()
+
     def test_the_log_file_gets_what_the_window_says(self):
         app = gui.App()
         try:
