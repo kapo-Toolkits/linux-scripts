@@ -62,7 +62,8 @@ def load_programs(path=None):
 PROGRAMS = load_programs()["programs"]
 GITHUB_APPS = {p["id"]: {"name": p["display"], "repo": p["repo"], "package": p["package"], "cmd": p["cmd"], "asset": p["asset"]}
                for p in PROGRAMS if p["kind"] == "github"}
-PACKAGE_APPS = {p["id"]: {"cmd": p["cmd"], "name": p["display"]} for p in PROGRAMS if p["kind"] == "package"}
+PACKAGE_APPS = {p["id"]: {"cmd": p["cmd"], "name": p["display"], "fallback": p.get("fallback", {})}
+                for p in PROGRAMS if p["kind"] == "package"}
 FLATPAK_IDS = {p["id"]: p["flatpak"] for p in PROGRAMS if p.get("flatpak")}
 DATA_DIRS = {p["id"]: p.get("data", []) for p in PROGRAMS}
 
@@ -495,11 +496,22 @@ def package_name(app, pm):
 
 
 def package_steps(app, pm, remove=False):
-    """[{'root': True, 'sh': ...}] installing (or removing) the distribution's package, [] when unknown here."""
+    """[{'root': True, 'sh': ...}] installing (or removing) the distribution's package, [] when unknown here.
+    A program can name a fallback package for a package manager (programs.json 'fallback'): tried when the first is not in
+    this distribution's repositories (Debian has unrar only in non-free: unrar-free instead); removal takes whichever is installed."""
     pkg = package_name(app, pm)
     fmt = (_REMOVE if remove else _INSTALL).get(pm)
     if not pkg or not fmt:
         return []
+    other = PACKAGE_APPS[app].get("fallback", {}).get(pm)
+    if other and pm == "apt-get":
+        names = f"{shlex.quote(pkg)} {shlex.quote(other)}"
+        if remove:
+            sh = (f"set -u\npk=\"\"\nfor p in {names}; do dpkg -s \"$p\" >/dev/null 2>&1 && pk=\"$pk $p\"; done\n"
+                  f"[ -n \"$pk\" ] && {fmt.format(p='$pk')} || true\n")
+        else:
+            sh = f"set -u\n{fmt.format(p=shlex.quote(pkg))} || {fmt.format(p=shlex.quote(other))}\n"
+        return [{"root": True, "sh": sh}]
     return [{"root": True, "sh": "set -eu\n" + fmt.format(p=shlex.quote(pkg)) + "\n"}]
 
 

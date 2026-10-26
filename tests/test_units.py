@@ -1546,7 +1546,7 @@ class ProgramsRegistry(unittest.TestCase):
 
     def test_every_program_has_a_shortcut_entry_so_the_two_lists_cannot_drift(self):
         sc = {x["id"] for x in load("shortcuts/shortcuts-gui.py").TOOLS}
-        for p in self.ex.PROGRAMS:
+        for p in (p for p in self.ex.PROGRAMS if not p.get("cli")):           # command-line tools have no menu entry
             sid = p.get("shortcut", p["id"])   # the shortcuts tool names a few programs differently
             self.assertIn(sid, sc, p["id"])
 
@@ -1764,6 +1764,49 @@ class OpenGeos(unittest.TestCase):
                 with self.assertRaises(ValueError) as cm:
                     self.ex.load_opengeos(path)
             self.assertIn(needle, str(cm.exception))
+
+
+class Unrar(unittest.TestCase):
+    ex = Installer.m.extras
+
+    def test_install_per_package_manager(self):
+        self.assertEqual(self.ex.package_steps("unrar", "apt-get")[0]["sh"], "set -u\napt-get install -y unrar || apt-get install -y unrar-free\n")
+        for pm, cmd in (("dnf", "dnf install -y unrar"), ("pacman", "pacman -S --noconfirm unrar"), ("zypper", "zypper --non-interactive install unrar")):
+            self.assertIn(cmd, self.ex.package_steps("unrar", pm)[0]["sh"], pm)
+        self.assertEqual(self.ex.package_steps("unrar", "apk"), [])                 # no package there: honest, no guess
+
+    def test_debian_without_non_free_falls_back_to_unrar_free(self):
+        with tempfile.TemporaryDirectory() as d:
+            log = os.path.join(d, "log")
+            apt = os.path.join(d, "apt-get")
+            with open(apt, "w") as f:
+                f.write(f'#!/bin/sh\necho "$*" >> {log}\ncase "$*" in *unrar-free*) exit 0;; *) exit 100;; esac\n')
+            os.chmod(apt, 0o755)
+            r = subprocess.run(["sh", "-c", self.ex.package_steps("unrar", "apt-get")[0]["sh"]], capture_output=True,
+                               env=dict(os.environ, PATH=d + ":" + os.environ["PATH"]))
+            self.assertEqual(r.returncode, 0)
+            with open(log) as f:
+                self.assertEqual(f.read().split("\n")[:2], ["install -y unrar", "install -y unrar-free"])
+
+    def test_removal_takes_whichever_is_installed(self):
+        sh = self.ex.package_steps("unrar", "apt-get", remove=True)[0]["sh"]
+        self.assertEqual(subprocess.run(["sh", "-n", "-c", sh], capture_output=True).returncode, 0)
+        with tempfile.TemporaryDirectory() as d:
+            log = os.path.join(d, "log")
+            for name, body in (("apt-get", f'echo "$*" >> {log}'), ("dpkg", '[ "$2" = unrar-free ]')):
+                with open(os.path.join(d, name), "w") as f:
+                    f.write("#!/bin/sh\n" + body + "\n")
+                os.chmod(os.path.join(d, name), 0o755)
+            r = subprocess.run(["sh", "-c", sh], capture_output=True, env=dict(os.environ, PATH=d + ":" + os.environ["PATH"]))
+            self.assertEqual(r.returncode, 0)
+            with open(log) as f:
+                self.assertEqual(f.read().strip(), "purge -y unrar-free")
+
+    def test_it_is_listed_as_a_command_line_tool(self):
+        entry = next(p for p in self.ex.PROGRAMS if p["id"] == "unrar")
+        self.assertEqual((entry["group"], entry["kind"], entry.get("cli")), ("tools", "package", True))
+        self.assertIn("tools", Installer.m.GROUP_TEXT)
+        self.assertEqual(entry["fallback"], {"apt-get": "unrar-free"})
 
 
 class ClaudeDesktop(unittest.TestCase):
@@ -2007,6 +2050,10 @@ class Brave(unittest.TestCase):
 
 
 class PackagePrograms(unittest.TestCase):
+    @staticmethod
+    def cli(app_id):
+        return any(p["id"] == app_id and p.get("cli") for p in Installer.m.extras.PROGRAMS)
+
     ex = Installer.m.extras
 
     def test_steps_per_package_manager_and_names(self):
@@ -2019,9 +2066,9 @@ class PackagePrograms(unittest.TestCase):
                 self.assertIn(cmd.format(app) + "\n", steps[0]["sh"])
                 self.assertEqual(subprocess.run(["sh", "-n", "-c", steps[0]["sh"]], capture_output=True).returncode, 0)
                 self.assertEqual(self.ex.package_name(app, pm), app)
-        self.assertEqual(set(self.ex.PACKAGE_APPS), {"brasero", "xfburn", "k3b"})
+        self.assertEqual(set(self.ex.PACKAGE_APPS), {"brasero", "xfburn", "k3b", "unrar"})
         self.assertEqual({x["id"] for x in Installer.m.EXTRAS}, set(self.ex.PACKAGE_APPS) | {"etcher", "brave", "claude", "vscode", "discord"} | set(self.ex.GITHUB_APPS))   # window and logic agree
-        self.assertEqual({x["id"] for x in Shortcuts.m.TOOLS} >= set(self.ex.PACKAGE_APPS), True)       # and shortcuts know them
+        self.assertEqual({x["id"] for x in Shortcuts.m.TOOLS} >= {i for i in self.ex.PACKAGE_APPS if not PackagePrograms.cli(i)}, True)       # and shortcuts know them
         self.assertIn("apt-get purge -y brasero", self.ex.package_steps("brasero", "apt-get", remove=True)[0]["sh"])
         self.assertIn("pacman -R --noconfirm brasero", self.ex.package_steps("brasero", "pacman", remove=True)[0]["sh"])
         self.assertEqual(self.ex.package_steps("brasero", "unknown-pm"), [])

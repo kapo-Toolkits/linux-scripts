@@ -171,6 +171,9 @@ PKG_FOR = {
     "lpinfo": _ALL("cups"),
     "lpadmin": _ALL("cups"),
     "lp": _ALL("cups"),
+    # RAR extraction: in Ubuntu/Mint (multiverse), Fedora, Arch, openSUSE as 'unrar'; Debian has it only in non-free, so there
+    # apt falls back to the free unrar-free (see programs.json 'fallback'); Alpine has no package
+    "unrar": {"apt-get": "unrar", "dnf": "unrar", "pacman": "unrar", "zypper": "unrar"},
 }
 _INSTALL_FMT = {"apt-get": "sudo apt install {p}", "dnf": "sudo dnf install {p}", "yum": "sudo yum install {p}",
                 "pacman": "sudo pacman -S {p}", "zypper": "sudo zypper install {p}",

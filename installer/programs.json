@@ -4,6 +4,7 @@
   "dev",
   "net",
   "disk",
+  "tools",
   "more"
  ],
  "programs": [
@@ -201,6 +202,26 @@
     "~/.config/k3brc",
     "~/.local/share/k3b"
    ]
+  },
+  {
+   "id": "unrar",
+   "group": "tools",
+   "kind": "package",
+   "display": "unrar",
+   "cmd": "unrar",
+   "cli": true,
+   "fallback": {
+    "apt-get": "unrar-free"
+   },
+   "name": {
+    "en": "unrar",
+    "ka": "unrar"
+   },
+   "info": {
+    "en": "extract .rar archives (command line: unrar x file.rar); from your distribution's repositories (Debian: the free unrar-free)",
+    "ka": "RAR არქივების გახსნა (ბრძანება: unrar x file.rar); თქვენი დისტრიბუციის რეპოზიტორიიდან (Debian-ზე — თავისუფალი unrar-free)"
+   },
+   "data": []
   },
   {
    "id": "winboat",
