@@ -135,6 +135,142 @@ class Hotspot(unittest.TestCase):
         self.assertFalse(self.m.valid_psk("პაროლი12345"))          # Latin only
 
 
+class HotspotDevices(unittest.TestCase):
+    """Which Wi-Fi adapter hosts the hotspot, which network it shares (common/lsnet.py + the window's helpers)."""
+    import lsnet
+    m = Hotspot.m
+    NM = ("wlp3s0:wifi:connected:Hotspot\neno1:ethernet:connected:Wired connection 1\nbr-e1c0:bridge:connected (externally):br-e1c0\n"
+          "lo:loopback:connected (externally):lo\ndocker0:bridge:connected (externally):docker0\n"
+          "wlx6070721c3312:wifi:disconnected:--\nveth73b:ethernet:unmanaged:--\n")
+    ROUTES = "default via 192.168.0.1 dev eno1 proto dhcp src 192.168.0.2 metric 100\n"
+
+    def fake_run(self, nm=None, routes=None, iw=None):
+        with open(os.path.join(ROOT, "tests", "fixtures", "iw_phy_two_adapters.txt")) as f:
+            iw_text = iw if iw is not None else f.read()
+
+        def run(cmd, timeout=10):
+            if cmd[:1] == ["nmcli"]:
+                return 0, nm if nm is not None else self.NM
+            if cmd[:2] == ["ip", "-4"]:
+                return 0, routes if routes is not None else self.ROUTES
+            if cmd[:2] == ["iw", "phy"]:
+                return 0, iw_text
+            if cmd[:1] == ["udevadm"]:
+                dev = os.path.basename(cmd[-1])
+                return 0, {"wlp3s0": "ID_VENDOR_FROM_DATABASE=Intel Corporation\nID_MODEL_FROM_DATABASE=Centrino Advanced-N 6205 [Taylor Peak] (Centrino Advanced-N 6205 AGN)",
+                           "wlx6070721c3312": "ID_VENDOR_FROM_DATABASE=Ralink Technology, Corp.\nID_MODEL_FROM_DATABASE=MT7601U Wireless Adapter"}.get(dev, "")
+            return 1, ""
+        return run
+
+    def sysfs(self, d):
+        for dev, phy, drv, bus in (("wlp3s0", "phy0", "iwlwifi", "pci"), ("wlx6070721c3312", "phy1", "mt7601u", "usb")):
+            base = os.path.join(d, dev)
+            os.makedirs(os.path.join(base, "device"))
+            os.makedirs(os.path.join(d, "x", phy))
+            os.symlink(os.path.join(d, "x", phy), os.path.join(base, "phy80211"))
+            os.makedirs(os.path.join(d, "x", drv))
+            os.symlink(os.path.join(d, "x", drv), os.path.join(base, "device", "driver"))
+            os.makedirs(os.path.join(d, "x", bus))
+            os.symlink(os.path.join(d, "x", bus), os.path.join(base, "device", "subsystem"))
+        return d
+
+    def test_radios_and_their_modes_from_real_iw_output(self):
+        with open(os.path.join(ROOT, "tests", "fixtures", "iw_phy_two_adapters.txt")) as f:
+            modes = self.lsnet.parse_iw_phy_modes(f.read())
+        self.assertEqual(modes["phy0"], {"IBSS", "managed", "AP", "AP/VLAN", "monitor"})
+        self.assertEqual(modes["phy1"], {"managed", "monitor"})                  # the USB MT7601U cannot host a hotspot
+
+    def test_adapters_with_driver_bus_model_and_ap_support(self):
+        with tempfile.TemporaryDirectory() as d:
+            ads = self.lsnet.wifi_adapters(run=self.fake_run(), sysfs=self.sysfs(d))
+        self.assertEqual([a["dev"] for a in ads], ["wlp3s0", "wlx6070721c3312"])          # no cable, bridge, docker, veth
+        internal, usb = ads
+        self.assertEqual((internal["driver"], internal["bus"], internal["ap"], internal["state"], internal["connection"]),
+                         ("iwlwifi", "pci", True, "connected", "Hotspot"))
+        self.assertEqual((usb["driver"], usb["bus"], usb["ap"], usb["connection"]), ("mt7601u", "usb", False, ""))
+        self.assertEqual(internal["model"], "Centrino Advanced-N 6205")                  # brackets / long alias dropped
+        self.assertIn("can host a hotspot", self.lsnet.adapter_label(internal))
+        self.assertIn("cannot host a hotspot", self.lsnet.adapter_label(usb))
+        self.assertIn("USB", self.lsnet.adapter_label(usb))
+
+    def test_unknown_support_is_not_called_unsupported(self):
+        with tempfile.TemporaryDirectory() as d:
+            ads = self.lsnet.wifi_adapters(run=self.fake_run(iw=""), sysfs=self.sysfs(d))
+        self.assertTrue(all(a["ap"] is None for a in ads))
+        self.assertIn("not sure", self.lsnet.adapter_label(ads[0]))
+
+    def test_the_default_choice_is_the_adapter_that_can_host(self):
+        with tempfile.TemporaryDirectory() as d:
+            ads = self.lsnet.wifi_adapters(run=self.fake_run(), sysfs=self.sysfs(d))
+        self.assertEqual(self.m.pick_adapter(ads)["dev"], "wlp3s0")
+        self.assertEqual(self.m.pick_adapter(list(reversed(ads)))["dev"], "wlp3s0")          # order of plugging does not matter
+        self.assertEqual(self.m.pick_adapter(ads, saved="wlx6070721c3312")["dev"], "wlx6070721c3312")   # the saved profile wins
+        self.assertIsNone(self.m.pick_adapter([]))
+
+    def test_networks_that_can_be_shared(self):
+        ups = self.lsnet.uplink_choices("wlp3s0", run=self.fake_run())
+        self.assertEqual([(u["dev"], u["type"], u["connection"], u["gateway"]) for u in ups],
+                         [("eno1", "ethernet", "Wired connection 1", "192.168.0.1")])          # bridge/docker/lo/veth/disconnected left out
+        both = self.NM.replace("wlx6070721c3312:wifi:disconnected:--", "wlx6070721c3312:wifi:connected:Home Wi-Fi")
+        routes = self.ROUTES + "default via 10.9.0.1 dev wlx6070721c3312 proto dhcp metric 600\n"
+        ups = self.lsnet.uplink_choices("wlp3s0", run=self.fake_run(nm=both, routes=routes))
+        self.assertEqual([u["dev"] for u in ups], ["eno1", "wlx6070721c3312"])                 # cable first, then Wi-Fi
+        self.assertEqual([u["dev"] for u in self.lsnet.uplink_choices("eno1", run=self.fake_run(nm=both, routes=routes))],
+                         ["wlx6070721c3312"])                                                  # the hotspot adapter is never its own source
+        self.assertIn("Home Wi-Fi", self.lsnet.uplink_label(ups[1]))
+        no_route = self.lsnet.uplink_choices("wlp3s0", run=self.fake_run(nm=both, routes=self.ROUTES))
+        self.assertEqual([u["dev"] for u in no_route], ["eno1"])                               # connected but no internet route: not offered
+
+    def test_nmcli_escaped_colons(self):
+        self.assertEqual(self.lsnet.split_nmcli("wlx1:wifi:connected:My\\:Net"), ["wlx1", "wifi", "connected", "My:Net"])
+
+    def test_configured_uplink_and_helper_lookup(self):
+        with tempfile.TemporaryDirectory() as d:
+            conf = os.path.join(d, "hotspot-uplink")
+            self.assertEqual(self.lsnet.current_uplink(conf), "")
+            for text, want in (("eno1\nHotspot\n", "eno1"), ("auto\nHotspot\n", ""), ("", "")):
+                with open(conf, "w") as f:
+                    f.write(text)
+                self.assertEqual(self.lsnet.current_uplink(conf), want)
+            self.assertEqual(self.lsnet.helper_path(os.path.join(ROOT, "wifi-hotspot"), extra=()),
+                             os.path.join(ROOT, "wifi-hotspot", "hotspot-uplink.sh"))
+            self.assertEqual(self.lsnet.helper_path(d, extra=()), "")
+
+
+class HotspotUplinkScript(unittest.TestCase):
+    """The helper's command-line behaviour that needs no root (the routing itself is tested in a container)."""
+    script = os.path.join(ROOT, "wifi-hotspot", "hotspot-uplink.sh")
+
+    def test_syntax_and_usage(self):
+        self.assertEqual(subprocess.run(["sh", "-n", self.script], capture_output=True).returncode, 0)
+        r = subprocess.run(["sh", self.script], capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0)
+        self.assertIn("install DEVICE", r.stdout)
+
+    def test_install_needs_root_and_a_clean_device_name(self):
+        r = subprocess.run(["sh", self.script, "install", "eno1"], capture_output=True, text=True)
+        if os.getuid() != 0:
+            self.assertNotEqual(r.returncode, 0)
+            self.assertIn("root", r.stderr)
+        r = subprocess.run(["sh", self.script, "install"], capture_output=True, text=True)
+        self.assertEqual(r.returncode, 2)
+
+    def test_install_writes_config_and_dispatcher_when_pointed_elsewhere(self):
+        with tempfile.TemporaryDirectory() as d:
+            env = dict(os.environ, HOTSPOT_UPLINK_CONF=os.path.join(d, "etc", "hotspot-uplink"),
+                       HOTSPOT_UPLINK_DISPATCH=os.path.join(d, "disp", "90-x"), PATH=os.environ["PATH"])
+            r = subprocess.run(["sh", self.script, "install", "wlx6070721c3312;rm -rf x", "My Hotspot"], capture_output=True, text=True, env=env)
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            with open(env["HOTSPOT_UPLINK_CONF"]) as f:
+                self.assertEqual(f.read(), "wlx6070721c3312rm-rfx\nMy Hotspot\n")          # ';' and spaces cannot survive
+            self.assertTrue(os.access(env["HOTSPOT_UPLINK_DISPATCH"], os.X_OK))
+            r = subprocess.run(["sh", self.script, "install", "auto"], capture_output=True, text=True, env=env)
+            self.assertEqual(r.returncode, 0)
+            self.assertFalse(os.path.exists(env["HOTSPOT_UPLINK_DISPATCH"]))                 # automatic = nothing installed
+            r = subprocess.run(["sh", self.script, "status"], capture_output=True, text=True, env=env)
+            self.assertIn("uplink: auto", r.stdout)
+
+
 class HotspotClients(unittest.TestCase):
     m = Hotspot.m
     fx = os.path.join(ROOT, "tests", "fixtures")

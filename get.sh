@@ -26,7 +26,7 @@ if command -v curl >/dev/null 2>&1; then
     fetch() { curl -fsSL --proto '=https' --tlsv1.2 "$@"; }
 elif command -v wget >/dev/null 2>&1; then
     fetch() { url=""; for x in "$@"; do case "$x" in http*) url="$x" ;; esac; done; wget -qO- --https-only "$url"; }
-else
+elif [ -z "${LS_SNAPSHOT:-}" ]; then                    # a local snapshot (tests) needs no downloader
     die "curl or wget is needed (Debian/Ubuntu: sudo apt install curl)"
 fi
 command -v tar >/dev/null 2>&1 || die "tar is needed"
