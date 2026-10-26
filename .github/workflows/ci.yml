@@ -13,7 +13,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: shellcheck
-        run: shellcheck -S warning install.sh wifi-hotspot/hotspot-uplink.sh usb-eject/usb-eject.sh wifi-hotspot/hotspot.sh tests/run-qgis-containers.sh
+        run: shellcheck -S warning install.sh get.sh wifi-hotspot/hotspot-uplink.sh usb-eject/usb-eject.sh wifi-hotspot/hotspot.sh tests/run-qgis-containers.sh
       - name: syntax of generated/embedded shell is covered by unit tests; compile all python
         run: python3 -m compileall -q common usb-eject wifi-hotspot printer-setup qgis-installer tests
       - name: unit tests (offline)
@@ -26,6 +26,9 @@ jobs:
         run: |
           sudo apt-get install -y -qq python3-tk xvfb
           xvfb-run -a python3 tests/test_qgis_gui.py
+      - name: "installer window (real Tk under a virtual display, search, groups, settings, progress, cancel, small screens)"
+        run: xvfb-run -a python3 tests/test_installer_window.py
+
       - name: "hotspot window (real Tk under a virtual display, adapter and network choice)"
         run: xvfb-run -a python3 tests/test_hotspot_window.py
       - name: qgis-installer distribution paths (Fedora/Atomic, openSUSE, Arch/AUR, containers, Nix)

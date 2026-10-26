@@ -27,6 +27,46 @@ ETCHER_PACKAGE = "balena-etcher"
 CACHE = os.path.join("~", ".cache", "linux-scripts", "downloads")
 X86 = ("amd64", "x86_64")
 
+# ---- the list of "other programs" lives in programs.json next to this file ----
+PROGRAMS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "programs.json")
+KINDS = {"claude", "vscode", "discord", "brave", "etcher", "github", "package"}      # the recipe that installs it
+NEEDED = {"github": ("display", "repo", "package", "cmd", "asset"), "package": ("display", "cmd")}
+
+
+def load_programs(path=None):
+    """The programs.json entries, checked: a typo there must say what is wrong, not crash later in a dialog."""
+    with open(path or PROGRAMS_FILE, encoding="utf-8") as f:
+        data = json.load(f)
+    seen = set()
+    for p in data["programs"]:
+        i = p.get("id", "?")
+        if i in seen:
+            raise ValueError(f"programs.json: {i} appears twice")
+        seen.add(i)
+        if p.get("kind") not in KINDS:
+            raise ValueError(f"programs.json: {i}: kind must be one of {sorted(KINDS)}")
+        if p.get("group") not in data["groups"]:
+            raise ValueError(f"programs.json: {i}: group must be one of {data['groups']}")
+        for lang in ("en", "ka"):
+            if not p.get("name", {}).get(lang) or not p.get("info", {}).get(lang):
+                raise ValueError(f"programs.json: {i}: name and info need both en and ka")
+        for key in NEEDED.get(p["kind"], ()):
+            if not p.get(key):
+                raise ValueError(f"programs.json: {i}: kind {p['kind']} needs '{key}'")
+        for d in p.get("data", []):
+            if not d.startswith("~/") or ".." in d:
+                raise ValueError(f"programs.json: {i}: data paths must start with ~/ and stay inside it ({d})")
+    return data
+
+
+PROGRAMS = load_programs()["programs"]
+GITHUB_APPS = {p["id"]: {"name": p["display"], "repo": p["repo"], "package": p["package"], "cmd": p["cmd"], "asset": p["asset"]}
+               for p in PROGRAMS if p["kind"] == "github"}
+PACKAGE_APPS = {p["id"]: {"cmd": p["cmd"], "name": p["display"]} for p in PROGRAMS if p["kind"] == "package"}
+FLATPAK_IDS = {p["id"]: p["flatpak"] for p in PROGRAMS if p.get("flatpak")}
+DATA_DIRS = {p["id"]: p.get("data", []) for p in PROGRAMS}
+
+
 
 def fetch_json(url, timeout=20, opener=urllib.request.urlopen):
     req = urllib.request.Request(url, headers={"User-Agent": "linux-scripts-installer", "Accept": "application/vnd.github+json"})
@@ -214,17 +254,6 @@ def claude_installed(which=shutil.which):
 # ---- programs published as a .deb on GitHub releases: RustDesk, Tabby, WinBoat, ArtCraft Launcher ----
 # Same safety as balenaEtcher: HTTPS download from the project's own GitHub release, SHA-256 checked against the digest
 # GitHub publishes for that exact asset, then apt installs it.  Debian-based systems only; elsewhere the project page is shown.
-GITHUB_APPS = {
-    "rustdesk": {"name": "RustDesk", "repo": "rustdesk/rustdesk", "package": "rustdesk", "cmd": "rustdesk",
-                 "asset": {"x86": "rustdesk-{v}-x86_64.deb", "arm": "rustdesk-{v}-aarch64.deb"}},
-    "tabby": {"name": "Tabby", "repo": "Eugeny/tabby", "package": "tabby-terminal", "cmd": "tabby",
-              "asset": {"x86": "tabby-{v}-linux-x64.deb", "arm": "tabby-{v}-linux-arm64.deb"}},
-    "winboat": {"name": "WinBoat", "repo": "TibixDev/winboat", "package": "winboat", "cmd": "winboat",
-                "asset": {"x86": "winboat-{v}-amd64.deb"}},
-    "artcraft": {"name": "ArtCraft Launcher", "repo": "storytold/craft-launcher", "package": "artcraft-launcher",
-                 "cmd": "artcraft-launcher", "asset": {"x86": "artcraft-launcher-{v}-linux-x86_64.deb",
-                                                       "arm": "artcraft-launcher-{v}-linux-aarch64.deb"}},
-}
 
 
 def github_release(app_id, fetch=fetch_json):
@@ -370,21 +399,6 @@ apt-get update || true
     return [{"root": True, "sh": sh}]
 
 # ---- the user's own data of these programs: only ever offered, never removed silently ----
-DATA_DIRS = {
-    "claude": ["~/.config/Claude", "~/.cache/Claude"],
-    "vscode": ["~/.config/Code", "~/.vscode", "~/.vscode-shared", "~/.cache/Code"],
-    "discord": ["~/.config/discord"],
-    "rustdesk": ["~/.config/rustdesk", "~/.local/share/logs/RustDesk"],
-    "tabby": ["~/.config/tabby"],
-    "winboat": ["~/.config/winboat", "~/.winboat"],
-    "artcraft": ["~/.local/share/ai.storyteller.artcraft-launcher", "~/.config/ai.storyteller.artcraft-launcher",
-                 "~/.cache/ai.storyteller.artcraft-launcher"],
-    "etcher": ["~/.config/balenaEtcher"],
-    "brave": ["~/.config/BraveSoftware", "~/.cache/BraveSoftware"],
-    "brasero": ["~/.config/brasero"],
-    "xfburn": ["~/.config/xfburn"],
-    "k3b": ["~/.config/k3brc", "~/.local/share/k3b"],
-}
 
 
 def _size(path):
@@ -461,9 +475,6 @@ mv {q(path)}.part {q(path)}
 
 
 # programs that simply come from the distribution's own repositories (no download, nothing to verify by hand)
-PACKAGE_APPS = {"brasero": {"cmd": "brasero", "name": "Brasero"},
-                "xfburn": {"cmd": "xfburn", "name": "Xfburn"},
-                "k3b": {"cmd": "k3b", "name": "K3b"}}
 _INSTALL = {"apt-get": "apt-get install -y {p}", "dnf": "dnf install -y {p}", "yum": "yum install -y {p}",
             "pacman": "pacman -S --noconfirm {p}", "zypper": "zypper --non-interactive install {p}",
             "apk": "apk add {p}", "xbps-install": "xbps-install -y {p}"}
@@ -498,8 +509,6 @@ def package_installed(app, which=shutil.which):
 
 # ---- Flatpak (Flathub) for systems where the publisher's .deb / apt repository does not apply (Fedora, openSUSE, Arch ...) ----
 # Flathub's own signed remote; installed for the user (no administrator password) once flatpak itself is there.
-FLATPAK_IDS = {"discord": "com.discordapp.Discord", "rustdesk": "com.rustdesk.RustDesk",
-               "vscode": "com.visualstudio.code", "brave": "com.brave.Browser"}
 FLATHUB_REPO = "https://dl.flathub.org/repo/flathub.flatpakrepo"
 FLATPAK_SETUP = "https://flatpak.org/setup/"
 

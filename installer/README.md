@@ -102,3 +102,9 @@ Settings also has a **GitHub ↗** button that opens the project page (`github.c
 **Fedora, openSUSE, Arch and other non-Debian systems.** Where the publisher's `.deb` / apt repository does not apply, Discord, RustDesk, VS Code and Brave are installed as **Flatpaks from Flathub** — for you only, without an administrator password (Flatpak itself is installed first from the distribution's repositories when it is missing). Uninstalling removes the Flatpak too, and the optional personal-data question also lists `~/.var/app/<id>`.
 
 **Tests against the real publishers.** CI (`tests/run-real-install.sh`) adds the Claude Desktop and VS Code repositories in a throwaway Ubuntu container (key fingerprint, apt must offer the package) and checks that removal takes the entry away again; it also downloads, SHA-256-checks, installs and purges ArtCraft Launcher for real.
+
+**Adding a program.** The *other programs* list is `installer/programs.json`: one entry per program (id, group, kind, names and descriptions in both languages, and for `github` / `package` kinds the repository or command, optional Flatpak id and personal-data folders). The file is checked when it is loaded — a typo names the entry and the problem — and tests make sure every entry also has a shortcut in the shortcuts tool.
+
+**Log.** Everything the window prints is also written to `~/.cache/linux-scripts/logs/installer-YYYYMMDD.log` (the last 10 days are kept). **Settings → Copy log** puts the newest lines on the clipboard for a bug report; **Open log folder** opens the folder.
+
+**Window tests.** `tests/test_installer_window.py` opens the real window (under `xvfb` in CI) and clicks through language switch, search, groups, Settings, progress and Cancel and the small-screen sizes; nothing is installed or downloaded.
