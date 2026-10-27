@@ -47,6 +47,24 @@
    ]
   },
   {
+   "id": "virtualbox",
+   "group": "dev",
+   "kind": "virtualbox",
+   "name": {
+    "en": "VirtualBox 7.2",
+    "ka": "VirtualBox 7.2"
+   },
+   "info": {
+    "en": "virtual machines; from Oracle's apt repository (key fingerprint checked), adds you to vboxusers; Debian / Ubuntu / Mint",
+    "ka": "ვირტუალური მანქანები; Oracle-ის apt რეპოზიტორიიდან (გასაღების თითის ანაბეჭდი მოწმდება), გამატებთ vboxusers ჯგუფში; Debian / Ubuntu / Mint"
+   },
+   "shortcut": "virtualbox",
+   "data": [
+    "~/.config/VirtualBox",
+    "~/VirtualBox VMs"
+   ]
+  },
+  {
    "id": "tabby",
    "group": "dev",
    "kind": "github",

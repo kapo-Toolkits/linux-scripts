@@ -1809,6 +1809,73 @@ class Unrar(unittest.TestCase):
         self.assertEqual(entry["fallback"], {"apt-get": "unrar-free"})
 
 
+class VirtualBox(unittest.TestCase):
+    ex = Installer.m.extras
+
+    def os_release(self, d, **kv):
+        path = os.path.join(d, "os-release")
+        with open(path, "w") as f:
+            f.write("".join(f'{k}="{v}"\n' for k, v in kv.items()))
+        return path
+
+    def script_head(self, d, osr):
+        """The recipe up to the first apt-get line: codename resolution only (no apt, no network in a unit test)."""
+        sh = self.ex.virtualbox_steps("apt-get", "x86_64", osrelease=osr)[0][0]["sh"]
+        head = sh.split("apt-get install -y curl", 1)[0] + 'echo "CODENAME=$CN"\n'
+        return subprocess.run(["sh", "-c", head], capture_output=True, text=True)
+
+    def test_only_debian_based_x86_64_get_a_plan(self):
+        for arch in ("amd64", "x86_64"):
+            self.assertEqual([x["root"] for x in self.ex.virtualbox_steps("apt-get", arch)[0]], [True])
+        for pm, arch in (("dnf", "x86_64"), ("pacman", "x86_64"), ("apt-get", "aarch64"), ("apt-get", "i386"), ("", "amd64")):
+            steps, info = self.ex.virtualbox_steps(pm, arch)
+            self.assertEqual(steps, [], (pm, arch))
+            self.assertEqual(info["manual"], self.ex.VBOX_PAGE)
+
+    def test_script_follows_oracles_instructions_with_the_gate_before_any_write(self):
+        steps, info = self.ex.virtualbox_steps("apt-get", "amd64")
+        sh = steps[0]["sh"]
+        self.assertEqual(subprocess.run(["sh", "-n", "-c", sh], capture_output=True).returncode, 0)
+        self.assertIn("https://www.virtualbox.org/download/oracle_vbox_2016.asc", sh)
+        self.assertIn("B9F8D658297AF3EFC18D5CDFA2F683C52980AECF", sh)
+        self.assertIn("--proto '=https'", sh)
+        self.assertLess(sh.index("KEY FINGERPRINT MISMATCH"), sh.index("install -D -m644"))
+        self.assertIn("https://download.virtualbox.org/virtualbox/debian", sh)
+        self.assertIn("signed-by=%s", sh)
+        self.assertIn("apt-get install -y virtualbox-7.2", sh)
+        self.assertIn("usermod -aG vboxusers", sh)
+        self.assertIn("PKEXEC_UID", sh)                                      # the user who clicked, not root
+        self.assertEqual(info["fingerprint"], self.ex.VBOX_FPR)
+
+    def test_the_release_codename_comes_from_the_right_place(self):
+        with tempfile.TemporaryDirectory() as d:
+            mint = self.os_release(d, ID="linuxmint", VERSION_CODENAME="zena", UBUNTU_CODENAME="noble")      # Mint 22.3: its Ubuntu base
+            r = self.script_head(d, mint)
+            self.assertEqual((r.returncode, r.stdout.strip()), (0, "CODENAME=noble"), r.stderr)
+            deb = self.os_release(d, ID="debian", VERSION_CODENAME="bookworm")
+            self.assertEqual(self.script_head(d, deb).stdout.strip(), "CODENAME=bookworm")
+            old = self.os_release(d, ID="ubuntu", VERSION_CODENAME="focal", UBUNTU_CODENAME="focal")
+            r = self.script_head(d, old)
+            self.assertNotEqual(r.returncode, 0)                              # not published for it: stop before touching anything
+            self.assertIn("not published for 'focal'", r.stderr)
+            none = self.os_release(d, ID="weird")
+            self.assertNotEqual(self.script_head(d, none).returncode, 0)
+
+    def test_every_published_codename_is_listed(self):
+        for cn in ("noble", "jammy", "plucky", "questing", "resolute", "trixie", "bookworm", "bullseye"):
+            self.assertIn(cn, self.ex.VBOX_CODENAMES)
+
+    def test_removal_and_detection(self):
+        sh = self.ex.virtualbox_remove_steps("apt-get")[0]["sh"]
+        self.assertIn("apt-get purge -y virtualbox-7.2", sh)
+        self.assertIn("/etc/apt/sources.list.d/virtualbox.list", sh)
+        self.assertEqual(subprocess.run(["sh", "-n", "-c", sh], capture_output=True).returncode, 0)
+        self.assertEqual(self.ex.virtualbox_remove_steps("dnf"), [])
+        entry = next(p for p in self.ex.PROGRAMS if p["id"] == "virtualbox")
+        self.assertEqual((entry["kind"], entry["shortcut"]), ("virtualbox", "virtualbox"))
+        self.assertIn("~/VirtualBox VMs", entry["data"])                      # offered (default no) at uninstall, never silent
+
+
 class ClaudeDesktop(unittest.TestCase):
     ex = Installer.m.extras
 
@@ -2067,7 +2134,7 @@ class PackagePrograms(unittest.TestCase):
                 self.assertEqual(subprocess.run(["sh", "-n", "-c", steps[0]["sh"]], capture_output=True).returncode, 0)
                 self.assertEqual(self.ex.package_name(app, pm), app)
         self.assertEqual(set(self.ex.PACKAGE_APPS), {"brasero", "xfburn", "k3b", "unrar"})
-        self.assertEqual({x["id"] for x in Installer.m.EXTRAS}, set(self.ex.PACKAGE_APPS) | {"etcher", "brave", "claude", "vscode", "discord"} | set(self.ex.GITHUB_APPS))   # window and logic agree
+        self.assertEqual({x["id"] for x in Installer.m.EXTRAS}, set(self.ex.PACKAGE_APPS) | {"etcher", "brave", "claude", "vscode", "virtualbox", "discord"} | set(self.ex.GITHUB_APPS))   # window and logic agree
         self.assertEqual({x["id"] for x in Shortcuts.m.TOOLS} >= {i for i in self.ex.PACKAGE_APPS if not PackagePrograms.cli(i)}, True)       # and shortcuts know them
         self.assertIn("apt-get purge -y brasero", self.ex.package_steps("brasero", "apt-get", remove=True)[0]["sh"])
         self.assertIn("pacman -R --noconfirm brasero", self.ex.package_steps("brasero", "pacman", remove=True)[0]["sh"])
