@@ -31,8 +31,8 @@ check("install runs", r.returncode == 0, r.stdout + r.stderr)
 check("the command 'unrar' exists afterwards", sh("command -v unrar").returncode == 0)
 pkg = "unrar-free" if debian else "unrar"
 check(f"the package that came is {pkg}", sh(f"dpkg -s {pkg}").returncode == 0)
-r = sh("unrar 2>&1")                                    # no arguments: every unrar prints its usage text
-check("it really is a RAR extractor", "rar" in (r.stdout + r.stderr).lower() and "extract" in (r.stdout + r.stderr).lower(), r.stdout + r.stderr)
+r = sh("unrar 2>&1")                                    # no arguments: nonfree prints its banner, unrar-free "Archive not specified"
+check("it really is unrar (it names itself)", "unrar" in (r.stdout + r.stderr).lower(), r.stdout + r.stderr)
 r = sh(extras.package_steps("unrar", "apt-get", remove=True)[0]["sh"])
 check("removal runs", r.returncode == 0, r.stdout + r.stderr)
 check("the command is gone afterwards", sh("command -v unrar").returncode != 0)
