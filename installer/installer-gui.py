@@ -124,6 +124,7 @@ STR = {
  "gis_ask_install": "Install with {pm}?\n\n{list}\n\n(administrator password)",
  "gis_ask_uninstall": "Remove with {pm}?\n\n{list}",
  "og_readme": "README ↗", "og_all": "All categories", "og_nodesc": "(no description)", "og_count": "{n} projects",
+ "vbox_ask": "Install VirtualBox 7.2?\n\nAdds Oracle's apt repository for your release. The signing key is downloaded over HTTPS and its fingerprint must be\n{fpr}\notherwise nothing is installed. Then apt installs virtualbox-7.2 with dkms and the kernel headers (a few hundred MB), and you are added to the vboxusers group (administrator password).\n\n{notes}",
  "repo_url": "Could not open a browser. The project page:\n{url}",
  "upd_nogit": "git is not installed on this computer: updating works without it (Python downloads GitHub's snapshot).",
  "upd_archive": "This copy: GitHub commit {short} (updated without git)\nFolder: {folder}",
@@ -197,6 +198,7 @@ STR = {
  "gis_ask_install": "დავაყენო {pm}-ით?\n\n{list}\n\n(ადმინისტრატორის პაროლი)",
  "gis_ask_uninstall": "წავშალო {pm}-ით?\n\n{list}",
  "og_readme": "README ↗", "og_all": "ყველა კატეგორია", "og_nodesc": "(აღწერა არ არის)", "og_count": "{n} პროექტი",
+ "vbox_ask": "დავაყენო VirtualBox 7.2?\n\nემატება Oracle-ის apt რეპოზიტორია თქვენი გამოშვებისთვის. ხელმოწერის გასაღები ჩამოიტვირთება HTTPS-ით და მისი თითის ანაბეჭდი უნდა იყოს\n{fpr}\nსაწინააღმდეგო შემთხვევაში არაფერი დაყენდება. მერე apt დააყენებს virtualbox-7.2-ს dkms-თან და ბირთვის ჰედერებთან ერთად (რამდენიმე ასეული MB) და თქვენ დაგამატებთ vboxusers ჯგუფში (ადმინისტრატორის პაროლი).\n\n{notes}",
  "repo_url": "ბრაუზერის გახსნა ვერ მოხერხდა. პროექტის გვერდი:\n{url}",
  "upd_nogit": "ამ კომპიუტერზე git დაყენებული არ არის: განახლება მის გარეშეც მუშაობს (Python ჩამოტვირთავს GitHub-ის ასლს).",
  "upd_archive": "ეს ასლი: GitHub-ის კომიტი {short} (განახლებულია git-ის გარეშე)\nსაქაღალდე: {folder}",
@@ -624,6 +626,8 @@ class App(tk.Tk):
             return t("yes") if extras.claude_installed() else None
         if ex_id == "vscode":
             return t("yes") if extras.deb_installed("code", "code") else None
+        if ex_id == "virtualbox":
+            return t("yes") if extras.deb_installed(extras.VBOX_PACKAGE, "VBoxManage") else None
         if ex_id == "discord":
             return t("yes") if extras.deb_installed("discord", "discord") else None
         if ex_id in extras.GITHUB_APPS:
@@ -706,6 +710,7 @@ class App(tk.Tk):
                     else "Brave: download Brave's install script (HTTPS), show it, run it as administrator after you agree" if ex_id == "brave"
                     else "Claude Desktop: Anthropic's apt repository, key fingerprint checked, apt install claude-desktop" if ex_id == "claude"
                     else "Visual Studio Code: Microsoft's apt repository, key fingerprint checked, apt install code" if ex_id == "vscode"
+                    else "VirtualBox: Oracle's apt repository, key fingerprint checked, apt install virtualbox-7.2 + dkms" if ex_id == "virtualbox"
                     else "Discord: the publisher's .deb over HTTPS (no checksum published), apt install" if ex_id == "discord"
                     else f"{ex_id}: GitHub release .deb over HTTPS → sha256sum -c → apt install" if ex_id in extras.GITHUB_APPS
                     else f"{ex_id}: the distribution's package manager (install {extras.package_name(ex_id, detect_pm()) or ex_id})")
@@ -779,6 +784,7 @@ class App(tk.Tk):
                         self.brave_jobs(action) if ex_id == "brave" else
                         self.claude_jobs(action) if ex_id == "claude" else
                         self.vscode_jobs(action) if ex_id == "vscode" else
+                        self.virtualbox_jobs(action) if ex_id == "virtualbox" else
                         self.discord_jobs(action) if ex_id == "discord" else
                         self.github_jobs(action, ex_id) if ex_id in extras.GITHUB_APPS else self.package_jobs(action, ex_id))
             if jobs_for is None:
@@ -1452,6 +1458,20 @@ class App(tk.Tk):
                 return None
         if not steps:
             messagebox.showinfo(t("title"), t("gh_manual", name="Visual Studio Code", url=extras.VSCODE_PAGE))
+            return None
+        return self.steps_to_jobs(steps)
+
+    def virtualbox_jobs(self, action):
+        import platform
+        pm = detect_pm()
+        if action == "uninstall":
+            steps = extras.virtualbox_remove_steps(pm)
+        else:
+            steps, info = extras.virtualbox_steps(pm, platform.machine())
+            if steps and not messagebox.askyesno(t("title"), t("vbox_ask", fpr=info["fingerprint"], notes=info["notes"])):
+                return None
+        if not steps:
+            messagebox.showinfo(t("title"), t("gh_manual", name="VirtualBox", url=extras.VBOX_PAGE))
             return None
         return self.steps_to_jobs(steps)
 
