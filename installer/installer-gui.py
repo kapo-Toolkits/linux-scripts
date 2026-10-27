@@ -58,7 +58,7 @@ TOOLS = [
      "info": {"en": "print PDFs, images, Office files (downloads ~200 MB)", "ka": "PDF, სურათები, Office ფაილები (ჩამოტვირთავს ~200 MB)"}},
 ]
 
-GROUP_TEXT = {"dev": "g_dev", "net": "g_net", "disk": "g_disk", "more": "g_more"}
+GROUP_TEXT = {"dev": "g_dev", "net": "g_net", "disk": "g_disk", "tools": "g_tools", "more": "g_more"}
 
 # installed from the publisher (not by install.sh): shown in their own block, never ticked by default
 EXTRAS = [{k: x[k] for k in ("id", "group", "name", "info")} for x in extras.PROGRAMS]      # from installer/programs.json
@@ -107,7 +107,7 @@ STR = {
  "prog_none": "All programs installed from GitHub are up to date.", "prog_found": "{n} program(s) have a newer version:",
  "prog_fail": "Could not look up: {ids}", "prog_tick": "Tick them in the main window",
  "prog_ticked": "Ticked. Press “Install selected” in the main window to update them.",
- "g_dev": "AI and development", "g_net": "Internet and remote", "g_disk": "Disks and burning", "g_more": "More", "search": "Search:", "no_match": "Nothing matches.",
+ "g_dev": "AI and development", "g_net": "Internet and remote", "g_disk": "Disks and burning", "g_tools": "Command-line tools", "g_more": "More", "search": "Search:", "no_match": "Nothing matches.",
  "dup_hint": "Some programs are installed twice (for you and for everyone). To drop the system copy: tick them, choose “For everyone” and press Uninstall.",
  "data_ask": "Also delete your personal data of the program(s) you are uninstalling?\n\n{list}\n\nThis cannot be undone (settings, logins, history, downloaded data).\nNo = keep them, so a later reinstall finds everything as it was.",
  "data_done": "Personal data removed: {n} item(s).", "data_fail": "Could not remove: {p} ({e})",
@@ -181,7 +181,7 @@ STR = {
  "prog_none": "GitHub-იდან დაყენებული ყველა პროგრამა ახალია.", "prog_found": "{n} პროგრამას ახალი ვერსია აქვს:",
  "prog_fail": "ვერ შევამოწმე: {ids}", "prog_tick": "მონიშნეთ მთავარ ფანჯარაში",
  "prog_ticked": "მონიშნულია. განახლებისთვის მთავარ ფანჯარაში დააჭირეთ „მონიშნულის დაყენებას“.",
- "g_dev": "AI და დეველოპმენტი", "g_net": "ინტერნეტი და დისტანციური წვდომა", "g_disk": "დისკები და ჩაწერა", "g_more": "სხვა", "search": "ძებნა:", "no_match": "არაფერი ემთხვევა.",
+ "g_dev": "AI და დეველოპმენტი", "g_net": "ინტერნეტი და დისტანციური წვდომა", "g_disk": "დისკები და ჩაწერა", "g_tools": "ბრძანების ხაზის ხელსაწყოები", "g_more": "სხვა", "search": "ძებნა:", "no_match": "არაფერი ემთხვევა.",
  "dup_hint": "ზოგი პროგრამა ორჯერ არის დაყენებული (თქვენთვის და ყველასთვის). სისტემური ასლის მოსაცილებლად: მონიშნეთ ისინი, აირჩიეთ „ყველასთვის“ და დააჭირეთ წაშლას.",
  "data_ask": "წავშალო თქვენი პირადი მონაცემებიც იმ პროგრამებისა, რომლებსაც წაშლით?\n\n{list}\n\nეს ვეღარ აღდგება (პარამეტრები, ანგარიშები, ისტორია, ჩამოტვირთული მონაცემები).\nარა = დარჩება, რომ მოგვიანებით ხელახლა დაყენებისას ყველაფერი ისე დახვდეთ.",
  "data_done": "პირადი მონაცემები წაიშალა: {n}.", "data_fail": "ვერ წავშალე: {p} ({e})",

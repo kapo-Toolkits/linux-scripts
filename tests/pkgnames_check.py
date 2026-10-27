@@ -19,6 +19,10 @@ CHECK = {
     "apk": lambda p: ["sh", "-c", f"apk search -e {p} | grep -q ."],
 }
 print(f"package manager: {pm}")
+# a program may name a fallback package for a package manager (programs.json "fallback", e.g. Debian: unrar-free)
+import json  # noqa: E402
+FALLBACK = {p["cmd"]: p.get("fallback", {}) for p in json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "installer", "programs.json")))["programs"]
+            if p.get("cmd") and p.get("fallback")}
 bad = 0
 for cmd, per_pm in sorted(lscommon.PKG_FOR.items()):
     pkg = per_pm.get(pm)
@@ -26,8 +30,13 @@ for cmd, per_pm in sorted(lscommon.PKG_FOR.items()):
         print(f"SKIP {cmd}: no mapping for {pm}")
         continue
     ok = subprocess.run(CHECK[pm](pkg), capture_output=True).returncode == 0
+    note = ""
+    other = FALLBACK.get(cmd, {}).get(pm)
+    if not ok and other:                                   # not in this distribution (Debian non-free): the fallback must exist
+        ok = subprocess.run(CHECK[pm](other), capture_output=True).returncode == 0
+        note = f"   (not here; fallback {other})"
     bad += not ok
-    print(("PASS" if ok else "FAIL"), f"{cmd:10s} -> {pkg}")
+    print(("PASS" if ok else "FAIL"), f"{cmd:10s} -> {pkg}{note}")
 # the requirements of the GIS GEORGIA QGIS plugins (qgis_installer.requirements)
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "qgis-installer"))
 from qgis_installer import requirements  # noqa: E402
