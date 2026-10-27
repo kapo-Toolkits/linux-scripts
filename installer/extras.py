@@ -29,7 +29,7 @@ X86 = ("amd64", "x86_64")
 
 # ---- the list of "other programs" lives in programs.json next to this file ----
 PROGRAMS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "programs.json")
-KINDS = {"claude", "vscode", "discord", "brave", "etcher", "github", "package"}      # the recipe that installs it
+KINDS = {"claude", "vscode", "virtualbox", "discord", "brave", "etcher", "github", "package"}      # the recipe that installs it
 NEEDED = {"github": ("display", "repo", "package", "cmd", "asset"), "package": ("display", "cmd")}
 
 
@@ -448,6 +448,63 @@ def remove_data(paths, home=None):
         except OSError as e:
             failed.append((path, str(e)))
     return done, failed
+
+
+# ---- VirtualBox: Oracle's own apt repository (https://www.virtualbox.org/wiki/Linux_Downloads), key fingerprint checked ----
+VBOX_PAGE = "https://www.virtualbox.org/wiki/Linux_Downloads"
+VBOX_KEY_URL = "https://www.virtualbox.org/download/oracle_vbox_2016.asc"
+VBOX_FPR = "B9F8D658297AF3EFC18D5CDFA2F683C52980AECF"            # "Oracle Corporation (VirtualBox archive signing key)"
+VBOX_KEYRING = "/usr/share/keyrings/oracle-virtualbox-2016.gpg"
+VBOX_LIST = "/etc/apt/sources.list.d/virtualbox.list"
+VBOX_PACKAGE = "virtualbox-7.2"
+VBOX_CODENAMES = ("resolute", "questing", "plucky", "noble", "jammy", "trixie", "bookworm", "bullseye")   # what Oracle publishes
+VBOX_NOTES = ("Log out and in once: your user was added to the vboxusers group (needed for USB). With Secure Boot on, the "
+              "kernel modules must be signed: the installer of the dkms package offers to enrol a key on the next reboot.")
+
+
+def virtualbox_steps(pm, arch, proto="=https", keyring=None, listfile=None, fpr=None, url=None, codenames=None, osrelease="/etc/os-release"):
+    """One administrator step: Oracle's key is downloaded, its fingerprint compared (abort on a mismatch, nothing written), the
+    repository for THIS release (Linux Mint counts as its Ubuntu base) registered, then apt installs virtualbox-7.2 with dkms and
+    kernel headers, and the user who asked is added to vboxusers. x86-64 Debian / Ubuntu / Mint only; elsewhere the page."""
+    if pm != "apt-get" or arch not in X86:
+        return [], {"manual": VBOX_PAGE}
+    q = shlex.quote
+    keyring, listfile, fpr, url = keyring or VBOX_KEYRING, listfile or VBOX_LIST, fpr or VBOX_FPR, url or VBOX_KEY_URL
+    names = " ".join(codenames or VBOX_CODENAMES)
+    sh = f"""set -eu
+export DEBIAN_FRONTEND=noninteractive
+. {q(osrelease)}
+CN="${{UBUNTU_CODENAME:-${{VERSION_CODENAME:-}}}}"
+case " {names} " in *" $CN "*) ;; *) echo "VirtualBox is not published for '$CN' ({names}) - see {VBOX_PAGE}" >&2; exit 1;; esac
+apt-get install -y curl gnupg ca-certificates || (apt-get update && apt-get install -y curl gnupg ca-certificates)
+TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
+curl -fsSL --proto '{proto}' --tlsv1.2 -o "$TMP/key.asc" {q(url)}
+mkdir -m700 "$TMP/gnupg"
+FPR=$(gpg --homedir "$TMP/gnupg" --show-keys --with-colons "$TMP/key.asc" | awk -F: '$1=="fpr"{{print $10; exit}}')
+if [ "$FPR" != "{fpr}" ]; then echo "KEY FINGERPRINT MISMATCH: $FPR - nothing was installed" >&2; exit 1; fi
+echo "Key fingerprint OK: $FPR"
+gpg --homedir "$TMP/gnupg" --dearmor < "$TMP/key.asc" > "$TMP/key.gpg"
+install -D -m644 "$TMP/key.gpg" {q(keyring)}
+printf 'deb [arch=amd64 signed-by=%s] https://download.virtualbox.org/virtualbox/debian %s contrib\n' {q(keyring)} "$CN" > {q(listfile)}
+apt-get update
+apt-get install -y dkms "linux-headers-$(uname -r)" || echo "(kernel headers for $(uname -r) not installed: install them, then run: sudo dpkg-reconfigure {VBOX_PACKAGE})"
+apt-get install -y {VBOX_PACKAGE}
+if [ -n "${{PKEXEC_UID:-}}" ]; then
+  U=$(getent passwd "$PKEXEC_UID" | cut -d: -f1)
+  [ -n "$U" ] && usermod -aG vboxusers "$U" && echo "Added $U to the vboxusers group (log out and in once)."
+fi
+"""
+    return [{"root": True, "sh": sh}], {"fingerprint": fpr, "url": url, "key": keyring, "package": VBOX_PACKAGE, "notes": VBOX_NOTES}
+
+
+def virtualbox_remove_steps(pm, keyring=None, listfile=None):
+    """Purge the package (it also stops running VMs' services), then drop the repository entry and key this installer added.
+    Virtual machines and settings in your home folder are never touched here (the window asks about them separately)."""
+    if pm != "apt-get":
+        return []
+    q = shlex.quote
+    return [{"root": True, "sh": f"set -u\napt-get purge -y {VBOX_PACKAGE}\nrm -f {q(listfile or VBOX_LIST)} {q(keyring or VBOX_KEYRING)}\n"
+                                 "apt-get update || true\n"}]
 
 
 # ---- Discord: the publisher's own .deb (https://discord.com/download).  Discord publishes no checksum, so only HTTPS protects it ----
