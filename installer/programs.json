@@ -242,6 +242,23 @@
    "data": []
   },
   {
+   "id": "filee",
+   "group": "tools",
+   "kind": "filee",
+   "name": {
+    "en": "Filee",
+    "ka": "Filee"
+   },
+   "info": {
+    "en": "file converter: drag files, drop on a format (images, PDF, Office, video, archives, 260+ formats, offline); for you only, no password",
+    "ka": "ფაილების გადამყვანი: გადაათრიეთ ფაილები ფორმატზე (სურათები, PDF, Office, ვიდეო, არქივები, 260+ ფორმატი, ინტერნეტის გარეშე); მხოლოდ თქვენთვის, პაროლის გარეშე"
+   },
+   "data": [
+    "~/.config/Filee",
+    "~/.local/share/Filee"
+   ]
+  },
+  {
    "id": "winboat",
    "group": "more",
    "kind": "github",

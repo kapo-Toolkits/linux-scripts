@@ -29,7 +29,7 @@ X86 = ("amd64", "x86_64")
 
 # ---- the list of "other programs" lives in programs.json next to this file ----
 PROGRAMS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "programs.json")
-KINDS = {"claude", "vscode", "virtualbox", "discord", "brave", "etcher", "github", "package"}      # the recipe that installs it
+KINDS = {"claude", "vscode", "virtualbox", "filee", "discord", "brave", "etcher", "github", "package"}      # the recipe that installs it
 NEEDED = {"github": ("display", "repo", "package", "cmd", "asset"), "package": ("display", "cmd")}
 
 
@@ -506,6 +506,96 @@ def virtualbox_remove_steps(pm, keyring=None, listfile=None):
     q = shlex.quote
     return [{"root": True, "sh": f"set -u\napt-get purge -y {VBOX_PACKAGE}\nrm -f {q(listfile or VBOX_LIST)} {q(keyring or VBOX_KEYRING)}\n"
                                  "apt-get update || true\n"}]
+
+
+# ---- Filee (https://github.com/KnifeLemon/Filee, MIT): file converter, installed for the user by the project's own install.sh ----
+# The release package (Linux x64 / ARM64 .tar.gz) is downloaded from GitHub, its SHA-256 is checked against the digest GitHub
+# publishes for that exact file, and the package's own install.sh runs as the USER (no administrator password at all):
+# files go to ~/.local/share/filee/application, the `filee` command to ~/.local/bin, a launcher to ~/.local/share/applications,
+# and on GNOME a Shell extension (the "donut at the cursor" on Wayland). Filee updates itself afterwards.
+FILEE_REPO = "KnifeLemon/Filee"
+FILEE_API = f"https://api.github.com/repos/{FILEE_REPO}/releases/latest"
+FILEE_PAGE = f"https://github.com/{FILEE_REPO}/releases/latest"
+FILEE_NOTES = ("Hold Ctrl and drag files to open the donut of formats at the cursor (needs X11; on Wayland use the drop zone or the "
+               "file manager's right-click menu). Command line: filee convert photo.heic --to jpg. Filee updates itself.")
+
+
+def filee_release(fetch=fetch_json):
+    """-> {'tag', 'version', 'assets': {name: {'url', 'size', 'sha256'}}} for Filee's latest GitHub release."""
+    data = fetch(FILEE_API)
+    assets = {}
+    for a in data.get("assets", []):
+        digest = a.get("digest") or ""
+        assets[a["name"]] = {"url": a["browser_download_url"], "size": int(a.get("size", 0)),
+                             "sha256": digest.split(":", 1)[1] if digest.startswith("sha256:") else ""}
+    tag = data["tag_name"]
+    return {"tag": tag, "version": tag.lstrip("v"), "assets": assets}
+
+
+def filee_asset(release, arch):
+    """The Linux package for this CPU (x64 / arm64) with a published SHA-256, or None."""
+    kind = "x64" if arch in X86 else "arm64" if arch in ("arm64", "aarch64") else None
+    if not kind:
+        return None
+    name = f"Filee-{release['version']}-linux-{kind}.tar.gz"
+    a = release["assets"].get(name)
+    return dict(a, name=name) if a and a["sha256"] else None
+
+
+def filee_steps(release, arch, cache_dir=None):
+    """-> (steps, info). Both steps run as the user. 1: download + SHA-256 gate. 2: unpack, check it is Filee, run its install.sh
+    (--upgrade when an installation is already there), always remove the download and the unpacked copy afterwards."""
+    asset = filee_asset(release, arch)
+    if not asset:
+        return [], {"manual": FILEE_PAGE, "version": release["version"]}
+    d = os.path.expanduser(cache_dir or CACHE)
+    q = shlex.quote
+    tar, work = os.path.join(d, asset["name"]), os.path.join(d, "filee-unpacked")
+    install = f"""set -eu
+trap 'rm -rf {q(work)} {q(tar)}' EXIT
+rm -rf {q(work)}
+mkdir -p {q(work)}
+tar -xzf {q(tar)} -C {q(work)}
+PKG=$(ls -d {q(work)}/*/ | head -n 1)
+[ -f "${{PKG}}install.sh" ] && [ -f "${{PKG}}Filee" ] && [ -f "${{PKG}}filee-cli" ] || {{ echo "the download does not look like Filee - nothing was installed" >&2; exit 1; }}
+DATA="${{XDG_DATA_HOME:-$HOME/.local/share}}"
+# the upgrade asks the running copy to quit (a .NET program): the invariant-culture switch keeps that working where ICU is missing
+if [ -f "$DATA/filee/application/.filee-package" ]; then DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1 sh "${{PKG}}install.sh" --upgrade; else sh "${{PKG}}install.sh"; fi
+"""
+    steps = [{"root": False, "sh": download_script(asset, cache_dir)}, {"root": False, "sh": install}]
+    return steps, {"version": release["version"], "file": asset["name"], "mb": round(asset["size"] / 1048576), "url": asset["url"],
+                   "sha256": asset["sha256"], "source": "github.com/" + FILEE_REPO, "notes": FILEE_NOTES}
+
+
+def filee_remove_steps():
+    """The package's own uninstall.sh (as the user): removes the application, the `filee` link, the launcher and the GNOME extension;
+    settings and results are kept (the window asks about personal data separately). If that script fails (its cleanup stops on
+    a missing Thunar 'send to' folder), the same four things are removed here, each only when it carries Filee's own marker."""
+    sh = """set -u
+DATA="${XDG_DATA_HOME:-$HOME/.local/share}"
+APP="$DATA/filee/application"
+if [ ! -x "$APP/uninstall.sh" ]; then echo "Filee is not installed."; exit 0; fi
+if DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1 sh "$APP/uninstall.sh"; then exit 0; fi
+echo "Filee's own uninstaller stopped; removing what it installed (only items carrying Filee's marker)." >&2
+[ -f "$APP/.filee-package" ] && [ "$(tr -d '\r\n' < "$APP/.filee-package")" = "com.filee.app" ] || { echo "not a Filee installation - left alone" >&2; exit 1; }
+EXT="$DATA/gnome-shell/extensions/filee-donut@filee.sh"
+if [ -f "$EXT/.filee-package" ] && [ "$(tr -d '\r\n' < "$EXT/.filee-package")" = "com.filee.app" ]; then
+  command -v gnome-extensions >/dev/null 2>&1 && gnome-extensions disable filee-donut@filee.sh >/dev/null 2>&1
+  rm -rf -- "$EXT"
+fi
+[ -L "$HOME/.local/bin/filee" ] && [ "$(readlink "$HOME/.local/bin/filee")" = "$APP/filee-cli" ] && rm -- "$HOME/.local/bin/filee"
+DESK="$DATA/applications/com.filee.app.desktop"
+[ -f "$DESK" ] && grep -q '^X-Filee-Managed=true$' "$DESK" && rm -- "$DESK"
+rm -rf -- "$APP"
+echo "Filee was removed. Your settings and conversion results were kept."
+"""
+    return [{"root": False, "sh": sh}]
+
+
+def filee_installed(data_home=None):
+    """True when Filee's own install marker is in place."""
+    data = data_home or os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share")
+    return os.path.isfile(os.path.join(data, "filee", "application", ".filee-package"))
 
 
 # ---- Discord: the publisher's own .deb (https://discord.com/download).  Discord publishes no checksum, so only HTTPS protects it ----
