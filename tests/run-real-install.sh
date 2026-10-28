@@ -16,4 +16,8 @@ for img in ubuntu:24.04 debian:12; do
   docker run --rm -v "$root":/repo:ro "$img" sh -c \
     "apt-get update -qq >/dev/null && apt-get install -y -qq python3 >/dev/null && python3 /repo/tests/real_virtualbox_container_test.py" || rc=1
 done
+# Filee: the real GitHub release (~130 MB): SHA-256 gate, the project's install.sh as the user, upgrade in place, its uninstall.sh
+echo "=================== Filee on ubuntu:24.04"
+docker run --rm -v "$root":/repo:ro ubuntu:24.04 sh -c \
+  "apt-get update -qq >/dev/null && apt-get install -y -qq python3 curl ca-certificates >/dev/null && python3 /repo/tests/real_filee_container_test.py" || rc=1
 exit "${rc:-0}"

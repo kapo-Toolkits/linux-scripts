@@ -1876,6 +1876,149 @@ class VirtualBox(unittest.TestCase):
         self.assertIn("~/VirtualBox VMs", entry["data"])                      # offered (default no) at uninstall, never silent
 
 
+class Filee(unittest.TestCase):
+    ex = Installer.m.extras
+    TAG = {"tag_name": "v9.9.9", "assets": [
+        {"name": "Filee-9.9.9-linux-x64.tar.gz", "browser_download_url": "https://github.com/x/Filee-9.9.9-linux-x64.tar.gz", "size": 120 << 20, "digest": "sha256:" + "ab" * 32},
+        {"name": "Filee-9.9.9-linux-arm64.tar.gz", "browser_download_url": "https://github.com/x/Filee-9.9.9-linux-arm64.tar.gz", "size": 118 << 20, "digest": "sha256:" + "cd" * 32},
+        {"name": "Filee-9.9.9-win-Setup.exe", "browser_download_url": "https://github.com/x/win.exe", "size": 1, "digest": "sha256:" + "ef" * 32}]}
+
+    def release(self):
+        return self.ex.filee_release(fetch=lambda url: self.TAG)
+
+    def test_the_package_for_this_cpu_with_its_digest(self):
+        rel = self.release()
+        self.assertEqual(rel["version"], "9.9.9")
+        self.assertEqual(self.ex.filee_asset(rel, "x86_64")["sha256"], "ab" * 32)
+        self.assertEqual(self.ex.filee_asset(rel, "aarch64")["name"], "Filee-9.9.9-linux-arm64.tar.gz")
+        self.assertIsNone(self.ex.filee_asset(rel, "armv7l"))
+        for a in rel["assets"].values():
+            a["sha256"] = ""
+        self.assertIsNone(self.ex.filee_asset(rel, "x86_64"))                      # no digest, no install
+
+    def test_everything_runs_as_the_user_and_the_gate_comes_before_the_unpack(self):
+        steps, info = self.ex.filee_steps(self.release(), "x86_64")
+        self.assertEqual([x["root"] for x in steps], [False, False])                # no administrator password at all
+        self.assertLess(steps[0]["sh"].index("sha256sum -c"), steps[0]["sh"].index("mv "))
+        self.assertIn("--proto '=https'", steps[0]["sh"])
+        for st in steps:
+            self.assertEqual(subprocess.run(["sh", "-n", "-c", st["sh"]], capture_output=True).returncode, 0)
+        self.assertIn("--upgrade", steps[1]["sh"])
+        self.assertIn("trap", steps[1]["sh"])                                       # the 120 MB download never stays behind
+        self.assertEqual((info["sha256"], info["source"]), ("ab" * 32, "github.com/KnifeLemon/Filee"))
+        steps, info = self.ex.filee_steps(self.release(), "i386")
+        self.assertEqual((steps, info["manual"]), ([], self.ex.FILEE_PAGE))
+
+    def fake_package(self, d, name="Filee-9.9.9-linux-x64", with_files=True):
+        """A tarball shaped like the real one whose install.sh only records how it was called."""
+        top = os.path.join(d, "src", name)
+        os.makedirs(top)
+        files = {"install.sh": '#!/bin/sh\necho "install.sh $*" >> "$FAKE_LOG"\n', "Filee": "x", "filee-cli": "x"} if with_files else {"readme": "x"}
+        for f, body in files.items():
+            with open(os.path.join(top, f), "w") as fh:
+                fh.write(body)
+        tar = os.path.join(d, "cache", name + ".tar.gz")
+        os.makedirs(os.path.dirname(tar))
+        subprocess.run(["tar", "-czf", tar, "-C", os.path.join(d, "src"), name], check=True)
+        return tar
+
+    def run_install(self, d, upgrade=False, **kw):
+        cache = os.path.join(d, "cache")
+        tar = self.fake_package(d, **kw)
+        data = os.path.join(d, "data")
+        if upgrade:
+            os.makedirs(os.path.join(data, "filee", "application"))
+            open(os.path.join(data, "filee", "application", ".filee-package"), "w").write("com.filee.app\n")
+        steps, _ = self.ex.filee_steps(self.release(), "x86_64", cache_dir=cache)
+        env = dict(os.environ, XDG_DATA_HOME=data, FAKE_LOG=os.path.join(d, "log"), HOME=os.path.join(d, "home"))
+        r = subprocess.run(["sh", "-c", steps[1]["sh"]], capture_output=True, text=True, env=env)
+        return r, tar, os.path.join(d, "log")
+
+    def test_first_install_and_upgrade_call_the_vendors_script_the_right_way(self):
+        with tempfile.TemporaryDirectory() as d:
+            r, tar, log = self.run_install(d)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertEqual(open(log).read().strip(), "install.sh")
+            self.assertFalse(os.path.exists(tar))                                   # download removed
+            self.assertFalse(os.path.exists(os.path.join(d, "cache", "filee-unpacked")))
+        with tempfile.TemporaryDirectory() as d:
+            r, tar, log = self.run_install(d, upgrade=True)
+            self.assertEqual(open(log).read().strip(), "install.sh --upgrade")      # an existing install is upgraded in place
+
+    def test_something_that_is_not_filee_is_refused_and_cleaned_up(self):
+        with tempfile.TemporaryDirectory() as d:
+            r, tar, log = self.run_install(d, with_files=False)
+            self.assertNotEqual(r.returncode, 0)
+            self.assertIn("does not look like Filee", r.stderr)
+            self.assertFalse(os.path.exists(log))                                   # install.sh never ran
+            self.assertFalse(os.path.exists(tar))
+
+    def test_removal_uses_the_vendors_uninstall_and_detection_uses_its_marker(self):
+        with tempfile.TemporaryDirectory() as d:
+            data = os.path.join(d, "data")
+            app = os.path.join(data, "filee", "application")
+            os.makedirs(app)
+            self.assertFalse(self.ex.filee_installed(data))
+            open(os.path.join(app, ".filee-package"), "w").write("com.filee.app\n")
+            self.assertTrue(self.ex.filee_installed(data))
+            with open(os.path.join(app, "uninstall.sh"), "w") as f:
+                f.write('#!/bin/sh\necho removed > "$FAKE_LOG"\n')
+            os.chmod(os.path.join(app, "uninstall.sh"), 0o755)
+            steps = self.ex.filee_remove_steps()
+            self.assertEqual([x["root"] for x in steps], [False])
+            r = subprocess.run(["sh", "-c", steps[0]["sh"]], capture_output=True, text=True,
+                               env=dict(os.environ, XDG_DATA_HOME=data, FAKE_LOG=os.path.join(d, "log")))
+            self.assertEqual((r.returncode, open(os.path.join(d, "log")).read().strip()), (0, "removed"))
+            r = subprocess.run(["sh", "-c", steps[0]["sh"]], capture_output=True, text=True, env=dict(os.environ, XDG_DATA_HOME=os.path.join(d, "none")))
+            self.assertIn("not installed", r.stdout)
+
+    def test_when_the_vendors_uninstaller_fails_only_marked_files_are_removed(self):
+        with tempfile.TemporaryDirectory() as d:
+            home = os.path.join(d, "home")
+            data = os.path.join(home, ".local", "share")
+            app = os.path.join(data, "filee", "application")
+            os.makedirs(app)
+            os.makedirs(os.path.join(home, ".local", "bin"))
+            os.makedirs(os.path.join(data, "applications"))
+            open(os.path.join(app, ".filee-package"), "w").write("com.filee.app\n")
+            with open(os.path.join(app, "uninstall.sh"), "w") as f:
+                f.write("#!/bin/sh\necho 'Could not find a part of the path .../Thunar/sendto/filee.desktop' >&2\nexit 1\n")
+            os.chmod(os.path.join(app, "uninstall.sh"), 0o755)
+            os.symlink(os.path.join(app, "filee-cli"), os.path.join(home, ".local", "bin", "filee"))
+            with open(os.path.join(data, "applications", "com.filee.app.desktop"), "w") as f:
+                f.write("[Desktop Entry]\nX-Filee-Managed=true\n")
+            with open(os.path.join(data, "applications", "other.desktop"), "w") as f:
+                f.write("[Desktop Entry]\n")
+            os.makedirs(os.path.join(home, ".config", "Filee"))
+            r = subprocess.run(["sh", "-c", self.ex.filee_remove_steps()[0]["sh"]], capture_output=True, text=True,
+                               env=dict(os.environ, HOME=home, XDG_DATA_HOME=data))
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertFalse(os.path.exists(app))
+            self.assertFalse(os.path.lexists(os.path.join(home, ".local", "bin", "filee")))
+            self.assertFalse(os.path.exists(os.path.join(data, "applications", "com.filee.app.desktop")))
+            self.assertTrue(os.path.exists(os.path.join(data, "applications", "other.desktop")))       # not ours: untouched
+            self.assertTrue(os.path.isdir(os.path.join(home, ".config", "Filee")))                       # settings kept
+
+    def test_the_fallback_refuses_a_directory_that_is_not_filee(self):
+        with tempfile.TemporaryDirectory() as d:
+            data = os.path.join(d, "data")
+            app = os.path.join(data, "filee", "application")
+            os.makedirs(app)
+            open(os.path.join(app, ".filee-package"), "w").write("something.else\n")
+            with open(os.path.join(app, "uninstall.sh"), "w") as f:
+                f.write("#!/bin/sh\nexit 1\n")
+            os.chmod(os.path.join(app, "uninstall.sh"), 0o755)
+            r = subprocess.run(["sh", "-c", self.ex.filee_remove_steps()[0]["sh"]], capture_output=True, text=True,
+                               env=dict(os.environ, HOME=d, XDG_DATA_HOME=data))
+            self.assertNotEqual(r.returncode, 0)
+            self.assertTrue(os.path.isdir(app))                                                           # left alone
+
+    def test_it_is_in_the_registry_with_its_personal_data(self):
+        entry = next(p for p in self.ex.PROGRAMS if p["id"] == "filee")
+        self.assertEqual((entry["kind"], entry["group"]), ("filee", "tools"))
+        self.assertEqual(entry["data"], ["~/.config/Filee", "~/.local/share/Filee"])
+
+
 class ClaudeDesktop(unittest.TestCase):
     ex = Installer.m.extras
 
@@ -2134,7 +2277,7 @@ class PackagePrograms(unittest.TestCase):
                 self.assertEqual(subprocess.run(["sh", "-n", "-c", steps[0]["sh"]], capture_output=True).returncode, 0)
                 self.assertEqual(self.ex.package_name(app, pm), app)
         self.assertEqual(set(self.ex.PACKAGE_APPS), {"brasero", "xfburn", "k3b", "unrar"})
-        self.assertEqual({x["id"] for x in Installer.m.EXTRAS}, set(self.ex.PACKAGE_APPS) | {"etcher", "brave", "claude", "vscode", "virtualbox", "discord"} | set(self.ex.GITHUB_APPS))   # window and logic agree
+        self.assertEqual({x["id"] for x in Installer.m.EXTRAS}, set(self.ex.PACKAGE_APPS) | {"etcher", "brave", "claude", "vscode", "virtualbox", "filee", "discord"} | set(self.ex.GITHUB_APPS))   # window and logic agree
         self.assertEqual({x["id"] for x in Shortcuts.m.TOOLS} >= {i for i in self.ex.PACKAGE_APPS if not PackagePrograms.cli(i)}, True)       # and shortcuts know them
         self.assertIn("apt-get purge -y brasero", self.ex.package_steps("brasero", "apt-get", remove=True)[0]["sh"])
         self.assertIn("pacman -R --noconfirm brasero", self.ex.package_steps("brasero", "pacman", remove=True)[0]["sh"])
