@@ -81,6 +81,42 @@
    ]
   },
   {
+   "id": "flutter",
+   "group": "dev",
+   "kind": "flutter",
+   "cli": true,
+   "name": {
+    "en": "Flutter SDK (with Dart)",
+    "ka": "Flutter SDK (Dart-ით)"
+   },
+   "info": {
+    "en": "build apps for mobile, web and desktop; Google's release archive (~1.6 GB, SHA-256 checked) in ~/development/flutter, with the prerequisites from the docs; includes the Dart SDK",
+    "ka": "აპლიკაციები მობილურისთვის, ვებისთვის და დესკტოპისთვის; Google-ის ოფიციალური არქივი (~1.6 GB, SHA-256 მოწმდება) ~/development/flutter-ში, დოკუმენტაციის წინაპირობებით; შეიცავს Dart SDK-ს"
+   },
+   "data": [
+    "~/.pub-cache",
+    "~/.config/flutter",
+    "~/.config/dart"
+   ]
+  },
+  {
+   "id": "dart",
+   "group": "dev",
+   "kind": "dart",
+   "cli": true,
+   "name": {
+    "en": "Dart SDK (standalone)",
+    "ka": "Dart SDK (ცალკე)"
+   },
+   "info": {
+    "en": "only if you want Dart without Flutter (Flutter already includes Dart); Google's apt repository, signing key checked; Debian / Ubuntu / Mint",
+    "ka": "მხოლოდ თუ Dart გინდათ Flutter-ის გარეშე (Flutter-ში Dart უკვე შედის); Google-ის apt რეპოზიტორია, ხელმოწერის გასაღები მოწმდება; Debian / Ubuntu / Mint"
+   },
+   "data": [
+    "~/.pub-cache"
+   ]
+  },
+  {
    "id": "tabby",
    "group": "dev",
    "kind": "github",

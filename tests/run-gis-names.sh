@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Every package name in installer/gis.json must exist in the real repositories of its distribution (containers; needs docker + network).
+# Every package name in installer/gis.json (and the Flutter prerequisites) must exist in the real repositories of its distribution (containers; needs docker + network).
 set -u
 root="$(cd "$(dirname "$0")/.." && pwd)"
 names() { python3 - "$1" <<'PY'
@@ -12,6 +12,11 @@ for sec in data["sections"]:
         for n in p.get("packages", {}).get(pm, []):
             if n not in seen:
                 seen.append(n)
+sys.path.insert(0, "installer")
+import extras  # the Flutter prerequisites from the Flutter docs are checked the same way
+for n in extras.FLUTTER_PREREQ.get(pm, []):
+    if n not in seen:
+        seen.append(n)
 print(" ".join(seen))
 PY
 }

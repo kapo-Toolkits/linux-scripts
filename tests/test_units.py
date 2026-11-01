@@ -2153,6 +2153,211 @@ class Codex(unittest.TestCase):
         self.assertIn("Terminal=false", other)
 
 
+class FlutterDart(unittest.TestCase):
+    ex = Installer.m.extras
+    MANIFEST = {"base_url": "https://storage.googleapis.com/flutter_infra_release/releases",
+                "current_release": {"stable": "bbb", "beta": "ccc"},
+                "releases": [{"hash": "aaa", "channel": "stable", "version": "1.0.0", "archive": "stable/linux/flutter_linux_1.0.0-stable.tar.xz", "sha256": "11" * 32},
+                             {"hash": "bbb", "channel": "stable", "version": "9.9.9", "dart_sdk_version": "3.9.9", "dart_sdk_arch": "x64",
+                              "archive": "stable/linux/flutter_linux_9.9.9-stable.tar.xz", "sha256": "ab" * 32},
+                             {"hash": "bbb", "channel": "beta", "version": "9.9.9-beta", "archive": "beta/x.tar.xz", "sha256": "cd" * 32}]}
+
+    def release(self, **kw):
+        rel = self.ex.flutter_release(fetch=lambda url: self.MANIFEST, size=lambda url: 1600 << 20)
+        return dict(rel, **kw)
+
+    def test_the_current_stable_release_comes_from_googles_manifest(self):
+        rel = self.release()
+        self.assertEqual((rel["version"], rel["dart"], rel["sha256"]), ("9.9.9", "3.9.9", "ab" * 32))
+        self.assertEqual(rel["url"], "https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/flutter_linux_9.9.9-stable.tar.xz")
+        self.assertEqual(rel["size"], 1600 << 20)
+        self.assertEqual(self.ex.flutter_release(fetch=lambda u: self.MANIFEST, size=lambda u: 1 / 0)["size"], 0)   # size is only for the dialog
+
+    def test_missing_prerequisites(self):
+        have = {"curl", "git", "unzip"}
+        self.assertEqual(self.ex.flutter_missing(which=lambda c: c in have, glu=True), ["xz", "zip"])
+        self.assertEqual(self.ex.flutter_missing(which=lambda c: True, glu=False), ["GLU"])
+        self.assertEqual(self.ex.flutter_missing(which=lambda c: True, glu=True), [])
+
+    def test_prerequisite_names_cover_what_the_docs_list(self):
+        for pm, names in self.ex.FLUTTER_PREREQ.items():
+            self.assertEqual(len(names), 6, pm)                                  # curl git unzip xz zip + GLU
+        self.assertEqual(self.ex.FLUTTER_PREREQ["apt-get"], ["curl", "git", "unzip", "xz-utils", "zip", "libglu1-mesa"])
+
+    def test_plan_shapes(self):
+        steps, info = self.ex.flutter_steps(self.release(), "x86_64", "apt-get", ["zip", "GLU"])
+        self.assertEqual([x["root"] for x in steps], [True, False, False, False])
+        self.assertIn("apt-get install -y curl git unzip xz-utils zip libglu1-mesa", steps[0]["sh"])
+        self.assertEqual(info["prereq"], "curl git unzip xz-utils zip libglu1-mesa")
+        steps, info = self.ex.flutter_steps(self.release(), "x86_64", "apt-get", [])
+        self.assertEqual([x["root"] for x in steps], [False, False, False])         # nothing missing: no password prompt
+        self.assertIsNone(info["prereq"])
+        steps, info = self.ex.flutter_steps(self.release(), "x86_64", "dnf", ["zip"])
+        self.assertIn("dnf install -y curl git unzip xz zip mesa-libGLU", steps[0]["sh"])
+        steps, info = self.ex.flutter_steps(self.release(), "aarch64", "apt-get", [])
+        self.assertEqual((steps, info["manual"]), ([], self.ex.FLUTTER_PAGE))        # Google ships no Linux ARM64 archive
+        for st in self.ex.flutter_steps(self.release(), "x86_64", "apt-get", ["zip"])[0]:
+            self.assertEqual(subprocess.run(["sh", "-n", "-c", st["sh"]], capture_output=True).returncode, 0)
+
+    def test_the_hash_is_checked_before_the_unpack(self):
+        steps, _ = self.ex.flutter_steps(self.release(), "x86_64", "apt-get", [])
+        dl, inst = steps[1]["sh"], steps[2]["sh"]
+        self.assertLess(dl.index("sha256sum -c"), dl.index("mv "))
+        self.assertIn("--proto '=https'", dl)
+        self.assertIn("ab" * 32, dl)
+        self.assertIn("tar -xJf", inst)
+
+    def test_not_enough_disk_space_stops_before_anything_is_downloaded(self):
+        with mock.patch.object(self.ex, "FLUTTER_MIN_FREE_GB", 10 ** 9), tempfile.TemporaryDirectory() as d:
+            steps, _ = self.ex.flutter_steps(self.release(), "x86_64", "apt-get", [], cache_dir=os.path.join(d, "c"), dev_dir=os.path.join(d, "dev"))
+            r = subprocess.run(["sh", "-c", steps[0]["sh"]], capture_output=True, text=True)
+            self.assertNotEqual(r.returncode, 0)
+            self.assertIn("Flutter needs about", r.stderr)
+
+    def fake_sdk_archive(self, d, with_flutter=True):
+        src = os.path.join(d, "src", "flutter", "bin")
+        os.makedirs(src)
+        if with_flutter:
+            for c in ("flutter", "dart"):
+                with open(os.path.join(src, c), "w") as f:
+                    f.write(f'#!/bin/sh\necho "{c} 9.9.9 $*"\n')
+                os.chmod(os.path.join(src, c), 0o755)
+        else:
+            open(os.path.join(src, "readme"), "w").write("x")
+        cache = os.path.join(d, "cache")
+        os.makedirs(cache)
+        tar = os.path.join(cache, "flutter_linux_9.9.9-stable.tar.xz")
+        subprocess.run(["tar", "-cJf", tar, "-C", os.path.join(d, "src"), "flutter"], check=True)
+        return cache, tar
+
+    def run_install(self, d, **kw):
+        cache, tar = self.fake_sdk_archive(d, **kw)
+        dev, binp = os.path.join(d, "dev"), os.path.join(d, "bin")
+        steps, _ = self.ex.flutter_steps(self.release(), "x86_64", "apt-get", [], cache_dir=cache, dev_dir=dev, bin_dir=binp)
+        fakebin = os.path.join(d, "fakebin")
+        os.makedirs(fakebin, exist_ok=True)
+        with open(os.path.join(fakebin, "code"), "w") as f:
+            f.write(f'#!/bin/sh\necho "$*" >> {d}/code.log\n')
+        os.chmod(os.path.join(fakebin, "code"), 0o755)
+        env = dict(os.environ, PATH=fakebin + ":" + os.environ["PATH"])
+        r = subprocess.run(["sh", "-c", steps[2]["sh"]], capture_output=True, text=True, env=env)
+        return r, dev, binp, tar
+
+    @unittest.skipUnless(shutil.which("xz"), "needs xz")
+    def test_install_unpacks_links_runs_and_adds_the_vscode_extension(self):
+        with tempfile.TemporaryDirectory() as d:
+            r, dev, binp, tar = self.run_install(d)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertEqual(open(os.path.join(dev, "flutter", ".linux-scripts-flutter")).read().strip(), "9.9.9")
+            for c in ("flutter", "dart"):
+                self.assertEqual(os.readlink(os.path.join(binp, c)), os.path.join(dev, "flutter", "bin", c))
+            self.assertIn("flutter 9.9.9 --version", r.stdout)
+            self.assertEqual(open(os.path.join(d, "code.log")).read().strip(), "--install-extension Dart-Code.flutter")
+            self.assertFalse(os.path.exists(tar))                                       # the 1.6 GB download is removed
+            self.assertTrue(self.ex.flutter_installed(dev))
+            self.assertEqual(self.ex.flutter_version(dev), "9.9.9")
+
+    @unittest.skipUnless(shutil.which("xz"), "needs xz")
+    def test_rerun_keeps_the_sdk_and_foreign_things_are_left_alone(self):
+        with tempfile.TemporaryDirectory() as d:
+            os.makedirs(os.path.join(d, "bin"))
+            os.makedirs(os.path.join(d, "dev", "flutter"))
+            open(os.path.join(d, "dev", "flutter", "mine.txt"), "w").write("x")
+            r, dev, binp, tar = self.run_install(d)
+            self.assertNotEqual(r.returncode, 0)                                         # a flutter folder that is not ours
+            self.assertIn("already exists and was not installed by this installer", r.stderr)
+            self.assertTrue(os.path.exists(os.path.join(dev, "flutter", "mine.txt")))
+        with tempfile.TemporaryDirectory() as d:
+            os.makedirs(os.path.join(d, "bin"))
+            open(os.path.join(d, "bin", "dart"), "w").write("#!/bin/sh\n")                 # someone's own dart
+            r, dev, binp, tar = self.run_install(d)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertFalse(os.path.islink(os.path.join(binp, "dart")))                  # not overwritten
+            self.assertIn("left alone", r.stderr)
+            self.assertTrue(os.path.islink(os.path.join(binp, "flutter")))
+
+    @unittest.skipUnless(shutil.which("xz"), "needs xz")
+    def test_a_wrong_archive_installs_nothing(self):
+        with tempfile.TemporaryDirectory() as d:
+            r, dev, binp, tar = self.run_install(d, with_flutter=False)
+            self.assertNotEqual(r.returncode, 0)
+            self.assertIn("did not contain flutter/bin/flutter", r.stderr)
+            self.assertFalse(os.path.exists(os.path.join(dev, "flutter")))
+
+    @unittest.skipUnless(shutil.which("xz"), "needs xz")
+    def test_removal_only_touches_what_carries_the_marker(self):
+        with tempfile.TemporaryDirectory() as d:
+            r, dev, binp, tar = self.run_install(d)
+            os.symlink("/usr/bin/true", os.path.join(binp, "other"))
+            steps = self.ex.flutter_remove_steps(dev_dir=dev, bin_dir=binp)
+            self.assertEqual([x["root"] for x in steps], [False])
+            r = subprocess.run(["sh", "-c", steps[0]["sh"]], capture_output=True, text=True)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertFalse(os.path.exists(os.path.join(dev, "flutter")))
+            self.assertFalse(os.path.lexists(os.path.join(binp, "flutter")) or os.path.lexists(os.path.join(binp, "dart")))
+            self.assertTrue(os.path.lexists(os.path.join(binp, "other")))
+            self.assertIn("kept", r.stdout)
+        with tempfile.TemporaryDirectory() as d:                                          # not ours: refuse, change nothing
+            os.makedirs(os.path.join(d, "dev", "flutter"))
+            r = subprocess.run(["sh", "-c", self.ex.flutter_remove_steps(dev_dir=os.path.join(d, "dev"), bin_dir=d)[0]["sh"]], capture_output=True, text=True)
+            self.assertIn("another way", r.stdout)
+            self.assertTrue(os.path.isdir(os.path.join(d, "dev", "flutter")))
+
+    def test_dart_recipe_shape(self):
+        self.assertEqual(self.ex.dart_steps("dnf", "x86_64")[0], [])
+        self.assertEqual(self.ex.dart_steps("apt-get", "i386")[0], [])
+        steps, info = self.ex.dart_steps("apt-get", "amd64")
+        sh = steps[0]["sh"]
+        self.assertEqual(subprocess.run(["sh", "-n", "-c", sh], capture_output=True).returncode, 0)
+        self.assertLess(sh.index("KEY FINGERPRINT MISMATCH"), sh.index("install -D -m644"))
+        self.assertIn("--export EB4C1BFD4F042F6DDDCCEC917721F63BD38B4796", sh)          # only the checked key goes into the keyring
+        self.assertTrue(sh.rstrip().endswith("apt-get install -y dart"))
+        self.assertIn("apt-get purge -y dart", self.ex.dart_remove_steps("apt-get")[0]["sh"])
+        self.assertEqual(self.ex.dart_remove_steps("dnf"), [])
+
+    @unittest.skipUnless(shutil.which("gpg") and shutil.which("curl"), "needs gpg and curl")
+    def test_only_the_trusted_key_reaches_the_keyring(self):
+        with tempfile.TemporaryDirectory() as d:
+            home = os.path.join(d, "gh")
+            os.makedirs(home, mode=0o700)
+            env = dict(os.environ, GNUPGHOME=home)
+            for name in ("Trusted <t@t>", "Intruder <i@i>"):
+                subprocess.run(["gpg", "--batch", "--passphrase", "", "--quick-generate-key", name, "rsa2048", "sign", "never"],
+                               env=env, capture_output=True, check=True)
+            both = subprocess.run(["gpg", "--armor", "--export"], env=env, capture_output=True, check=True).stdout
+            keyfile = os.path.join(d, "all.pub")
+            open(keyfile, "wb").write(both)
+            listing = subprocess.run(["gpg", "--with-colons", "--list-keys"], env=env, capture_output=True, text=True).stdout
+            fprs = [ln.split(":")[9] for ln in listing.splitlines() if ln.startswith("fpr")]
+            fakebin = os.path.join(d, "fb")
+            os.makedirs(fakebin)
+            open(os.path.join(fakebin, "dpkg"), "w").write('#!/bin/sh\necho amd64\n')
+            os.chmod(os.path.join(fakebin, "dpkg"), 0o755)
+            keyring, lst = os.path.join(d, "ring.gpg"), os.path.join(d, "dart.list")
+
+            def run(expected):
+                sh = self.ex.dart_steps("apt-get", "amd64", proto="=file", keyring=keyring, listfile=lst, fpr=expected, url="file://" + keyfile)[0][0]["sh"]
+                head = "\n".join(ln for ln in sh.splitlines() if not ln.startswith("apt-get"))
+                return subprocess.run(["sh", "-c", head], capture_output=True, text=True, env=dict(os.environ, PATH=fakebin + ":" + os.environ["PATH"]))
+            r = run(fprs[0])
+            self.assertEqual(r.returncode, 0, r.stderr)
+            shown = subprocess.run(["gpg", "--show-keys", "--with-colons", keyring], capture_output=True, text=True).stdout
+            self.assertIn(fprs[0], shown)
+            self.assertNotIn(fprs[1], shown)                                              # the other key in the file is NOT trusted
+            self.assertIn("signed-by=" + keyring, open(lst).read())
+            os.remove(keyring)
+            os.remove(lst)
+            bad = run("0" * 40)
+            self.assertNotEqual(bad.returncode, 0)
+            self.assertIn("KEY FINGERPRINT MISMATCH", bad.stderr)
+            self.assertFalse(os.path.exists(keyring) or os.path.exists(lst))
+
+    def test_registry(self):
+        ids = {p["id"]: p for p in self.ex.PROGRAMS}
+        self.assertEqual((ids["flutter"]["kind"], ids["dart"]["kind"]), ("flutter", "dart"))
+        self.assertIn("~/.pub-cache", ids["flutter"]["data"])
+
+
 class ClaudeDesktop(unittest.TestCase):
     ex = Installer.m.extras
 
@@ -2411,7 +2616,7 @@ class PackagePrograms(unittest.TestCase):
                 self.assertEqual(subprocess.run(["sh", "-n", "-c", steps[0]["sh"]], capture_output=True).returncode, 0)
                 self.assertEqual(self.ex.package_name(app, pm), app)
         self.assertEqual(set(self.ex.PACKAGE_APPS), {"brasero", "xfburn", "k3b", "unrar"})
-        self.assertEqual({x["id"] for x in Installer.m.EXTRAS}, set(self.ex.PACKAGE_APPS) | {"etcher", "brave", "claude", "vscode", "virtualbox", "filee", "codex", "discord"} | set(self.ex.GITHUB_APPS))   # window and logic agree
+        self.assertEqual({x["id"] for x in Installer.m.EXTRAS}, set(self.ex.PACKAGE_APPS) | {"etcher", "brave", "claude", "vscode", "virtualbox", "filee", "codex", "flutter", "dart", "discord"} | set(self.ex.GITHUB_APPS))   # window and logic agree
         self.assertEqual({x["id"] for x in Shortcuts.m.TOOLS} >= {i for i in self.ex.PACKAGE_APPS if not PackagePrograms.cli(i)}, True)       # and shortcuts know them
         self.assertIn("apt-get purge -y brasero", self.ex.package_steps("brasero", "apt-get", remove=True)[0]["sh"])
         self.assertIn("pacman -R --noconfirm brasero", self.ex.package_steps("brasero", "pacman", remove=True)[0]["sh"])

@@ -30,7 +30,7 @@ X86 = ("amd64", "x86_64")
 
 # ---- the list of "other programs" lives in programs.json next to this file ----
 PROGRAMS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "programs.json")
-KINDS = {"claude", "vscode", "virtualbox", "filee", "codex", "discord", "brave", "etcher", "github", "package"}      # the recipe that installs it
+KINDS = {"claude", "vscode", "virtualbox", "filee", "codex", "flutter", "dart", "discord", "brave", "etcher", "github", "package"}      # the recipe that installs it
 NEEDED = {"github": ("display", "repo", "package", "cmd", "asset"), "package": ("display", "cmd")}
 
 
@@ -702,6 +702,199 @@ def codex_version(run=subprocess.run, which=shutil.which, path=None):
 
 def codex_installed(which=shutil.which):
     return bool(which("codex") or os.path.isfile(os.path.expanduser("~/.local/bin/codex")))
+
+
+# ---- Flutter SDK (includes Dart) and a standalone Dart SDK ----
+# Flutter: Google's own release archive (flutter_linux_<version>-stable.tar.xz, ~1.6 GB, with its prebuilt Dart SDK and engine
+# artifacts). Its SHA-256 comes from Google's release manifest (releases_linux.json) and is checked before anything is unpacked.
+# Prerequisites from https://docs.flutter.dev (curl git unzip xz zip + GLU) are installed from the distribution's repositories,
+# in ONE administrator step, only when something is missing. The SDK itself goes into ~/development/flutter (the docs' place; the
+# SDK must be writable by you: it updates itself with `flutter upgrade`) and `flutter` / `dart` are linked into ~/.local/bin, so no
+# shell startup file is edited. The Dart that ships inside Flutter is the full Dart SDK, so that is the "Dart" most people want.
+FLUTTER_MANIFEST = "https://storage.googleapis.com/flutter_infra_release/releases/releases_linux.json"
+FLUTTER_PAGE = "https://docs.flutter.dev/install/manual"
+FLUTTER_TOOLS = ("curl", "git", "unzip", "xz", "zip")                           # commands the docs list (xz-utils provides xz)
+FLUTTER_PREREQ = {                                                              # package names checked in real distributions
+    "apt-get": ["curl", "git", "unzip", "xz-utils", "zip", "libglu1-mesa"],
+    "dnf": ["curl", "git", "unzip", "xz", "zip", "mesa-libGLU"],
+    "pacman": ["curl", "git", "unzip", "xz", "zip", "glu"],
+    "zypper": ["curl", "git", "unzip", "xz", "zip", "libGLU1"]}
+FLUTTER_MIN_FREE_GB = 6
+FLUTTER_NOTES = ("Open a NEW terminal, then run: flutter doctor. Checkmarks are needed only for the platforms you target (Chrome = web, "
+                 "Linux desktop); ignore warnings about Android Studio / Xcode until you need them. The Dart commands (dart, dart pub) "
+                 "are included. Update later with: flutter upgrade. If VS Code is installed, the Flutter extension (it brings the Dart "
+                 "extension) is added too.")
+
+
+def flutter_release(fetch=fetch_json, size=None):
+    """-> {'version', 'dart', 'name', 'url', 'sha256', 'size'} for the current STABLE Linux release in Google's manifest."""
+    data = fetch(FLUTTER_MANIFEST)
+    cur = data["current_release"]["stable"]
+    r = next(x for x in data["releases"] if x["hash"] == cur and x["channel"] == "stable")
+    url = data["base_url"].rstrip("/") + "/" + r["archive"]
+    n = 0
+    try:
+        n = int((size or _head_size)(url))
+    except Exception:  # noqa: BLE001 - the size is only for the dialog
+        pass
+    return {"version": r["version"], "dart": r.get("dart_sdk_version", ""), "name": os.path.basename(r["archive"]), "url": url,
+            "sha256": r["sha256"], "size": n, "arch": r.get("dart_sdk_arch", "x64")}
+
+
+def _head_size(url, timeout=20):
+    req = urllib.request.Request(url, method="HEAD", headers={"User-Agent": "linux-scripts-installer"})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return r.headers.get("Content-Length", 0)
+
+
+def flutter_missing(which=shutil.which, glu=None):
+    """The prerequisites that are not there: command names, plus 'GLU' when libGLU is not known to the linker."""
+    out = [c for c in FLUTTER_TOOLS if not which(c)]
+    if glu is None:
+        try:
+            glu = "libGLU.so.1" in subprocess.run(["ldconfig", "-p"], capture_output=True, text=True, timeout=20).stdout
+        except Exception:  # noqa: BLE001
+            glu = False
+    if not glu:
+        out.append("GLU")
+    return out
+
+
+def flutter_steps(release, arch, pm, missing, cache_dir=None, dev_dir=None, bin_dir=None):
+    """-> (steps, info). [root: prerequisites, only when 'missing' is not empty and this package manager is known] +
+    [user: disk-space check] + [user: download + SHA-256 gate] + [user: unpack to ~/development/flutter, link flutter and dart into
+    ~/.local/bin, first start (it fetches nothing more: the archive carries its Dart SDK), VS Code extension when VS Code is there]."""
+    if arch not in X86 or release.get("arch", "x64") != "x64":
+        return [], {"manual": FLUTTER_PAGE, "version": release["version"]}
+    q = shlex.quote
+    d = os.path.expanduser(cache_dir or CACHE)
+    dev = os.path.expanduser(dev_dir or os.path.join("~", "development"))
+    binp = os.path.expanduser(bin_dir or os.path.join("~", ".local", "bin"))
+    sdk, tar = os.path.join(dev, "flutter"), os.path.join(d, release["name"])
+    mark = os.path.join(sdk, ".linux-scripts-flutter")
+    steps, prereq = [], None
+    names = FLUTTER_PREREQ.get(pm)
+    if missing and names:
+        fmt = _INSTALL[pm]
+        prereq = " ".join(names)
+        steps.append({"root": True, "sh": "set -eu\nexport DEBIAN_FRONTEND=noninteractive\n" + fmt.format(p=prereq) + "\n"})
+    steps.append({"root": False, "sh": f"""set -eu
+mkdir -p {q(d)} {q(dev)}
+need={FLUTTER_MIN_FREE_GB}
+for dir in {q(d)} {q(dev)}; do
+  set -- $(df -Pk "$dir" | tail -n 1)
+  free=$(( $4 / 1048576 ))
+  [ "$free" -ge "$need" ] || {{ echo "only ${{free}} GB free where $dir is - Flutter needs about $need GB (download + unpacked SDK). Free some space and try again." >&2; exit 1; }}
+done
+echo "free space OK"
+"""})
+    steps.append({"root": False, "sh": download_script({"name": release["name"], "url": release["url"], "sha256": release["sha256"]}, cache_dir)})
+    install = f"""set -eu
+trap 'rm -f {q(tar)}' EXIT
+SDK={q(sdk)}
+MARK={q(mark)}
+if [ -e "$SDK" ] || [ -L "$SDK" ]; then
+  [ -f "$MARK" ] || {{ echo "$SDK already exists and was not installed by this installer - rename it first (or use that one)" >&2; exit 1; }}
+  echo "Flutter is already installed here ($(cat "$MARK")): keeping it - update it with: flutter upgrade"
+else
+  mkdir -p {q(dev)}
+  tar -xJf {q(tar)} --no-same-owner -C {q(dev)}
+  [ -x "$SDK/bin/flutter" ] || {{ echo "the archive did not contain flutter/bin/flutter - nothing was installed" >&2; rm -rf "$SDK"; exit 1; }}
+  printf '%s\n' {q(release['version'])} > "$MARK"
+fi
+mkdir -p {q(binp)}
+for c in flutter dart; do
+  L={q(binp)}/$c
+  if [ -L "$L" ] && [ "$(readlink "$L")" = "$SDK/bin/$c" ]; then continue; fi
+  if [ -e "$L" ] || [ -L "$L" ]; then echo "$L exists and is something else - left alone (use $SDK/bin/$c)" >&2; continue; fi
+  ln -s "$SDK/bin/$c" "$L"
+done
+"$SDK/bin/flutter" --version || echo "(flutter --version did not finish - run: flutter doctor)"
+if command -v code >/dev/null 2>&1; then code --install-extension Dart-Code.flutter || echo "(the VS Code extension could not be added now - add 'Flutter' in VS Code's Extensions view)"; fi
+echo "Flutter is ready in $SDK"
+"""
+    steps.append({"root": False, "sh": install})
+    return steps, {"version": release["version"], "dart": release["dart"], "file": release["name"], "mb": round(release["size"] / 1048576),
+                   "sha256": release["sha256"], "source": "storage.googleapis.com/flutter_infra_release", "sdk": sdk,
+                   "prereq": prereq, "missing": missing, "min_gb": FLUTTER_MIN_FREE_GB, "notes": FLUTTER_NOTES}
+
+
+def flutter_remove_steps(dev_dir=None, bin_dir=None):
+    """Remove ~/development/flutter and the two links - only when the SDK carries this installer's marker. The prerequisites
+    (curl, git, ...) stay: other programs use them. ~/.pub-cache and ~/.config/flutter are personal data (asked separately)."""
+    q = shlex.quote
+    sdk = os.path.join(os.path.expanduser(dev_dir or os.path.join("~", "development")), "flutter")
+    binp = os.path.expanduser(bin_dir or os.path.join("~", ".local", "bin"))
+    sh = f"""set -u
+SDK={q(sdk)}
+if [ ! -f "$SDK/.linux-scripts-flutter" ]; then
+  if [ -e "$SDK" ] || command -v flutter >/dev/null 2>&1; then echo "Flutter is installed another way - remove it the same way; nothing was changed here."; else echo "Flutter is not installed."; fi
+  exit 0
+fi
+for c in flutter dart; do
+  L={q(binp)}/$c
+  [ -L "$L" ] && [ "$(readlink "$L")" = "$SDK/bin/$c" ] && rm -f "$L"
+done
+rm -rf -- "$SDK"
+rmdir {q(os.path.dirname(sdk))} 2>/dev/null || true
+echo "Flutter was removed. The prerequisites (curl, git, ...), ~/.pub-cache and your projects were kept."
+"""
+    return [{"root": False, "sh": sh}]
+
+
+def flutter_installed(dev_dir=None):
+    return os.path.isfile(os.path.join(os.path.expanduser(dev_dir or os.path.join("~", "development")), "flutter", ".linux-scripts-flutter"))
+
+
+def flutter_version(dev_dir=None):
+    try:
+        with open(os.path.join(os.path.expanduser(dev_dir or os.path.join("~", "development")), "flutter", ".linux-scripts-flutter")) as f:
+            return f.read().strip() or None
+    except OSError:
+        return None
+
+
+# standalone Dart SDK (for Dart without Flutter): Google's apt repository; ONLY the one signing key that is checked is put in the keyring
+DART_KEY_URL = "https://dl-ssl.google.com/linux/linux_signing_key.pub"
+DART_FPR = "EB4C1BFD4F042F6DDDCCEC917721F63BD38B4796"                 # "Google Inc. (Linux Packages Signing Authority)"
+DART_KEYRING = "/usr/share/keyrings/dart-archive-keyring.gpg"
+DART_LIST = "/etc/apt/sources.list.d/dart_stable.list"
+DART_PAGE = "https://dart.dev/get-dart"
+
+
+def dart_steps(pm, arch, proto="=https", keyring=None, listfile=None, fpr=None, url=None):
+    """One administrator step: Google's key file is downloaded, imported into a temporary keyring, the fingerprint of the key
+    we trust is compared (abort on mismatch), and only THAT key is exported into the apt keyring (the file carries several).
+    Then the repository is registered and apt installs `dart`. Debian / Ubuntu / Mint on x86-64 or ARM64."""
+    if pm != "apt-get" or arch not in (*X86, "arm64", "aarch64"):
+        return [], {"manual": DART_PAGE}
+    q = shlex.quote
+    keyring, listfile, fpr, url = keyring or DART_KEYRING, listfile or DART_LIST, fpr or DART_FPR, url or DART_KEY_URL
+    sh = f"""set -eu
+export DEBIAN_FRONTEND=noninteractive
+apt-get install -y curl gnupg ca-certificates || (apt-get update && apt-get install -y curl gnupg ca-certificates)
+TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
+curl -fsSL --proto '{proto}' --tlsv1.2 -o "$TMP/key.pub" {q(url)}
+mkdir -m700 "$TMP/gnupg"
+gpg --homedir "$TMP/gnupg" --batch --import "$TMP/key.pub" 2>/dev/null || true
+if ! gpg --homedir "$TMP/gnupg" --with-colons --list-keys {fpr} 2>/dev/null | grep -q "^fpr:::::::::{fpr}:"; then
+  echo "KEY FINGERPRINT MISMATCH: {fpr} is not in the downloaded file - nothing was installed" >&2; exit 1
+fi
+echo "Key fingerprint OK: {fpr}"
+gpg --homedir "$TMP/gnupg" --export {fpr} > "$TMP/dart.gpg"
+install -D -m644 "$TMP/dart.gpg" {q(keyring)}
+printf 'deb [signed-by=%s arch=%s] https://storage.googleapis.com/download.dartlang.org/linux/debian stable main\\n' {q(keyring)} "$(dpkg --print-architecture)" > {q(listfile)}
+apt-get update
+apt-get install -y dart
+"""
+    return [{"root": True, "sh": sh}], {"fingerprint": fpr, "url": url, "key": keyring}
+
+
+def dart_remove_steps(pm, keyring=None, listfile=None):
+    if pm != "apt-get":
+        return []
+    q = shlex.quote
+    return [{"root": True, "sh": f"set -u\napt-get purge -y dart\nrm -f {q(listfile or DART_LIST)} {q(keyring or DART_KEYRING)}\napt-get update || true\n"}]
 
 
 # ---- Discord: the publisher's own .deb (https://discord.com/download).  Discord publishes no checksum, so only HTTPS protects it ----

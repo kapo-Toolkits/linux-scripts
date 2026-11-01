@@ -24,4 +24,9 @@ docker run --rm -v "$root":/repo:ro ubuntu:24.04 sh -c \
 echo "=================== Codex on ubuntu:24.04"
 docker run --rm -v "$root":/repo:ro ubuntu:24.04 sh -c \
   "apt-get update -qq >/dev/null && apt-get install -y -qq python3 curl ca-certificates >/dev/null && python3 /repo/tests/real_codex_container_test.py" || rc=1
+# Flutter / Dart against Google's real servers: manifest + archive size, the docs' prerequisites installed by the recipe, standalone Dart
+# (repository, the one trusted key, install, --version, removal). The 1.6 GB Flutter download itself is run locally with FLUTTER_FULL=1.
+echo "=================== Flutter prerequisites + Dart on ubuntu:24.04"
+docker run --rm ${FLUTTER_FULL:+-e FLUTTER_FULL=1} -v "$root":/repo:ro ubuntu:24.04 sh -c \
+  "apt-get update -qq >/dev/null && apt-get install -y -qq python3 >/dev/null && python3 /repo/tests/real_flutter_container_test.py" || rc=1
 exit "${rc:-0}"
