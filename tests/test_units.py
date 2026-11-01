@@ -1349,6 +1349,174 @@ class PersonalData(unittest.TestCase):
                 self.assertTrue(p.startswith("~/") and ".." not in p)
 
 
+class WhatInstallsHere(unittest.TestCase):
+    """route(): which programs this system can get, and how (own recipe / Flathub / AUR / not at all)."""
+    ex = Installer.m.extras
+    prog = {p["id"]: p for p in ex.PROGRAMS}
+
+    def how(self, app, pm, arch="x86_64"):
+        return self.ex.route(self.prog[app], pm, arch)
+
+    def test_debian_family_gets_everything_its_own_way(self):
+        for app in self.prog:
+            self.assertEqual(self.how(app, "apt-get")[0], "native", app)
+
+    def test_arch_and_manjaro_use_aur_where_flathub_and_the_publisher_have_nothing(self):
+        self.assertEqual(self.how("tabby", "pacman")[0], "aur")
+        self.assertEqual(self.how("winboat", "pacman")[0], "aur")
+        self.assertEqual(self.how("etcher", "pacman")[0], "aur")
+        self.assertEqual(self.how("discord", "pacman")[0], "flatpak")           # Flathub first: no build, sandboxed, no password
+        self.assertEqual(self.how("rustdesk", "pacman")[0], "flatpak")
+        self.assertEqual(self.how("brave", "pacman")[0], "native")
+        self.assertEqual(self.how("unrar", "pacman")[0], "native")
+        self.assertEqual(self.how("codex", "pacman")[0], "native")
+
+    def test_rpm_distributions(self):
+        self.assertEqual(self.how("etcher", "dnf")[0], "native")                # the publisher's .rpm
+        self.assertEqual(self.how("vscode", "dnf")[0], "flatpak")
+        self.assertEqual(self.how("tabby", "dnf"), ("none", "pm"))              # no AUR on Fedora, no .rpm from the project
+        self.assertEqual(self.how("claude", "zypper"), ("none", "pm"))
+
+    def test_an_unsupported_processor_says_so(self):
+        self.assertEqual(self.how("flutter", "apt-get", "aarch64"), ("none", "cpu"))
+        self.assertEqual(self.how("winboat", "apt-get", "aarch64"), ("none", "cpu"))
+        self.assertEqual(self.how("tabby", "pacman", "aarch64"), ("none", "pm"))   # AUR binaries are built for x86-64 here
+
+    def test_no_package_for_the_system_is_reported_as_such(self):
+        self.assertEqual(self.how("unrar", "apk"), ("none", "pm"))
+
+    def test_the_table_agrees_with_the_recipes(self):
+        """NATIVE is what the window promises; the recipes that can be asked offline must say the same."""
+        pms = ("apt-get", "dnf", "yum", "pacman", "zypper", "apk", "")
+        cpus = ("x86_64", "amd64", "aarch64", "arm64", "armv7l", "riscv64")
+        recipes = {"claude": lambda pm, a: self.ex.claude_steps(pm, a)[0], "vscode": lambda pm, a: self.ex.vscode_steps(pm, a)[0],
+                   "dart": lambda pm, a: self.ex.dart_steps(pm, a)[0], "discord": lambda pm, a: self.ex.discord_steps(pm, a)[0],
+                   "virtualbox": lambda pm, a: self.ex.virtualbox_steps(pm, a)[0]}
+        for app, steps in recipes.items():
+            for pm in pms:
+                for cpu in cpus:
+                    self.assertEqual(bool(steps(pm, cpu)), self.ex.native_route(self.prog[app], pm, cpu), (app, pm, cpu))
+        release = {"version": "9.9.9", "tag": "v9.9.9", "assets": {"balena-etcher_9.9.9_amd64.deb": {"sha256": "a" * 64},
+                                                                 "balena-etcher-9.9.9-1.x86_64.rpm": {"sha256": "b" * 64}}}
+        for pm in pms:
+            for cpu in cpus:
+                self.assertEqual(bool(self.ex.etcher_asset(release, pm, cpu)), self.ex.native_route(self.prog["etcher"], pm, cpu), (pm, cpu))
+
+    def test_os_release_and_the_summary(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "os-release")
+            with open(path, "w") as f:
+                f.write('NAME="Manjaro Linux"\nPRETTY_NAME="Manjaro Linux"\nID=manjaro\nID_LIKE=arch\n')
+            osr = self.ex.os_release(path)
+        self.assertEqual(osr["ID"], "manjaro")
+        self.assertTrue(self.ex.is_arch_family(osr))
+        self.assertFalse(self.ex.is_arch_family({"ID": "ubuntu", "ID_LIKE": "debian"}))
+        self.assertEqual(self.ex.system_summary("pacman", "x86_64", osr), "Manjaro Linux - pacman, x86_64")
+        self.assertEqual(self.ex.os_release("/nonexistent"), {})
+
+
+class AurRoute(unittest.TestCase):
+    ex = Installer.m.extras
+
+    def archive(self, entries):
+        import io
+        import tarfile
+        buf = io.BytesIO()
+        with tarfile.open(fileobj=buf, mode="w:gz") as tar:
+            for name, data in entries:
+                if data is None:
+                    info = tarfile.TarInfo(name)
+                    info.type = tarfile.DIRTYPE
+                    tar.addfile(info)
+                elif isinstance(data, tuple):                    # ("link", target)
+                    info = tarfile.TarInfo(name)
+                    info.type = tarfile.SYMTYPE
+                    info.linkname = data[1]
+                    tar.addfile(info)
+                else:
+                    info = tarfile.TarInfo(name)
+                    info.size = len(data)
+                    tar.addfile(info, io.BytesIO(data))
+        return buf.getvalue()
+
+    def test_extract_keeps_plain_files_inside_the_folder(self):
+        data = self.archive([("pkg", None), ("pkg/PKGBUILD", b"pkgname=pkg\n"), ("pkg/pkg.install", b"post_install() { :; }\n")])
+        with tempfile.TemporaryDirectory() as d:
+            folder = self.ex.aur_extract(data, os.path.join(d, "aur"), "pkg")
+            self.assertEqual(sorted(os.listdir(folder)), ["PKGBUILD", "pkg.install"])
+            self.assertEqual(oct(os.stat(os.path.join(folder, "PKGBUILD")).st_mode & 0o777), "0o644")
+
+    def test_extract_refuses_links_escapes_and_foreign_names(self):
+        bad = [[("pkg/PKGBUILD", b"x"), ("pkg/evil", ("link", "/etc/passwd"))],
+               [("pkg/../../escape", b"x")], [("/abs/PKGBUILD", b"x")], [("other/PKGBUILD", b"x")]]
+        for entries in bad:
+            with tempfile.TemporaryDirectory() as d:
+                with self.assertRaises(ValueError, msg=entries):
+                    self.ex.aur_extract(self.archive(entries), os.path.join(d, "aur"), "pkg")
+                self.assertFalse(os.path.exists(os.path.join(d, "escape")))
+
+    def test_fetch_shows_what_will_be_built_and_checks_the_answer(self):
+        data = self.archive([("tabby-bin", None), ("tabby-bin/PKGBUILD", b"pkgname=tabby-bin\n"), ("tabby-bin/.SRCINFO", b"x")])
+        meta = {"results": [{"Name": "tabby-bin", "Version": "1-1", "Maintainer": "someone", "NumVotes": 26, "OutOfDate": None}]}
+
+        class Resp:
+            def __init__(self, body):
+                self.body = body
+
+            def read(self, n=-1):
+                return self.body if n < 0 else self.body[:n]
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+        with tempfile.TemporaryDirectory() as d:
+            got = self.ex.aur_fetch("tabby-bin", cache_dir=d, opener=lambda req, timeout=0: Resp(
+                json.dumps(meta).encode() if "/rpc/" in req.full_url else data))
+            self.assertEqual(list(got["files"]), ["PKGBUILD"])             # .SRCINFO is not shown, PKGBUILD and *.install are
+            self.assertEqual(got["meta"]["Maintainer"], "someone")
+            self.assertEqual(len(got["sha256"]), 64)
+            with self.assertRaises(ValueError):                           # the AUR does not know the name
+                self.ex.aur_fetch("tabby-bin", cache_dir=d, opener=lambda req, timeout=0: Resp(b'{"results": []}'))
+            with self.assertRaises(ValueError):                           # not a package name
+                self.ex.aur_fetch("../x", cache_dir=d)
+
+    def test_steps_build_as_the_user_and_install_as_the_administrator(self):
+        steps = self.ex.aur_steps("tabby-bin", "/home/u/.cache/linux-scripts/downloads/aur/tabby-bin")
+        self.assertEqual([s["root"] for s in steps], [True, False, True, False])
+        self.assertIn("pacman -S --needed --noconfirm base-devel", steps[0]["sh"])
+        self.assertIn("PACMAN_AUTH=(pkexec)", steps[1]["sh"])
+        self.assertIn("makepkg", steps[1]["sh"])
+        self.assertIn("pacman -U --noconfirm", steps[2]["sh"])
+        self.assertNotIn("-debug-", steps[2]["sh"].split("case")[0])
+        self.assertIn("rm -rf", steps[3]["sh"])
+        for st in steps:
+            self.assertEqual(subprocess.run(["sh", "-n", "-c", st["sh"]], capture_output=True).returncode, 0)
+        self.assertEqual(self.ex.aur_remove_steps("tabby-bin")[0]["sh"], "set -u\npacman -R --noconfirm tabby-bin\n")
+
+    def test_installed_version(self):
+        ok = types.SimpleNamespace(returncode=0, stdout="tabby-bin 1.0.238-1\n")
+        self.assertEqual(self.ex.aur_installed("tabby-bin", run=lambda *a, **k: ok, which=lambda c: "/usr/bin/pacman"), "1.0.238-1")
+        self.assertIsNone(self.ex.aur_installed("tabby-bin", run=lambda *a, **k: types.SimpleNamespace(returncode=1, stdout=""),
+                                                which=lambda c: "/usr/bin/pacman"))
+        self.assertIsNone(self.ex.aur_installed("tabby-bin", which=lambda c: None))
+
+    def test_programs_json_validates_aur_names(self):
+        for p in self.ex.PROGRAMS:
+            if p.get("aur"):
+                self.assertRegex(p["aur"], r"^[a-z0-9][a-z0-9@._+-]*$")
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "p.json")
+            with open(self.ex.PROGRAMS_FILE) as f:
+                data = json.load(f)
+            data["programs"][0]["aur"] = "bad name; rm -rf"
+            with open(path, "w") as f:
+                json.dump(data, f)
+            with self.assertRaises(ValueError):
+                self.ex.load_programs(path)
+
+
 class FlatpakRoute(unittest.TestCase):
     ex = Installer.m.extras
     App = Installer.m.App

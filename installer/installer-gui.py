@@ -63,6 +63,10 @@ GROUP_TEXT = {"dev": "g_dev", "net": "g_net", "disk": "g_disk", "tools": "g_tool
 # installed from the publisher (not by install.sh): shown in their own block, never ticked by default
 EXTRAS = [{k: x[k] for k in ("id", "group", "name", "info")} for x in extras.PROGRAMS]      # from installer/programs.json
 
+WHY_TEXT = {"cpu": "why_cpu", "pm": "why_pm"}                                                 # text keys of extras.route()
+VIA_TEXT = {"flatpak": ("via_flatpak", "via_flatpak_hint"), "aur": ("via_aur", "via_aur_hint")}
+PROG = {x["id"]: x for x in extras.PROGRAMS}                                                 # the whole entries (kind, flatpak, aur ...)
+
 USER_PREFIX = os.path.join(os.path.expanduser("~"), ".local")
 SYSTEM_PREFIX = "/usr/local"
 
@@ -141,6 +145,16 @@ STR = {
  "brave_head": "Brave's official install script ({kb} KB, SHA-256 {sha}) from {url}\nwill run as the ADMINISTRATOR. Source: {src}\nIt adds Brave's package repository (signing key + source file) and installs brave-browser.",
  "brave_install": "Run it (administrator password)", "brave_cancel": "Cancel",
  "brave_fail": "Could not get Brave's install script:\n{e}",
+ "sys_line": "This system: {sys}", "na": "not for this system", "via_flatpak": "Flatpak", "via_aur": "AUR",
+ "why_pm": "Not offered for {pm}: its publisher serves other distributions (Debian / Ubuntu / Mint) only.",
+ "why_cpu": "Not offered for this processor ({arch}).",
+ "via_flatpak_hint": "On this system it comes from Flathub (Flatpak), for you only.",
+ "via_aur_hint": "On this system it is built from the AUR (a package written by users - you review it first).",
+ "aur_title": "{name} - review the AUR package before it is built",
+ "aur_head": "AUR package {pkg} {ver} - maintainer {who}, {votes} votes{old}\nFrom {host}. The AUR is NOT checked by Arch: this PKGBUILD runs as you while it is built, and the package then installs as the ADMINISTRATOR.\nSHA-256 of the text below: {sha}\nRead it - it is exactly what will run. The sources it downloads are verified by the checksums inside it.{note}",
+ "aur_old": ", flagged OUT OF DATE", "aur_manjaro": "\nManjaro: AUR packages are built for Arch; Manjaro's own repositories lag behind, so a library version can differ.",
+ "aur_install": "Build and install (password prompts: dependencies, then install)", "aur_cancel": "Cancel",
+ "aur_fail": "Could not get the AUR package:\n{e}", "aur_root": "Run the window as your normal user: AUR packages are never built as root.",
  "pkg_ask": "Install {name} from your distribution's repositories?\n\nPackage: {pkg}  ({pm})\n(administrator password)",
  "pkg_unknown": "No known {name} package for this system's package manager ({pm}).",
  "prereq_ask": "PrintHub needs Python's venv / pip, which this computer does not have yet.\n\nInstall it now, then PrintHub, and start PrintHub?\n(asks for the administrator password; command: {cmd})",
@@ -222,6 +236,16 @@ STR = {
  "brave_head": "Brave-ის ოფიციალური ინსტალაციის სკრიპტი ({kb} KB, SHA-256 {sha}) მისამართიდან {url}\nგაეშვება ადმინისტრატორის უფლებით. წყარო: {src}\nის ამატებს Brave-ის პაკეტების რეპოზიტორიას (ხელმოწერის გასაღები + წყაროს ფაილი) და აყენებს brave-browser-ს.",
  "brave_install": "გაშვება (ადმინისტრატორის პაროლი)", "brave_cancel": "გაუქმება",
  "brave_fail": "Brave-ის სკრიპტის მიღება ვერ მოხერხდა:\n{e}",
+ "sys_line": "ეს სისტემა: {sys}", "na": "ამ სისტემისთვის არაა", "via_flatpak": "Flatpak", "via_aur": "AUR",
+ "why_pm": "{pm}-ისთვის არ არსებობს: გამომცემელი მხოლოდ სხვა დისტრიბუციებს (Debian / Ubuntu / Mint) ემსახურება.",
+ "why_cpu": "ამ პროცესორისთვის ({arch}) არ არსებობს.",
+ "via_flatpak_hint": "ამ სისტემაზე Flathub-იდან (Flatpak) დაგიდგებათ, მხოლოდ თქვენთვის.",
+ "via_aur_hint": "ამ სისტემაზე AUR-იდან აიგება (მომხმარებლების დაწერილი პაკეტი - ჯერ თქვენ გადახედავთ).",
+ "aur_title": "{name} - გადახედეთ AUR-ის პაკეტს აგებამდე",
+ "aur_head": "AUR-ის პაკეტი {pkg} {ver} - მომვლელი {who}, {votes} ხმა{old}\nწყარო: {host}. AUR-ს Arch არ ამოწმებს: ეს PKGBUILD აგებისას თქვენი უფლებით გაეშვება, მზა პაკეტი კი ადმინისტრატორის უფლებით დაყენდება.\nქვემოთ მოცემული ტექსტის SHA-256: {sha}\nწაიკითხეთ - ზუსტად ეს გაეშვება. რასაც ჩამოტვირთავს, მის კონტროლს ამ ფაილში მყოფი ჩეკსუმები ამოწმებს.{note}",
+ "aur_old": ", მონიშნულია როგორც მოძველებული", "aur_manjaro": "\nManjaro: AUR-ის პაკეტები Arch-ისთვის იგება, Manjaro-ს რეპოზიტორიები კი ჩამორჩება, ამიტომ ბიბლიოთეკის ვერსია შეიძლება განსხვავდებოდეს.",
+ "aur_install": "აგება და დაყენება (პაროლს ორჯერ ითხოვს: დამოკიდებულებები, დაყენება)", "aur_cancel": "გაუქმება",
+ "aur_fail": "AUR-ის პაკეტის მიღება ვერ მოხერხდა:\n{e}", "aur_root": "გახსენით ფანჯარა ჩვეულებრივი მომხმარებლით: AUR-ის პაკეტებს root-ით არასოდეს ვაგებთ.",
  "pkg_ask": "დავაყენო {name} თქვენი დისტრიბუციის რეპოზიტორიიდან?\n\nპაკეტი: {pkg}  ({pm})\n(ადმინისტრატორის პაროლი)",
  "pkg_unknown": "ამ სისტემის პაკეტ-მენეჯერისთვის ({pm}) {name}-ის ცნობილი პაკეტი არ არის.",
  "prereq_ask": "PrintHub-ს სჭირდება Python-ის venv / pip, რაც ამ კომპიუტერზე ჯერ არ არის.\n\nდავაყენო ახლა, მერე PrintHub და გავუშვა PrintHub?\n(ადმინისტრატორის პაროლს მოითხოვს; ბრძანება: {cmd})",
@@ -517,6 +541,8 @@ class App(tk.Tk):
         self.lbl_search.pack(side="left")
         ttk.Entry(row_s, textvariable=self.v_search).pack(side="left", fill="x", expand=True, padx=4)
         self.v_search.trace_add("write", lambda *_: self.render())
+        self.lbl_sys = ttk.Label(self.f_extra_box, foreground="#666666", font=("", 8))
+        self.lbl_sys.pack(side="top", anchor="w", padx=6)
         self.cv_extra = tk.Canvas(self.f_extra_box, highlightthickness=0, width=200, height=300)
         sb = ttk.Scrollbar(self.f_extra_box, orient="vertical", command=self.cv_extra.yview)
         self.cv_extra.configure(yscrollcommand=sb.set)
@@ -621,10 +647,13 @@ class App(tk.Tk):
         self.update_idletasks()
         self.cv_extra.configure(height=max(200, self.f_tools.winfo_reqheight() - 24))
 
-    def item_row(self, parent, base, var, title, info, state, good):
+    def item_row(self, parent, base, var, title, info, state, good, disabled=False):
         """Two lines per program: [checkbox] name ... state / grey description. Narrow enough for three columns."""
         parent.columnconfigure(0, weight=1)
-        ttk.Checkbutton(parent, text=title, variable=var, command=self.sync).grid(row=base, column=0, sticky="w", padx=(4, 0))
+        box = ttk.Checkbutton(parent, text=title, variable=var, command=self.sync)
+        box.grid(row=base, column=0, sticky="w", padx=(4, 0))
+        if disabled:
+            box.state(["disabled"])
         ttk.Label(parent, text=state, foreground="#1a7f37" if good else "#888888", font=("", 8)).grid(
             row=base, column=1, sticky="e", padx=(4, 6))
         ttk.Label(parent, text=info, foreground="#666666", font=("", 8), wraplength=self.wrap, justify="left").grid(
@@ -659,7 +688,8 @@ class App(tk.Tk):
 
     def ex_state(self, ex_id):
         """What the list shows: installed natively, or as a Flatpak."""
-        return self.ex_native_state(ex_id) or (t("yes") if extras.flatpak_scopes(ex_id) else None)
+        return (self.ex_native_state(ex_id) or (t("yes") if extras.flatpak_scopes(ex_id) else None)
+                or (t("yes") if ex_id in extras.AUR_IDS and extras.aur_installed(extras.AUR_IDS[ex_id]) is not None else None))
 
     def flatpak_jobs(self, action, ex_id):
         """Flatpak route for programs whose .deb / apt repository does not apply here, and removal of a flatpak install.
@@ -700,6 +730,9 @@ class App(tk.Tk):
             state = t("both") if where == {"user", "system"} else t("me") if where == {"user"} else t("all") if where else t("none")
             self.item_row(self.f_tools, 2 * r, self.vars[tool["id"]], tool["name"][LANG], tool["info"][LANG], state, bool(where))
         needle = self.v_search.get().strip().lower()
+        import platform
+        pm, arch = detect_pm(), platform.machine()
+        self.lbl_sys.config(text=t("sys_line", sys=extras.system_summary(pm, arch)))
         row, shown_group, hits = 0, None, 0
         for ex in EXTRAS:
             if needle and needle not in (ex["name"][LANG] + " " + ex["info"][LANG] + " " + ex["id"]).lower():
@@ -710,7 +743,21 @@ class App(tk.Tk):
                     row=row, column=0, columnspan=2, sticky="w", padx=4, pady=(6, 0))
                 row += 1
             ver = self.ex_state(ex["id"])
-            self.item_row(self.f_extra, row, self.extra_vars[ex["id"]], ex["name"][LANG], ex["info"][LANG], ver or t("none"), bool(ver))
+            how, why = extras.route(PROG[ex["id"]], pm, arch)
+            info = ex["info"][LANG]
+            if ver:
+                state, blocked = ver, False                                  # installed: it can always be removed
+            elif how == "none":
+                state, blocked = t("na"), True
+                info += "\n" + t(WHY_TEXT[why], pm=pm.replace("-get", "") or "?", arch=arch)
+            elif how in ("flatpak", "aur"):
+                state, blocked = t(VIA_TEXT[how][0]), False
+                info += "\n" + t(VIA_TEXT[how][1])
+            else:
+                state, blocked = t("none"), False
+            if blocked:
+                self.extra_vars[ex["id"]].set(False)
+            self.item_row(self.f_extra, row, self.extra_vars[ex["id"]], ex["name"][LANG], info, state, bool(ver), disabled=blocked)
             row += 2
             hits += 1
         if not hits:
@@ -805,6 +852,12 @@ class App(tk.Tk):
                 return
             if handled:
                 extra_jobs += fp_jobs
+                continue
+            handled, aur_list = self.aur_jobs(action, ex_id)
+            if aur_list is None:
+                return
+            if handled:
+                extra_jobs += fp_jobs + aur_list
                 continue
             jobs_for = (self.etcher_jobs(action) if ex_id == "etcher" else
                         self.brave_jobs(action) if ex_id == "brave" else
@@ -916,6 +969,68 @@ class App(tk.Tk):
         win.grab_set()
         self.wait_window(win)
         return answer["ok"]
+
+    def confirm_aur(self, name, pkg, info):
+        """The PKGBUILD (and install scripts) in full, in a window of its own; True = build and install."""
+        win = tk.Toplevel(self)
+        win.title(t("aur_title", name=name))
+        win.geometry("820x600")
+        win.transient(self)
+        meta = info["meta"]
+        ttk.Label(win, wraplength=780, justify="left", font=("", 9, "bold"),
+                  text=t("aur_head", pkg=pkg, ver=meta.get("Version", "?"), who=meta.get("Maintainer") or "-",
+                         votes=meta.get("NumVotes", 0), old=t("aur_old") if meta.get("OutOfDate") else "",
+                         host=extras.AUR_HOST, sha=info["sha256"],
+                         note=t("aur_manjaro") if extras.is_arch_family() and extras.os_release().get("ID") == "manjaro" else "")
+                  ).pack(anchor="w", padx=10, pady=(10, 4))
+        box = scrolledtext.ScrolledText(win, wrap="none", font=("TkFixedFont", 9))
+        box.pack(fill="both", expand=True, padx=10)
+        for fname, text in info["files"].items():
+            box.insert("end", f"##### {fname}\n{text}\n\n")
+        box.config(state="disabled")
+        answer = {"ok": False}
+        bar = ttk.Frame(win)
+        bar.pack(fill="x", padx=10, pady=10)
+
+        def go():
+            answer["ok"] = True
+            win.destroy()
+        ttk.Button(bar, text=t("aur_install"), command=go).pack(side="right")
+        ttk.Button(bar, text=t("aur_cancel"), command=win.destroy).pack(side="right", padx=8)
+        win.grab_set()
+        self.wait_window(win)
+        return answer["ok"]
+
+    def aur_jobs(self, action, ex_id):
+        """The AUR route (Arch, Manjaro ...) for programs without a Flathub entry or a package for this system, and removal of
+        what it installed. -> (handled, jobs): handled False = use the normal route; jobs None = cancelled / impossible."""
+        import platform
+        pkg = extras.AUR_IDS.get(ex_id)
+        if not pkg:
+            return False, []
+        prog = PROG[ex_id]
+        pm = detect_pm()
+        if action == "uninstall":
+            if extras.aur_installed(pkg) is None:
+                return False, []
+            return True, self.steps_to_jobs(extras.aur_remove_steps(pkg))
+        if extras.route(prog, pm, platform.machine())[0] != "aur":
+            return False, []
+        if os.geteuid() == 0:
+            messagebox.showwarning(t("title"), t("aur_root"))
+            return True, None
+        self.lbl_status.config(text=t("looking"))
+        self.update_idletasks()
+        try:
+            info = extras.aur_fetch(pkg)
+        except Exception as e:  # noqa: BLE001 - offline, package removed, odd archive: say it, build nothing
+            self.lbl_status.config(text=t("note"))
+            messagebox.showwarning(t("title"), t("aur_fail", e=e))
+            return True, None
+        self.lbl_status.config(text=t("note"))
+        if not self.confirm_aur(prog["name"][LANG], pkg, info):
+            return True, None
+        return True, self.steps_to_jobs(extras.aur_steps(pkg, info["dir"]))
 
     def brave_jobs(self, action):
         """Brave: remove through the package manager, or download the vendor's script, show it, run it as administrator."""
