@@ -100,6 +100,20 @@
    ]
   },
   {
+   "id": "flutter-linux",
+   "group": "dev",
+   "kind": "flutterlinux",
+   "cli": true,
+   "name": {
+    "en": "   ↳ Flutter: Linux desktop tools (optional)",
+    "ka": "   ↳ Flutter: Linux დესკტოპის ხელსაწყოები (არასავალდებულო)"
+   },
+   "info": {
+    "en": "only to build Linux desktop apps (clang, cmake, ninja, pkg-config, GTK 3 and liblzma headers; ~300 MB from your distribution); not needed for web, Android or the Dart commands",
+    "ka": "მხოლოდ Linux დესკტოპ აპების ასაგებად (clang, cmake, ninja, pkg-config, GTK 3 და liblzma-ს header-ები; ~300 MB თქვენი დისტრიბუციიდან); ვებისთვის, Android-ისა და Dart-ის ბრძანებებისთვის საჭირო არაა"
+   }
+  },
+  {
    "id": "dart",
    "group": "dev",
    "kind": "dart",
