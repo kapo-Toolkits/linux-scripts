@@ -25,6 +25,6 @@ cd "$root" || exit 1
 for pair in "apt-get ubuntu:24.04" "apt-get debian:12" "dnf fedora:latest" "pacman archlinux:latest" "zypper opensuse/tumbleweed:latest"; do
   pm=${pair%% *}; img=${pair#* }
   echo "=================== $pm  $img"
-  docker run --rm -v "$root/tests/gis_names_check.sh":/c.sh:ro "$img" sh /c.sh "$pm" $(names "$pm") || rc=1
+  "$root/tests/retry-on-network.sh" docker run --rm -v "$root/tests/gis_names_check.sh":/c.sh:ro "$img" sh /c.sh "$pm" $(names "$pm") || rc=1
 done
 exit $rc

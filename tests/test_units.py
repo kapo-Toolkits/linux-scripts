@@ -2358,6 +2358,58 @@ class FlutterDart(unittest.TestCase):
         self.assertIn("~/.pub-cache", ids["flutter"]["data"])
 
 
+class RetryOnNetwork(unittest.TestCase):
+    script = os.path.join(ROOT, "tests", "retry-on-network.sh")
+
+    def run_flaky(self, d, output, fail_times, rc=1):
+        """A command that prints `output` and exits `rc` the first `fail_times` times, then succeeds. -> (result, number of runs)."""
+        counter = os.path.join(d, "n")
+        cmd = os.path.join(d, "cmd.sh")
+        with open(cmd, "w") as f:
+            f.write(f'#!/bin/sh\nn=$(cat {counter} 2>/dev/null || echo 0); n=$((n+1)); echo $n > {counter}\n'
+                    f'if [ $n -le {fail_times} ]; then echo "{output}"; exit {rc}; fi\necho fine\n')
+        os.chmod(cmd, 0o755)
+        r = subprocess.run(["bash", self.script, cmd], capture_output=True, text=True, env=dict(os.environ, RETRY_DELAY="0"))
+        return r, int(open(counter).read())
+
+    @unittest.skipUnless(shutil.which("bash"), "needs bash")
+    def test_a_mirror_hiccup_is_retried_and_then_passes(self):
+        for text in ("W: Some index files failed to download. They have been ignored", "E: Unable to fetch some archives, maybe run apt-get update",
+                     "Err:5 https://mirror/x InRelease", "curl: (28) Operation timed out", "fatal: early EOF", "Hash Sum mismatch"):
+            with tempfile.TemporaryDirectory() as d:
+                r, runs = self.run_flaky(d, text, 2)
+                self.assertEqual((r.returncode, runs), (0, 3), text)
+                self.assertIn("network problem on attempt 1", r.stdout)
+
+    @unittest.skipUnless(shutil.which("bash"), "needs bash")
+    def test_a_real_failure_is_reported_at_once(self):
+        with tempfile.TemporaryDirectory() as d:
+            r, runs = self.run_flaky(d, "FAIL unit tests: expected 3 got 4", 5, rc=7)
+            self.assertEqual((r.returncode, runs), (7, 1))                                # no retry, the original exit code
+
+    @unittest.skipUnless(shutil.which("bash"), "needs bash")
+    def test_a_persistent_network_problem_stops_after_three_tries(self):
+        with tempfile.TemporaryDirectory() as d:
+            r, runs = self.run_flaky(d, "Temporary failure resolving 'deb.debian.org'", 99, rc=100)
+            self.assertEqual((r.returncode, runs), (100, 3))
+
+    @unittest.skipUnless(shutil.which("bash"), "needs bash")
+    def test_success_runs_once(self):
+        with tempfile.TemporaryDirectory() as d:
+            r, runs = self.run_flaky(d, "x", 0)
+            self.assertEqual((r.returncode, runs), (0, 1))
+
+    def test_every_container_script_wraps_each_docker_run(self):
+        import re
+        for name in ("run-qgis-containers.sh", "run-distros.sh", "run-recipes-containers.sh", "run-qr-decode.sh", "run-real-install.sh",
+                     "run-gis-names.sh", "run-hotspot-uplink.sh"):
+            with open(os.path.join(ROOT, "tests", name)) as f:
+                lines = [ln for ln in f.read().splitlines() if re.search(r"\bdocker run\b", ln) and not ln.lstrip().startswith("#")]
+            self.assertTrue(lines, name)
+            for ln in lines:
+                self.assertIn("retry-on-network.sh", ln, f"{name}: {ln.strip()[:80]}")
+
+
 class ClaudeDesktop(unittest.TestCase):
     ex = Installer.m.extras
 

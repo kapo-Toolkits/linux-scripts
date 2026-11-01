@@ -18,40 +18,40 @@ fi
 run() {   # image recipe [extra args]
   local img="$1"; shift
   echo "=================== $img  $*"
-  docker run --rm -v "$root":/repo:ro "$img" sh -c "$PREP; python3 /repo/tests/qgis_recipes_container_test.py $*"
+  "$root/tests/retry-on-network.sh" docker run --rm -v "$root":/repo:ro "$img" sh -c "$PREP; python3 /repo/tests/qgis_recipes_container_test.py $*"
 }
 
 comp() {   # image: install two components for real with the command line and check the system sees them
   echo "=================== $1  components (real install)"
-  docker run --rm -v "$root":/repo:ro "$1" sh -c "$PREP; python3 /repo/tests/qgis_components_container_test.py"
+  "$root/tests/retry-on-network.sh" docker run --rm -v "$root":/repo:ro "$1" sh -c "$PREP; python3 /repo/tests/qgis_components_container_test.py"
 }
 
 vers() {   # image: versions for real - list, go back, keep, release (and the Flatpak build list on Debian)
   echo "=================== $1  versions (real)"
-  docker run --rm -v "$root":/repo:ro "$1" sh -c "$PREP; python3 /repo/tests/qgis_versions_container_test.py"
+  "$root/tests/retry-on-network.sh" docker run --rm -v "$root":/repo:ro "$1" sh -c "$PREP; python3 /repo/tests/qgis_versions_container_test.py"
 }
 
 envf() {   # image: an environment file for real - check, apply, check, export
   echo "=================== $1  environment file (real)"
-  docker run --rm -v "$root":/repo:ro "$1" sh -c "$PREP; python3 -u /repo/tests/qgis_envfile_container_test.py"
+  "$root/tests/retry-on-network.sh" docker run --rm -v "$root":/repo:ro "$1" sh -c "$PREP; python3 -u /repo/tests/qgis_envfile_container_test.py"
 }
 
 if [ "${1:-}" = "versions" ]; then shift; vers "$@"; exit $?; fi
 docd() {   # image: the doctor against a real system - no false alarm, each known problem found
   echo "=================== $1  doctor (real)"
-  docker run --rm -v "$root":/repo:ro "$1" sh -c "$PREP; python3 -u /repo/tests/qgis_doctor_container_test.py"
+  "$root/tests/retry-on-network.sh" docker run --rm -v "$root":/repo:ro "$1" sh -c "$PREP; python3 -u /repo/tests/qgis_doctor_container_test.py"
 }
 
 if [ "${1:-}" = "envfile" ]; then shift; envf "$@"; exit $?; fi
 pipi() {   # image: pip install into a clean virtual environment and run from there
   echo "=================== $1  pip install (real)"
-  docker run --rm -v "$root":/repo:ro "$1" sh -c "$PREP; python3 -u /repo/tests/qgis_pip_container_test.py"
+  "$root/tests/retry-on-network.sh" docker run --rm -v "$root":/repo:ro "$1" sh -c "$PREP; python3 -u /repo/tests/qgis_pip_container_test.py"
 }
 
 if [ "${1:-}" = "doctor" ]; then shift; docd "$@"; exit $?; fi
 pdeps() {   # image: a plugin that needs a library the system lacks - found, installed, clean
   echo "=================== $1  plugin-deps (real)"
-  docker run --rm -v "$root":/repo:ro "$1" sh -c "$PREP; python3 -u /repo/tests/qgis_plugindeps_container_test.py"
+  "$root/tests/retry-on-network.sh" docker run --rm -v "$root":/repo:ro "$1" sh -c "$PREP; python3 -u /repo/tests/qgis_plugindeps_container_test.py"
 }
 
 if [ "${1:-}" = "pip" ]; then shift; pipi "$@"; exit $?; fi

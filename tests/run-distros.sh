@@ -24,6 +24,6 @@ n=$(python3 -c "import os;print(sum(len(f) for _,_,f in os.walk(\"/tmp/pfx\")))"
 python3 tests/pkgnames_check.py
 '
 for img in debian:12 ubuntu:22.04 ubuntu:24.04 fedora:latest archlinux:latest opensuse/tumbleweed alpine:latest; do
-  docker run --rm -v "$root":/repo:ro "$img" sh -c "$probe" 2>&1 || rc=1
+  "$root/tests/retry-on-network.sh" docker run --rm -v "$root":/repo:ro "$img" sh -c "$probe" 2>&1 || rc=1
 done
 exit $rc

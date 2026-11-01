@@ -5,7 +5,7 @@ set -u
 root="$(cd "$(dirname "$0")/.." && pwd)"
 run() { # image channel
   echo "=================== $1  channel=$2"
-  docker run --rm -v "$root":/repo:ro "$1" sh -c \
+  "$root/tests/retry-on-network.sh" docker run --rm -v "$root":/repo:ro "$1" sh -c \
     "apt-get update -qq >/dev/null && apt-get install -y -qq python3 >/dev/null && python3 /repo/tests/qgis_container_test.py $2"
 }
 if [ $# -eq 2 ]; then run "$1" "$2"; exit $?; fi
