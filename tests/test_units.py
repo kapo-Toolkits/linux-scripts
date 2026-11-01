@@ -2375,7 +2375,9 @@ class RetryOnNetwork(unittest.TestCase):
     @unittest.skipUnless(shutil.which("bash"), "needs bash")
     def test_a_mirror_hiccup_is_retried_and_then_passes(self):
         for text in ("W: Some index files failed to download. They have been ignored", "E: Unable to fetch some archives, maybe run apt-get update",
-                     "Err:5 https://mirror/x InRelease", "curl: (28) Operation timed out", "fatal: early EOF", "Hash Sum mismatch"):
+                     "Err:5 https://mirror/x InRelease", "curl: (28) Operation timed out", "fatal: early EOF", "Hash Sum mismatch",
+                     "FAIL apt item lists qgis-common and its origin  [http://deb.debian.org/debian]",
+                     "FAIL qgis candidate comes from qgis.org  [Candidate: 3.40.6+dfsg-1]"):
             with tempfile.TemporaryDirectory() as d:
                 r, runs = self.run_flaky(d, text, 2)
                 self.assertEqual((r.returncode, runs), (0, 3), text)
