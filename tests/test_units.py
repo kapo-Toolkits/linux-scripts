@@ -2390,10 +2390,10 @@ class RetryOnNetwork(unittest.TestCase):
             self.assertEqual((r.returncode, runs), (7, 1))                                # no retry, the original exit code
 
     @unittest.skipUnless(shutil.which("bash"), "needs bash")
-    def test_a_persistent_network_problem_stops_after_three_tries(self):
+    def test_a_persistent_network_problem_stops_after_four_tries(self):
         with tempfile.TemporaryDirectory() as d:
             r, runs = self.run_flaky(d, "Temporary failure resolving 'deb.debian.org'", 99, rc=100)
-            self.assertEqual((r.returncode, runs), (100, 3))
+            self.assertEqual((r.returncode, runs), (100, 4))
 
     @unittest.skipUnless(shutil.which("bash"), "needs bash")
     def test_success_runs_once(self):
