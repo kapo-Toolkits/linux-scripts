@@ -50,6 +50,15 @@ for rid, spec in sorted(requirements.REQ.items()):
         ok = subprocess.run(CHECK[pm](pkg), capture_output=True).returncode == 0
         bad += not ok
         print(("PASS" if ok else "FAIL"), f"req:{rid:10s} -> {pkg}")
+# Flutter: the docs' prerequisites and the optional Linux desktop toolchain (installer/extras.py)
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "installer"))
+import extras  # noqa: E402
+
+for label, table in (("flutter", extras.FLUTTER_PREREQ), ("flutter-linux", extras.FLUTTER_LINUX)):
+    for pkg in table.get(pm, []):
+        ok = subprocess.run(CHECK[pm](pkg), capture_output=True).returncode == 0
+        bad += not ok
+        print(("PASS" if ok else "FAIL"), f"{label:13s} -> {pkg}")
 # the packages that tkinter auto-install and installer/start.sh rely on (a wrong name only shows on that distribution)
 extra = {pkg for mgr, _cmd, pkg in lscommon.TK_PACKAGES if mgr == pm} | set(lscommon.PYTHON_BOOTSTRAP.get(pm, []))
 for pkg in sorted(extra):

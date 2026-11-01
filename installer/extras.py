@@ -30,7 +30,7 @@ X86 = ("amd64", "x86_64")
 
 # ---- the list of "other programs" lives in programs.json next to this file ----
 PROGRAMS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "programs.json")
-KINDS = {"claude", "vscode", "virtualbox", "filee", "codex", "flutter", "dart", "discord", "brave", "etcher", "github", "package"}      # the recipe that installs it
+KINDS = {"claude", "vscode", "virtualbox", "filee", "codex", "flutter", "flutterlinux", "dart", "discord", "brave", "etcher", "github", "package"}      # the recipe that installs it
 NEEDED = {"github": ("display", "repo", "package", "cmd", "asset"), "package": ("display", "cmd")}
 
 
@@ -857,6 +857,85 @@ def flutter_version(dev_dir=None):
         return None
 
 
+# ---- Flutter: the tools for building LINUX DESKTOP apps (not needed for web / Android / the Dart commands) ----
+# docs.flutter.dev/platform-integration/linux/install-linux-on-linux: clang, cmake, ninja, pkg-config, GTK 3 and liblzma headers
+# (+ libstdc++ headers); package names checked in real distributions by tests/pkgnames_check.py
+FLUTTER_LINUX = {
+    "apt-get": ["clang", "cmake", "ninja-build", "pkg-config", "libgtk-3-dev", "liblzma-dev", "libstdc++-12-dev"],
+    "dnf": ["clang", "cmake", "ninja-build", "pkgconf-pkg-config", "gtk3-devel", "xz-devel", "libstdc++-devel"],
+    "pacman": ["clang", "cmake", "ninja", "pkgconf", "gtk3", "xz"],
+    "zypper": ["clang", "cmake", "ninja", "pkg-config", "gtk3-devel", "xz-devel", "libstdc++-devel"]}
+FLUTTER_LINUX_HAS = {"apt-get": 'dpkg -s "$p" >/dev/null 2>&1', "dnf": 'rpm -q "$p" >/dev/null 2>&1',
+                     "zypper": 'rpm -q "$p" >/dev/null 2>&1', "pacman": 'pacman -Q "$p" >/dev/null 2>&1'}
+
+
+def flutter_linux_marker(marker=None):
+    """The packages THIS installer added (they were missing before): only these are removed again."""
+    return os.path.expanduser(marker or os.path.join("~", ".local", "share", "linux-scripts", "flutter-linux.packages"))
+
+
+def flutter_linux_ready(which=shutil.which, run=subprocess.run):
+    """True when the desktop toolchain is there: clang, cmake, ninja, pkg-config and the GTK 3 headers."""
+    if not all(which(c) for c in ("clang", "cmake", "ninja", "pkg-config")):
+        return False
+    try:
+        return run(["pkg-config", "--exists", "gtk+-3.0", "liblzma"], timeout=20).returncode == 0
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def flutter_linux_steps(pm, marker=None):
+    """-> (steps, info) installing only what is missing: [user: write the missing package names to the marker (merged with an
+    earlier one)] + [administrator: install the ones of our own list that the marker names].  [] for an unknown package manager."""
+    names = FLUTTER_LINUX.get(pm)
+    if not names:
+        return [], {"manual": FLUTTER_PAGE}
+    q = shlex.quote
+    mark = flutter_linux_marker(marker)
+    known = " ".join(q(n) for n in names)
+    has = FLUTTER_LINUX_HAS[pm]
+    record = f"""set -eu
+M={q(mark)}
+mkdir -p "$(dirname "$M")"
+touch "$M"
+for p in {known}; do
+  if ! {has}; then grep -qx "$p" "$M" || printf '%s\\n' "$p" >> "$M"; fi
+done
+echo "missing before: $(tr '\\n' ' ' < "$M")"
+"""
+    install = f"""set -eu
+export DEBIAN_FRONTEND=noninteractive
+M={q(mark)}
+want=""
+for p in {known}; do
+  if grep -qx "$p" "$M" 2>/dev/null && ! {has}; then want="$want $p"; fi
+done
+if [ -z "$want" ]; then echo "everything was already installed"; exit 0; fi
+{_INSTALL[pm].format(p="$want")}
+"""
+    return [{"root": False, "sh": record}, {"root": True, "sh": install}], {"packages": names, "pm": pm}
+
+
+def flutter_linux_remove_steps(pm, marker=None):
+    """Removes the packages this installer added (the marker, limited to our own list), then the marker. Nothing else."""
+    names = FLUTTER_LINUX.get(pm)
+    if not names:
+        return []
+    q = shlex.quote
+    mark = flutter_linux_marker(marker)
+    known = " ".join(q(n) for n in names)
+    remove = f"""set -u
+M={q(mark)}
+[ -f "$M" ] || {{ echo "nothing was installed by this installer"; exit 0; }}
+gone=""
+for p in {known}; do
+  grep -qx "$p" "$M" && gone="$gone $p"
+done
+[ -z "$gone" ] || {_REMOVE[pm].format(p="$gone")}
+"""
+    return [{"root": True, "sh": remove}, {"root": False, "sh": f"rm -f {q(mark)}\n"}]
+
+
 # standalone Dart SDK (for Dart without Flutter): Google's apt repository; ONLY the one signing key that is checked is put in the keyring
 DART_KEY_URL = "https://dl-ssl.google.com/linux/linux_signing_key.pub"
 DART_FPR = "EB4C1BFD4F042F6DDDCCEC917721F63BD38B4796"                 # "Google Inc. (Linux Packages Signing Authority)"
@@ -1133,7 +1212,7 @@ NATIVE = {
     "claude": ({"apt-get"}, (*X86, *ARM)), "vscode": ({"apt-get"}, (*X86, *ARM)), "virtualbox": ({"apt-get"}, X86),
     "dart": ({"apt-get"}, (*X86, *ARM)), "discord": ({"apt-get"}, X86), "etcher": ({"apt-get", "dnf", "zypper"}, X86),
     "brave": ({"apt-get", "dnf", "yum", "zypper", "pacman"}, None), "filee": (None, (*X86, *ARM)),
-    "codex": (None, (*X86, *ARM)), "flutter": (None, X86), "github": ({"apt-get"}, None), "package": (None, None)}
+    "codex": (None, (*X86, *ARM)), "flutter": (None, X86), "flutterlinux": ({"apt-get", "dnf", "pacman", "zypper"}, None), "github": ({"apt-get"}, None), "package": (None, None)}
 
 
 def os_release(path="/etc/os-release"):

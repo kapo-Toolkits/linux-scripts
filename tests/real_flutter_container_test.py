@@ -62,6 +62,24 @@ r = sh(extras.dart_remove_steps("apt-get")[0]["sh"])
 check("Dart: removal runs", r.returncode == 0, r.stdout[-200:] + r.stderr[-200:])
 check("Dart: command, repository entry and key are gone", sh("command -v dart").returncode != 0 and not os.path.exists(extras.DART_LIST) and not os.path.exists(extras.DART_KEYRING))
 
+# the optional Linux desktop toolchain: installs only what is missing (git is already here and must stay), `flutter doctor`'s own
+# test for it (pkg-config finds GTK 3), and removal takes back only what the recipe added
+check("Linux tools: not ready on a bare system", not extras.flutter_linux_ready())
+lin_steps, lin_info = extras.flutter_linux_steps("apt-get")
+r = run_steps(lin_steps)
+check("Linux tools: the missing packages install", r.returncode == 0, r.stdout[-200:] + r.stderr[-300:])
+check("Linux tools: clang cmake ninja pkg-config are there", all(sh(f"command -v {c}").returncode == 0 for c in ("clang", "cmake", "ninja", "pkg-config")))
+check("Linux tools: GTK 3 headers are found by pkg-config", sh("pkg-config --exists gtk+-3.0 liblzma").returncode == 0)
+check("Linux tools: the recipe reports it ready", extras.flutter_linux_ready())
+marker = open(extras.flutter_linux_marker()).read().split()
+check("Linux tools: the record names what was added", "clang" in marker and "libgtk-3-dev" in marker, str(marker))
+r = run_steps(extras.flutter_linux_remove_steps("apt-get"))
+check("Linux tools: removal runs", r.returncode == 0, r.stdout[-200:] + r.stderr[-300:])
+check("Linux tools: clang and the GTK headers are gone, the record too",
+      sh("command -v clang").returncode != 0 and sh("dpkg -s libgtk-3-dev >/dev/null 2>&1").returncode != 0
+      and not os.path.exists(extras.flutter_linux_marker()))
+check("Linux tools: unrelated packages (git, curl) stay", sh("command -v git && command -v curl").returncode == 0)
+
 if os.environ.get("FLUTTER_FULL") == "1":
     r = run_steps(steps[1:])
     check("Flutter: space check + download + SHA-256 + unpack + links + first start", r.returncode == 0, r.stdout[-300:] + r.stderr[-500:])

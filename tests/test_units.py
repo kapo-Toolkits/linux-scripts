@@ -1517,6 +1517,89 @@ class AurRoute(unittest.TestCase):
                 self.ex.load_programs(path)
 
 
+class FlutterLinuxTools(unittest.TestCase):
+    """The optional Linux desktop toolchain of Flutter: only what is missing, and removal takes back only that."""
+    ex = Installer.m.extras
+
+    def run_case(self, pm, installed, marker_before=None):
+        """Run the two steps with fake dpkg/rpm/pacman/apt-get/dnf/... in a temp dir; -> (log of package commands, marker text)."""
+        with tempfile.TemporaryDirectory() as d:
+            bin_dir = os.path.join(d, "bin")
+            os.makedirs(bin_dir)
+            log = os.path.join(d, "log")
+            have = os.path.join(d, "have")
+            with open(have, "w") as f:
+                f.write("\n".join(installed) + "\n")
+            for cmd in ("dpkg", "rpm", "pacman", "apt-get", "dnf", "zypper"):
+                with open(os.path.join(bin_dir, cmd), "w") as f:       # -s/-q/-Q <pkg>: is it in 'have'?  anything else: log it
+                    f.write(f'#!/bin/sh\ncase "$1" in -s|-q|-Q) grep -qx "$2" {have}; exit $?;; esac\necho "{cmd} $*" >> {log}\n')
+                os.chmod(os.path.join(bin_dir, cmd), 0o755)
+            mark = os.path.join(d, "home", "flutter-linux.packages")
+            if marker_before is not None:
+                os.makedirs(os.path.dirname(mark))
+                with open(mark, "w") as f:
+                    f.write(marker_before)
+            env = dict(os.environ, PATH=bin_dir + ":" + os.environ["PATH"])
+            steps, info = self.ex.flutter_linux_steps(pm, marker=mark)
+            for st in steps:
+                r = subprocess.run(["sh", "-c", st["sh"]], capture_output=True, text=True, env=env)
+                self.assertEqual(r.returncode, 0, r.stderr)
+            installed_cmds = open(log).read() if os.path.exists(log) else ""
+            marker = open(mark).read()
+            for st in self.ex.flutter_linux_remove_steps(pm, marker=mark):
+                r = subprocess.run(["sh", "-c", st["sh"]], capture_output=True, text=True, env=env)
+                self.assertEqual(r.returncode, 0, r.stderr)
+            removed = open(log).read()[len(installed_cmds):] if os.path.exists(log) else ""
+            return installed_cmds, marker, removed, os.path.exists(mark)
+
+    def test_only_the_missing_packages_are_installed_and_only_those_removed_again(self):
+        names = self.ex.FLUTTER_LINUX["apt-get"]
+        have = ["cmake", "pkg-config", "git"]
+        inst, marker, removed, left = self.run_case("apt-get", have)
+        wanted = [n for n in names if n not in have]
+        self.assertEqual(inst.split(), ["apt-get", "install", "-y"] + wanted)
+        self.assertEqual(marker.split(), wanted)
+        self.assertEqual(removed.split(), ["apt-get", "purge", "-y"] + wanted)       # cmake and pkg-config stay
+        self.assertFalse(left)
+
+    def test_everything_already_there_installs_and_removes_nothing(self):
+        for pm, names in self.ex.FLUTTER_LINUX.items():
+            inst, marker, removed, left = self.run_case(pm, names)
+            self.assertEqual((inst, marker, removed, left), ("", "", "", False), pm)
+
+    def test_a_second_run_keeps_the_record_of_what_this_installer_added(self):
+        inst, marker, removed, _ = self.run_case("pacman", ["clang", "cmake", "ninja", "pkgconf", "gtk3", "xz"], marker_before="clang\nninja\n")
+        self.assertEqual(inst, "")                                   # all there now, but the earlier record stays
+        self.assertEqual(marker.split(), ["clang", "ninja"])
+        self.assertEqual(removed.split(), ["pacman", "-R", "--noconfirm", "clang", "ninja"])
+
+    def test_the_marker_can_never_make_root_touch_a_package_of_ours_only(self):
+        inst, marker, removed, _ = self.run_case("dnf", [], marker_before="bash\nsystemd\nclang\n")
+        self.assertNotIn("bash", inst.split())
+        self.assertNotIn("systemd", removed.split())
+        self.assertIn("clang", inst.split())
+
+    def test_steps_are_one_user_step_then_one_administrator_step(self):
+        for pm in self.ex.FLUTTER_LINUX:
+            steps, info = self.ex.flutter_linux_steps(pm)
+            self.assertEqual([s["root"] for s in steps], [False, True])
+            self.assertEqual(info["packages"], self.ex.FLUTTER_LINUX[pm])
+            for st in steps + self.ex.flutter_linux_remove_steps(pm):
+                self.assertEqual(subprocess.run(["sh", "-n", "-c", st["sh"]], capture_output=True).returncode, 0)
+        self.assertEqual(self.ex.flutter_linux_steps("apk")[0], [])
+        self.assertEqual(self.ex.flutter_linux_remove_steps("apk"), [])
+
+    def test_ready_means_the_tools_and_the_gtk_headers(self):
+        ok = types.SimpleNamespace(returncode=0)
+        self.assertTrue(self.ex.flutter_linux_ready(which=lambda c: "/x", run=lambda *a, **k: ok))
+        self.assertFalse(self.ex.flutter_linux_ready(which=lambda c: None if c == "ninja" else "/x", run=lambda *a, **k: ok))
+        self.assertFalse(self.ex.flutter_linux_ready(which=lambda c: "/x", run=lambda *a, **k: types.SimpleNamespace(returncode=1)))
+
+    def test_it_sits_directly_under_flutter_in_the_list(self):
+        ids = [p["id"] for p in self.ex.PROGRAMS]
+        self.assertEqual(ids[ids.index("flutter") + 1], "flutter-linux")
+
+
 class FlatpakRoute(unittest.TestCase):
     ex = Installer.m.extras
     App = Installer.m.App
@@ -2838,7 +2921,7 @@ class PackagePrograms(unittest.TestCase):
                 self.assertEqual(subprocess.run(["sh", "-n", "-c", steps[0]["sh"]], capture_output=True).returncode, 0)
                 self.assertEqual(self.ex.package_name(app, pm), app)
         self.assertEqual(set(self.ex.PACKAGE_APPS), {"brasero", "xfburn", "k3b", "unrar"})
-        self.assertEqual({x["id"] for x in Installer.m.EXTRAS}, set(self.ex.PACKAGE_APPS) | {"etcher", "brave", "claude", "vscode", "virtualbox", "filee", "codex", "flutter", "dart", "discord"} | set(self.ex.GITHUB_APPS))   # window and logic agree
+        self.assertEqual({x["id"] for x in Installer.m.EXTRAS}, set(self.ex.PACKAGE_APPS) | {"etcher", "brave", "claude", "vscode", "virtualbox", "filee", "codex", "flutter", "flutter-linux", "dart", "discord"} | set(self.ex.GITHUB_APPS))   # window and logic agree
         self.assertEqual({x["id"] for x in Shortcuts.m.TOOLS} >= {i for i in self.ex.PACKAGE_APPS if not PackagePrograms.cli(i)}, True)       # and shortcuts know them
         self.assertIn("apt-get purge -y brasero", self.ex.package_steps("brasero", "apt-get", remove=True)[0]["sh"])
         self.assertIn("pacman -R --noconfirm brasero", self.ex.package_steps("brasero", "pacman", remove=True)[0]["sh"])
