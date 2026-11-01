@@ -2,6 +2,7 @@ name: CI
 
 on:
   push:
+    branches: [main]      # branches are tested once, by their pull request (a push run AND a PR run at the same time hammered qgis.org)
   pull_request:
   workflow_dispatch:
   schedule:
