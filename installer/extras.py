@@ -782,7 +782,8 @@ def flutter_steps(release, arch, pm, missing, cache_dir=None, dev_dir=None, bin_
 mkdir -p {q(d)} {q(dev)}
 need={FLUTTER_MIN_FREE_GB}
 for dir in {q(d)} {q(dev)}; do
-  free=$(df -Pk "$dir" | awk 'NR==2{{print int($4/1048576)}}')
+  set -- $(df -Pk "$dir" | tail -n 1)
+  free=$(( $4 / 1048576 ))
   [ "$free" -ge "$need" ] || {{ echo "only ${{free}} GB free where $dir is - Flutter needs about $need GB (download + unpacked SDK). Free some space and try again." >&2; exit 1; }}
 done
 echo "free space OK"
