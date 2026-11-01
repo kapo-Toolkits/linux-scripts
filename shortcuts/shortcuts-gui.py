@@ -78,6 +78,10 @@ TOOLS = [
      "name": {"en": "ArtCraft Launcher", "ka": "ArtCraft Launcher"},
      "comment": {"en": "ArtCraft launcher", "ka": "ArtCraft-ის გამშვები"},
      "icon": "ai.storyteller.artcraft-launcher", "cats": "Graphics;"},
+    {"id": "codex", "cmd": "codex", "script": "", "file": "codex.desktop", "terminal": True,
+     "name": {"en": "Codex (OpenAI)", "ka": "Codex (OpenAI)"},
+     "comment": {"en": "OpenAI's coding agent in a terminal", "ka": "OpenAI-ის კოდის აგენტი ტერმინალში"},
+     "icon": "utilities-terminal", "cats": "Development;ConsoleOnly;"},
     {"id": "filee", "cmd": "filee", "script": "", "file": "filee.desktop",
      "name": {"en": "Filee", "ka": "Filee"},
      "comment": {"en": "Convert files by dragging them onto a format", "ka": "ფაილების გადაყვანა ფორმატზე გადათრევით"},
@@ -189,7 +193,7 @@ def desktop_dir(run=subprocess.run, home=None):
 def entry_text(tool, exec_line, workdir=None):
     lines = ["[Desktop Entry]", "Type=Application", f"Name={tool['name']['en']}", f"Name[ka]={tool['name']['ka']}",
              f"Comment={tool['comment']['en']}", f"Comment[ka]={tool['comment']['ka']}", f"Exec={exec_line}",
-             f"Icon={tool['icon']}", "Terminal=false", f"Categories={tool['cats']}", f"X-Toolkit-Id={tool['id']}"]
+             f"Icon={tool['icon']}", "Terminal=" + ("true" if tool.get("terminal") else "false"), f"Categories={tool['cats']}", f"X-Toolkit-Id={tool['id']}"]
     if workdir:
         lines.append(f"Path={workdir}")
     return "\n".join(lines) + "\n"

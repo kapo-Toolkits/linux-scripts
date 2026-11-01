@@ -126,6 +126,7 @@ STR = {
  "og_readme": "README ↗", "og_all": "All categories", "og_nodesc": "(no description)", "og_count": "{n} projects",
  "vbox_ask": "Install VirtualBox 7.2?\n\nAdds Oracle's apt repository for your release. The signing key is downloaded over HTTPS and its fingerprint must be\n{fpr}\notherwise nothing is installed. Then apt installs virtualbox-7.2 with dkms and the kernel headers (a few hundred MB), and you are added to the vboxusers group (administrator password).\n\n{notes}",
  "filee_ask": "Install Filee {version}?\n\nDownload: {file} ({mb} MB)\nFrom: {source}\nChecked with SHA-256 before anything runs:\n{sha}\n\nThen Filee's own install.sh runs as YOU (no administrator password): the app goes to ~/.local/share/filee, the filee command to ~/.local/bin, a launcher to your applications menu; on GNOME it also adds Filee's Shell extension.\n\n{notes}",
+ "codex_ask": "Install Codex CLI {version} (OpenAI)?\n\nDownload: {file} ({mb} MB; the program itself is about 3x larger)\nFrom: {source}\nChecked with SHA-256 before anything is unpacked:\n{sha}\n\nInstalled for you only, no administrator password, as:\n{target}\n\n{notes}",
  "repo_url": "Could not open a browser. The project page:\n{url}",
  "upd_nogit": "git is not installed on this computer: updating works without it (Python downloads GitHub's snapshot).",
  "upd_archive": "This copy: GitHub commit {short} (updated without git)\nFolder: {folder}",
@@ -201,6 +202,7 @@ STR = {
  "og_readme": "README ↗", "og_all": "ყველა კატეგორია", "og_nodesc": "(აღწერა არ არის)", "og_count": "{n} პროექტი",
  "vbox_ask": "დავაყენო VirtualBox 7.2?\n\nემატება Oracle-ის apt რეპოზიტორია თქვენი გამოშვებისთვის. ხელმოწერის გასაღები ჩამოიტვირთება HTTPS-ით და მისი თითის ანაბეჭდი უნდა იყოს\n{fpr}\nსაწინააღმდეგო შემთხვევაში არაფერი დაყენდება. მერე apt დააყენებს virtualbox-7.2-ს dkms-თან და ბირთვის ჰედერებთან ერთად (რამდენიმე ასეული MB) და თქვენ დაგამატებთ vboxusers ჯგუფში (ადმინისტრატორის პაროლი).\n\n{notes}",
  "filee_ask": "დავაყენო Filee {version}?\n\nჩამოტვირთვა: {file} ({mb} MB)\nსაიდან: {source}\nსანამ რამე გაეშვება, შემოწმდება SHA-256-ით:\n{sha}\n\nმერე Filee-ს საკუთარი install.sh გაეშვება თქვენი სახელით (ადმინისტრატორის პაროლის გარეშე): აპლიკაცია ~/.local/share/filee-ში მოხვდება, ბრძანება filee — ~/.local/bin-ში, გამშვები — თქვენს აპლიკაციების მენიუში; GNOME-ზე დაემატება Filee-ს Shell გაფართოებაც.\n\n{notes}",
+ "codex_ask": "დავაყენო Codex CLI {version} (OpenAI)?\n\nჩამოტვირთვა: {file} ({mb} MB; თვით პროგრამა დაახლოებით 3-ჯერ დიდია)\nსაიდან: {source}\nსანამ რამე გაიხსნება, შემოწმდება SHA-256-ით:\n{sha}\n\nდაყენდება მხოლოდ თქვენთვის, ადმინისტრატორის პაროლის გარეშე, აქ:\n{target}\n\n{notes}",
  "repo_url": "ბრაუზერის გახსნა ვერ მოხერხდა. პროექტის გვერდი:\n{url}",
  "upd_nogit": "ამ კომპიუტერზე git დაყენებული არ არის: განახლება მის გარეშეც მუშაობს (Python ჩამოტვირთავს GitHub-ის ასლს).",
  "upd_archive": "ეს ასლი: GitHub-ის კომიტი {short} (განახლებულია git-ის გარეშე)\nსაქაღალდე: {folder}",
@@ -632,6 +634,8 @@ class App(tk.Tk):
             return t("yes") if extras.deb_installed(extras.VBOX_PACKAGE, "VBoxManage") else None
         if ex_id == "filee":
             return t("yes") if extras.filee_installed() else None
+        if ex_id == "codex":
+            return extras.codex_version() or (t("yes") if extras.codex_installed() else None)
         if ex_id == "discord":
             return t("yes") if extras.deb_installed("discord", "discord") else None
         if ex_id in extras.GITHUB_APPS:
@@ -714,6 +718,7 @@ class App(tk.Tk):
                     else "Brave: download Brave's install script (HTTPS), show it, run it as administrator after you agree" if ex_id == "brave"
                     else "Claude Desktop: Anthropic's apt repository, key fingerprint checked, apt install claude-desktop" if ex_id == "claude"
                     else "Visual Studio Code: Microsoft's apt repository, key fingerprint checked, apt install code" if ex_id == "vscode"
+                    else "Codex: GitHub release (SHA-256 checked) → ~/.local/bin/codex, no password" if ex_id == "codex"
                     else "Filee: GitHub release (SHA-256 checked) → its own install.sh as you, no password" if ex_id == "filee"
                     else "VirtualBox: Oracle's apt repository, key fingerprint checked, apt install virtualbox-7.2 + dkms" if ex_id == "virtualbox"
                     else "Discord: the publisher's .deb over HTTPS (no checksum published), apt install" if ex_id == "discord"
@@ -791,6 +796,7 @@ class App(tk.Tk):
                         self.vscode_jobs(action) if ex_id == "vscode" else
                         self.virtualbox_jobs(action) if ex_id == "virtualbox" else
                         self.filee_jobs(action) if ex_id == "filee" else
+                        self.codex_jobs(action) if ex_id == "codex" else
                         self.discord_jobs(action) if ex_id == "discord" else
                         self.github_jobs(action, ex_id) if ex_id in extras.GITHUB_APPS else self.package_jobs(action, ex_id))
             if jobs_for is None:
@@ -1501,6 +1507,29 @@ class App(tk.Tk):
             return None
         if not messagebox.askyesno(t("title"), t("filee_ask", version=info["version"], file=info["file"], mb=info["mb"],
                                                   source=info["source"], sha=info["sha256"], notes=info["notes"])):
+            return None
+        return self.steps_to_jobs(steps)
+
+    def codex_jobs(self, action):
+        """Codex CLI: one static binary from GitHub's release, SHA-256 checked, installed for the user as ~/.local/bin/codex."""
+        import platform
+        if action == "uninstall":
+            return self.steps_to_jobs(extras.codex_remove_steps())
+        self.lbl_status.config(text=t("looking"))
+        self.update_idletasks()
+        try:
+            release = extras.codex_release()
+        except Exception as e:  # noqa: BLE001
+            self.lbl_status.config(text=t("note"))
+            messagebox.showwarning(t("title"), t("lookup_fail", e=e))
+            return None
+        self.lbl_status.config(text=t("note"))
+        steps, info = extras.codex_steps(release, platform.machine())
+        if not steps:
+            messagebox.showinfo(t("title"), t("gh_manual", name="Codex", url=info["manual"]))
+            return None
+        if not messagebox.askyesno(t("title"), t("codex_ask", version=info["version"], file=info["file"], mb=info["mb"],
+                                                  source=info["source"], sha=info["sha256"], target=info["target"], notes=info["notes"])):
             return None
         return self.steps_to_jobs(steps)
 

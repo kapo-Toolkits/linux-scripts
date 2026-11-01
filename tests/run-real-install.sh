@@ -20,4 +20,8 @@ done
 echo "=================== Filee on ubuntu:24.04"
 docker run --rm -v "$root":/repo:ro ubuntu:24.04 sh -c \
   "apt-get update -qq >/dev/null && apt-get install -y -qq python3 curl ca-certificates >/dev/null && python3 /repo/tests/real_filee_container_test.py" || rc=1
+# Codex CLI: the real GitHub release (~120 MB): SHA-256 gate, install as ~/.local/bin/codex, --version, upgrade, foreign codex untouched, removal
+echo "=================== Codex on ubuntu:24.04"
+docker run --rm -v "$root":/repo:ro ubuntu:24.04 sh -c \
+  "apt-get update -qq >/dev/null && apt-get install -y -qq python3 curl ca-certificates >/dev/null && python3 /repo/tests/real_codex_container_test.py" || rc=1
 exit "${rc:-0}"

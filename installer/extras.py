@@ -14,6 +14,7 @@ Brasero, Xfburn and K3b (CD/DVD burners) come from the distribution's own reposi
 """
 import json
 import os
+import re
 import shlex
 import shutil
 import subprocess
@@ -29,7 +30,7 @@ X86 = ("amd64", "x86_64")
 
 # ---- the list of "other programs" lives in programs.json next to this file ----
 PROGRAMS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "programs.json")
-KINDS = {"claude", "vscode", "virtualbox", "filee", "discord", "brave", "etcher", "github", "package"}      # the recipe that installs it
+KINDS = {"claude", "vscode", "virtualbox", "filee", "codex", "discord", "brave", "etcher", "github", "package"}      # the recipe that installs it
 NEEDED = {"github": ("display", "repo", "package", "cmd", "asset"), "package": ("display", "cmd")}
 
 
@@ -319,7 +320,7 @@ def version_key(v):
     return tuple(int(x) for x in v.split(".") if x.isdigit())
 
 
-def outdated(installed=installed_version, github=None, etcher=None):
+def outdated(installed=installed_version, github=None, etcher=None, codex=None, codex_have=None):
     """Programs installed from a publisher's GitHub release whose newest release is newer than what is installed.
     -> ([{'id', 'name', 'installed', 'latest'}], [ids that could not be looked up]).  Nothing is downloaded or installed."""
     github = github or github_release
@@ -338,6 +339,14 @@ def outdated(installed=installed_version, github=None, etcher=None):
             continue
         if version_key(latest) > version_key(have):
             found.append({"id": app_id, "name": name, "installed": have, "latest": latest})
+    have = (codex_have or codex_version)()                         # Codex is a plain binary: ask it for its version
+    if have:
+        try:
+            latest = (codex or codex_release)()["version"]
+            if version_key(latest) > version_key(have):
+                found.append({"id": "codex", "name": "Codex", "installed": have, "latest": latest})
+        except Exception:  # noqa: BLE001
+            failed.append("codex")
     return found, failed
 
 
@@ -596,6 +605,103 @@ def filee_installed(data_home=None):
     """True when Filee's own install marker is in place."""
     data = data_home or os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share")
     return os.path.isfile(os.path.join(data, "filee", "application", ".filee-package"))
+
+
+# ---- Codex CLI (https://github.com/openai/codex, Apache-2.0): OpenAI's coding agent for the terminal ----
+# One static Linux binary from the project's GitHub release. Installed for the user (no administrator password) as
+# ~/.local/bin/codex after the SHA-256 of the download matches GitHub's digest for that exact file. A small marker file
+# records that THIS installer put it there, so removal and upgrade never touch a codex that came from npm / brew / a package.
+CODEX_REPO = "openai/codex"
+CODEX_API = f"https://api.github.com/repos/{CODEX_REPO}/releases/latest"
+CODEX_PAGE = "https://github.com/openai/codex#installing-and-running-codex-cli"
+CODEX_MARKER = os.path.join("~", ".local", "share", "linux-scripts", "codex.installed")
+CODEX_NOTES = ("Start it in a terminal (the \"Codex\" shortcut, or the command: codex). First start: sign in with your ChatGPT account "
+               "or an API key - you type that into Codex itself, this installer never sees it. Codex works in the folder you start it in.")
+
+
+def codex_release(fetch=fetch_json):
+    """-> {'tag', 'version', 'assets'}; the tag is 'rust-v0.166.0', the version '0.166.0'."""
+    data = fetch(CODEX_API)
+    assets = {}
+    for a in data.get("assets", []):
+        digest = a.get("digest") or ""
+        assets[a["name"]] = {"url": a["browser_download_url"], "size": int(a.get("size", 0)),
+                             "sha256": digest.split(":", 1)[1] if digest.startswith("sha256:") else ""}
+    tag = data["tag_name"]
+    return {"tag": tag, "version": re.sub(r"^(rust-)?v", "", tag), "assets": assets}
+
+
+def codex_asset(release, arch):
+    """codex-<cpu>-unknown-linux-musl.tar.gz (a static binary, any distribution) with a published SHA-256, or None."""
+    cpu = "x86_64" if arch in X86 else "aarch64" if arch in ("arm64", "aarch64") else None
+    if not cpu:
+        return None
+    name = f"codex-{cpu}-unknown-linux-musl.tar.gz"
+    a = release["assets"].get(name)
+    return dict(a, name=name, cpu=cpu) if a and a["sha256"] else None
+
+
+def codex_steps(release, arch, cache_dir=None, bin_dir=None, marker=None):
+    """-> (steps, info); both steps run as the user. 1: download + SHA-256 gate. 2: unpack, expect exactly the one binary, check
+    it answers --version, install it as ~/.local/bin/codex and write the marker. Refuses to replace a codex this installer
+    did not install (no marker) - remove or rename that one first."""
+    asset = codex_asset(release, arch)
+    if not asset:
+        return [], {"manual": CODEX_PAGE, "version": release["version"]}
+    d = os.path.expanduser(cache_dir or CACHE)
+    q = shlex.quote
+    tar, work = os.path.join(d, asset["name"]), os.path.join(d, "codex-unpacked")
+    target = os.path.join(os.path.expanduser(bin_dir or os.path.join("~", ".local", "bin")), "codex")
+    mark = os.path.expanduser(marker or CODEX_MARKER)
+    inner = f"codex-{asset['cpu']}-unknown-linux-musl"
+    install = f"""set -eu
+trap 'rm -rf {q(work)} {q(tar)}' EXIT
+if [ -e {q(target)} ] || [ -L {q(target)} ]; then
+  [ -f {q(mark)} ] || {{ echo "{target} already exists and was not installed by this installer - remove or rename it first" >&2; exit 1; }}
+fi
+rm -rf {q(work)}; mkdir -p {q(work)}
+tar -xzf {q(tar)} -C {q(work)}
+[ "$(ls -A {q(work)} | wc -l)" = 1 ] && [ -f {q(work)}/{inner} ] || {{ echo "the download does not look like Codex - nothing was installed" >&2; exit 1; }}
+chmod 755 {q(work)}/{inner}
+{q(work)}/{inner} --version | grep -q codex || {{ echo "the downloaded program does not answer like Codex - nothing was installed" >&2; exit 1; }}
+mkdir -p {q(os.path.dirname(target))} {q(os.path.dirname(mark))}
+cp {q(work)}/{inner} {q(target)}.new && mv -f {q(target)}.new {q(target)}
+printf '%s\\n' {q(release['version'])} > {q(mark)}
+echo "Installed $({q(target)} --version) at {target}"
+"""
+    steps = [{"root": False, "sh": download_script(asset, cache_dir)}, {"root": False, "sh": install}]
+    return steps, {"version": release["version"], "file": asset["name"], "mb": round(asset["size"] / 1048576), "url": asset["url"],
+                   "sha256": asset["sha256"], "source": "github.com/" + CODEX_REPO, "notes": CODEX_NOTES, "target": target}
+
+
+def codex_remove_steps(bin_dir=None, marker=None):
+    """Remove ~/.local/bin/codex and the marker - only when the marker says this installer installed it."""
+    target = os.path.join(os.path.expanduser(bin_dir or os.path.join("~", ".local", "bin")), "codex")
+    mark = os.path.expanduser(marker or CODEX_MARKER)
+    q = shlex.quote
+    sh = f"""set -u
+if [ -f {q(mark)} ]; then rm -f {q(target)} {q(mark)}; echo "Codex was removed. Your Codex settings, sign-in and history (~/.codex) were kept."
+elif [ -e {q(target)} ] || command -v codex >/dev/null 2>&1; then echo "Codex is installed another way (npm, brew, a package) - remove it the same way; nothing was changed here."
+else echo "Codex is not installed."; fi
+"""
+    return [{"root": False, "sh": sh}]
+
+
+def codex_version(run=subprocess.run, which=shutil.which, path=None):
+    """'0.166.0' from `codex --version` ('codex-cli 0.166.0'), or None when codex is not installed / does not answer."""
+    exe = path or which("codex") or os.path.expanduser("~/.local/bin/codex")
+    if not os.path.isfile(exe):
+        return None
+    try:
+        r = run([exe, "--version"], capture_output=True, text=True, timeout=20)
+    except Exception:  # noqa: BLE001
+        return None
+    m = re.search(r"(\d+(?:\.\d+)+)", r.stdout) if r.returncode == 0 else None
+    return m.group(1) if m else None
+
+
+def codex_installed(which=shutil.which):
+    return bool(which("codex") or os.path.isfile(os.path.expanduser("~/.local/bin/codex")))
 
 
 # ---- Discord: the publisher's own .deb (https://discord.com/download).  Discord publishes no checksum, so only HTTPS protects it ----
