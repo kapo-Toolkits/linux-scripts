@@ -65,6 +65,22 @@
    ]
   },
   {
+   "id": "codex",
+   "group": "dev",
+   "kind": "codex",
+   "name": {
+    "en": "Codex CLI (OpenAI)",
+    "ka": "Codex CLI (OpenAI)"
+   },
+   "info": {
+    "en": "OpenAI's coding agent for the terminal; one program from GitHub, SHA-256 checked, for you only (no password); sign-in happens inside Codex",
+    "ka": "OpenAI-ის კოდის აგენტი ტერმინალისთვის; ერთი პროგრამა GitHub-იდან, SHA-256 მოწმდება, მხოლოდ თქვენთვის (პაროლის გარეშე); ავტორიზაცია Codex-შივე ხდება"
+   },
+   "data": [
+    "~/.codex"
+   ]
+  },
+  {
    "id": "tabby",
    "group": "dev",
    "kind": "github",

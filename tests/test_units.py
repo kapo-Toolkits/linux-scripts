@@ -2019,6 +2019,140 @@ class Filee(unittest.TestCase):
         self.assertEqual(entry["data"], ["~/.config/Filee", "~/.local/share/Filee"])
 
 
+class Codex(unittest.TestCase):
+    ex = Installer.m.extras
+    TAG = {"tag_name": "rust-v9.9.9", "assets": [
+        {"name": "codex-x86_64-unknown-linux-musl.tar.gz", "browser_download_url": "https://github.com/x/codex-x86_64-unknown-linux-musl.tar.gz", "size": 120 << 20, "digest": "sha256:" + "ab" * 32},
+        {"name": "codex-aarch64-unknown-linux-musl.tar.gz", "browser_download_url": "https://github.com/x/codex-aarch64-unknown-linux-musl.tar.gz", "size": 110 << 20, "digest": "sha256:" + "cd" * 32},
+        {"name": "codex-x86_64-unknown-linux-musl.zst", "browser_download_url": "https://github.com/x/z", "size": 80 << 20, "digest": "sha256:" + "ef" * 32}]}
+
+    def release(self):
+        return self.ex.codex_release(fetch=lambda url: self.TAG)
+
+    def test_tag_prefix_and_the_package_for_this_cpu(self):
+        rel = self.release()
+        self.assertEqual((rel["tag"], rel["version"]), ("rust-v9.9.9", "9.9.9"))
+        self.assertEqual(self.ex.codex_asset(rel, "x86_64")["sha256"], "ab" * 32)
+        self.assertEqual(self.ex.codex_asset(rel, "aarch64")["cpu"], "aarch64")
+        self.assertIsNone(self.ex.codex_asset(rel, "riscv64"))
+        for a in rel["assets"].values():
+            a["sha256"] = ""
+        self.assertIsNone(self.ex.codex_asset(rel, "x86_64"))                      # no digest, no install
+
+    def test_user_level_steps_with_the_gate_first(self):
+        steps, info = self.ex.codex_steps(self.release(), "x86_64")
+        self.assertEqual([x["root"] for x in steps], [False, False])
+        self.assertLess(steps[0]["sh"].index("sha256sum -c"), steps[0]["sh"].index("mv "))
+        self.assertIn("--proto '=https'", steps[0]["sh"])
+        for st in steps:
+            self.assertEqual(subprocess.run(["sh", "-n", "-c", st["sh"]], capture_output=True).returncode, 0)
+        self.assertEqual((info["sha256"], info["source"]), ("ab" * 32, "github.com/openai/codex"))
+        self.assertEqual(self.ex.codex_steps(self.release(), "i386")[0], [])
+
+    def setup_case(self, d, binary="#!/bin/sh\necho codex-cli 9.9.9\n", extra_file=False, existing=None, marker=False):
+        cache, bindir = os.path.join(d, "cache"), os.path.join(d, "home", ".local", "bin")
+        mark = os.path.join(d, "home", ".local", "share", "linux-scripts", "codex.installed")
+        src = os.path.join(d, "src")
+        os.makedirs(src)
+        os.makedirs(cache)
+        with open(os.path.join(src, "codex-x86_64-unknown-linux-musl"), "w") as f:
+            f.write(binary)
+        os.chmod(os.path.join(src, "codex-x86_64-unknown-linux-musl"), 0o755)
+        if extra_file:
+            open(os.path.join(src, "surprise"), "w").write("x")
+        tar = os.path.join(cache, "codex-x86_64-unknown-linux-musl.tar.gz")
+        subprocess.run(["tar", "-czf", tar, "-C", src] + sorted(os.listdir(src)), check=True)
+        if existing is not None:
+            os.makedirs(bindir)
+            with open(os.path.join(bindir, "codex"), "w") as f:
+                f.write(existing)
+        if marker:
+            os.makedirs(os.path.dirname(mark))
+            open(mark, "w").write("1.0.0\n")
+        steps, _ = self.ex.codex_steps(self.release(), "x86_64", cache_dir=cache, bin_dir=bindir, marker=mark)
+        r = subprocess.run(["sh", "-c", steps[1]["sh"]], capture_output=True, text=True)
+        return r, tar, os.path.join(bindir, "codex"), mark
+
+    def test_install_puts_the_binary_in_place_and_cleans_up(self):
+        with tempfile.TemporaryDirectory() as d:
+            r, tar, target, mark = self.setup_case(d)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertTrue(os.access(target, os.X_OK))
+            self.assertEqual(open(mark).read().strip(), "9.9.9")
+            self.assertFalse(os.path.exists(tar))                                   # the 120 MB download is removed
+            self.assertIn("codex-cli 9.9.9", r.stdout)
+
+    def test_upgrade_over_its_own_install_is_allowed(self):
+        with tempfile.TemporaryDirectory() as d:
+            r, tar, target, mark = self.setup_case(d, existing="#!/bin/sh\necho old\n", marker=True)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertIn("9.9.9", subprocess.run([target, "--version"], capture_output=True, text=True).stdout)
+
+    def test_a_codex_from_elsewhere_is_never_replaced(self):
+        with tempfile.TemporaryDirectory() as d:
+            r, tar, target, mark = self.setup_case(d, existing="#!/bin/sh\necho from-npm\n")
+            self.assertNotEqual(r.returncode, 0)
+            self.assertIn("not installed by this installer", r.stderr)
+            self.assertEqual(open(target).read(), "#!/bin/sh\necho from-npm\n")
+            self.assertFalse(os.path.exists(mark))
+            self.assertFalse(os.path.exists(tar))
+
+    def test_wrong_contents_are_refused(self):
+        with tempfile.TemporaryDirectory() as d:
+            r, tar, target, mark = self.setup_case(d, extra_file=True)
+            self.assertNotEqual(r.returncode, 0)
+            self.assertIn("does not look like Codex", r.stderr)
+            self.assertFalse(os.path.exists(target))
+        with tempfile.TemporaryDirectory() as d:
+            r, tar, target, mark = self.setup_case(d, binary="#!/bin/sh\necho something else\n")
+            self.assertNotEqual(r.returncode, 0)
+            self.assertIn("does not answer like Codex", r.stderr)
+            self.assertFalse(os.path.exists(target))
+
+    def test_removal_only_touches_what_this_installer_put_there(self):
+        with tempfile.TemporaryDirectory() as d:
+            bindir, mark = os.path.join(d, "bin"), os.path.join(d, "share", "codex.installed")
+            os.makedirs(bindir)
+            os.makedirs(os.path.dirname(mark))
+            os.makedirs(os.path.join(d, ".codex"))
+            target = os.path.join(bindir, "codex")
+            open(target, "w").write("x")
+            sh = self.ex.codex_remove_steps(bin_dir=bindir, marker=mark)[0]["sh"]
+            r = subprocess.run(["sh", "-c", sh], capture_output=True, text=True)
+            self.assertIn("another way", r.stdout)
+            self.assertTrue(os.path.exists(target))                                 # no marker: not ours, untouched
+            open(mark, "w").write("1\n")
+            r = subprocess.run(["sh", "-c", sh], capture_output=True, text=True)
+            self.assertFalse(os.path.exists(target) or os.path.exists(mark))
+            self.assertIn("~/.codex", r.stdout)
+            self.assertTrue(os.path.isdir(os.path.join(d, ".codex")))               # sign-in and history stay
+
+    def test_version_and_update_check(self):
+        ok = types.SimpleNamespace(returncode=0, stdout="codex-cli 0.166.0\n")
+        with tempfile.TemporaryDirectory() as d:
+            exe = os.path.join(d, "codex")
+            open(exe, "w").write("x")
+            self.assertEqual(self.ex.codex_version(run=lambda *a, **k: ok, path=exe), "0.166.0")
+            self.assertIsNone(self.ex.codex_version(run=lambda *a, **k: types.SimpleNamespace(returncode=1, stdout=""), path=exe))
+        self.assertIsNone(self.ex.codex_version(path="/nonexistent/codex"))
+        found, failed = self.ex.outdated(installed=lambda p: None, codex=lambda: {"version": "0.170.0"}, codex_have=lambda: "0.166.0")
+        self.assertEqual([(x["id"], x["installed"], x["latest"]) for x in found], [("codex", "0.166.0", "0.170.0")])
+        found, failed = self.ex.outdated(installed=lambda p: None, codex=lambda: {"version": "0.166.0"}, codex_have=lambda: "0.166.0")
+        self.assertEqual(found, [])
+        found, failed = self.ex.outdated(installed=lambda p: None, codex=lambda: {"version": "9"}, codex_have=lambda: None)
+        self.assertEqual((found, failed), ([], []))                                  # not installed: not asked about
+
+    def test_registry_shortcut_opens_a_terminal_and_the_sign_in_folder_is_offered(self):
+        entry = next(p for p in self.ex.PROGRAMS if p["id"] == "codex")
+        self.assertEqual((entry["kind"], entry["group"], entry["data"]), ("codex", "dev", ["~/.codex"]))
+        tool = next(x for x in Shortcuts.m.TOOLS if x["id"] == "codex")
+        text = Shortcuts.m.entry_text(tool, "/home/u/.local/bin/codex")
+        self.assertIn("Terminal=true", text)
+        self.assertIn("Exec=/home/u/.local/bin/codex", text)
+        other = Shortcuts.m.entry_text(next(x for x in Shortcuts.m.TOOLS if x["id"] == "filee"), "/x/filee")
+        self.assertIn("Terminal=false", other)
+
+
 class ClaudeDesktop(unittest.TestCase):
     ex = Installer.m.extras
 
@@ -2277,7 +2411,7 @@ class PackagePrograms(unittest.TestCase):
                 self.assertEqual(subprocess.run(["sh", "-n", "-c", steps[0]["sh"]], capture_output=True).returncode, 0)
                 self.assertEqual(self.ex.package_name(app, pm), app)
         self.assertEqual(set(self.ex.PACKAGE_APPS), {"brasero", "xfburn", "k3b", "unrar"})
-        self.assertEqual({x["id"] for x in Installer.m.EXTRAS}, set(self.ex.PACKAGE_APPS) | {"etcher", "brave", "claude", "vscode", "virtualbox", "filee", "discord"} | set(self.ex.GITHUB_APPS))   # window and logic agree
+        self.assertEqual({x["id"] for x in Installer.m.EXTRAS}, set(self.ex.PACKAGE_APPS) | {"etcher", "brave", "claude", "vscode", "virtualbox", "filee", "codex", "discord"} | set(self.ex.GITHUB_APPS))   # window and logic agree
         self.assertEqual({x["id"] for x in Shortcuts.m.TOOLS} >= {i for i in self.ex.PACKAGE_APPS if not PackagePrograms.cli(i)}, True)       # and shortcuts know them
         self.assertIn("apt-get purge -y brasero", self.ex.package_steps("brasero", "apt-get", remove=True)[0]["sh"])
         self.assertIn("pacman -R --noconfirm brasero", self.ex.package_steps("brasero", "pacman", remove=True)[0]["sh"])
