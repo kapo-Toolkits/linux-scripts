@@ -127,6 +127,11 @@ STR = {
  "vbox_ask": "Install VirtualBox 7.2?\n\nAdds Oracle's apt repository for your release. The signing key is downloaded over HTTPS and its fingerprint must be\n{fpr}\notherwise nothing is installed. Then apt installs virtualbox-7.2 with dkms and the kernel headers (a few hundred MB), and you are added to the vboxusers group (administrator password).\n\n{notes}",
  "filee_ask": "Install Filee {version}?\n\nDownload: {file} ({mb} MB)\nFrom: {source}\nChecked with SHA-256 before anything runs:\n{sha}\n\nThen Filee's own install.sh runs as YOU (no administrator password): the app goes to ~/.local/share/filee, the filee command to ~/.local/bin, a launcher to your applications menu; on GNOME it also adds Filee's Shell extension.\n\n{notes}",
  "codex_ask": "Install Codex CLI {version} (OpenAI)?\n\nDownload: {file} ({mb} MB; the program itself is about 3x larger)\nFrom: {source}\nChecked with SHA-256 before anything is unpacked:\n{sha}\n\nInstalled for you only, no administrator password, as:\n{target}\n\n{notes}",
+ "flutter_ask": "Install the Flutter SDK {version} (with Dart {dart})?\n\nDownload: {file} ({gb} GB)\nFrom: {source} (Google's release manifest)\nChecked with SHA-256 before anything is unpacked:\n{sha}\n\nSDK folder (yours, no administrator rights): {sdk}\nThe commands flutter and dart are linked into ~/.local/bin; no shell file is edited.\nDisk space: about {free} GB must be free.\n\n{pre}\n\n{notes}",
+ "flutter_pre_yes": "Prerequisites from the Flutter docs are installed first from your distribution (administrator password, once): {pkgs}",
+ "flutter_pre_no": "All prerequisites from the Flutter docs (curl, git, unzip, xz, zip, GLU) are already installed.",
+ "flutter_noprereq": "Flutter needs these tools, which are missing: {missing}\n\nThis system's package manager is not known here. Install them (see {url}) and try again.",
+ "dart_ask": "Install the standalone Dart SDK?\n\n(Flutter already includes Dart - only choose this for Dart without Flutter.)\nAdds Google's apt repository. The signing key file is downloaded over HTTPS and must contain the key with fingerprint\n{fpr}\notherwise nothing is installed; only that one key is kept. Then apt installs 'dart' (administrator password).",
  "repo_url": "Could not open a browser. The project page:\n{url}",
  "upd_nogit": "git is not installed on this computer: updating works without it (Python downloads GitHub's snapshot).",
  "upd_archive": "This copy: GitHub commit {short} (updated without git)\nFolder: {folder}",
@@ -203,6 +208,11 @@ STR = {
  "vbox_ask": "დავაყენო VirtualBox 7.2?\n\nემატება Oracle-ის apt რეპოზიტორია თქვენი გამოშვებისთვის. ხელმოწერის გასაღები ჩამოიტვირთება HTTPS-ით და მისი თითის ანაბეჭდი უნდა იყოს\n{fpr}\nსაწინააღმდეგო შემთხვევაში არაფერი დაყენდება. მერე apt დააყენებს virtualbox-7.2-ს dkms-თან და ბირთვის ჰედერებთან ერთად (რამდენიმე ასეული MB) და თქვენ დაგამატებთ vboxusers ჯგუფში (ადმინისტრატორის პაროლი).\n\n{notes}",
  "filee_ask": "დავაყენო Filee {version}?\n\nჩამოტვირთვა: {file} ({mb} MB)\nსაიდან: {source}\nსანამ რამე გაეშვება, შემოწმდება SHA-256-ით:\n{sha}\n\nმერე Filee-ს საკუთარი install.sh გაეშვება თქვენი სახელით (ადმინისტრატორის პაროლის გარეშე): აპლიკაცია ~/.local/share/filee-ში მოხვდება, ბრძანება filee — ~/.local/bin-ში, გამშვები — თქვენს აპლიკაციების მენიუში; GNOME-ზე დაემატება Filee-ს Shell გაფართოებაც.\n\n{notes}",
  "codex_ask": "დავაყენო Codex CLI {version} (OpenAI)?\n\nჩამოტვირთვა: {file} ({mb} MB; თვით პროგრამა დაახლოებით 3-ჯერ დიდია)\nსაიდან: {source}\nსანამ რამე გაიხსნება, შემოწმდება SHA-256-ით:\n{sha}\n\nდაყენდება მხოლოდ თქვენთვის, ადმინისტრატორის პაროლის გარეშე, აქ:\n{target}\n\n{notes}",
+ "flutter_ask": "დავაყენო Flutter SDK {version} (Dart {dart}-ით)?\n\nჩამოტვირთვა: {file} ({gb} GB)\nსაიდან: {source} (Google-ის გამოშვებების მანიფესტი)\nსანამ რამე გაიხსნება, შემოწმდება SHA-256-ით:\n{sha}\n\nSDK-ს საქაღალდე (თქვენია, ადმინისტრატორის უფლებების გარეშე): {sdk}\nბრძანებები flutter და dart ~/.local/bin-ში დაიკავშირება; shell-ის ფაილები არ იცვლება.\nადგილი დისკზე: დაახლოებით {free} GB უნდა იყოს თავისუფალი.\n\n{pre}\n\n{notes}",
+ "flutter_pre_yes": "ჯერ დაყენდება Flutter-ის დოკუმენტაციის წინაპირობები თქვენი დისტრიბუციიდან (ადმინისტრატორის პაროლი, ერთხელ): {pkgs}",
+ "flutter_pre_no": "Flutter-ის დოკუმენტაციის ყველა წინაპირობა (curl, git, unzip, xz, zip, GLU) უკვე დაყენებულია.",
+ "flutter_noprereq": "Flutter-ს ეს ხელსაწყოები სჭირდება და აკლია: {missing}\n\nამ სისტემის პაკეტ-მენეჯერი აქ უცნობია. დააყენეთ ისინი ({url}) და სცადეთ ხელახლა.",
+ "dart_ask": "დავაყენო ცალკე Dart SDK?\n\n(Flutter-ში Dart უკვე შედის — ეს აირჩიეთ მხოლოდ Dart-ისთვის Flutter-ის გარეშე.)\nემატება Google-ის apt რეპოზიტორია. ხელმოწერის გასაღებების ფაილი ჩამოიტვირთება HTTPS-ით და უნდა შეიცავდეს გასაღებს თითის ანაბეჭდით\n{fpr}\nსაწინააღმდეგო შემთხვევაში არაფერი დაყენდება; ინახება მხოლოდ ეს ერთი გასაღები. მერე apt დააყენებს 'dart'-ს (ადმინისტრატორის პაროლი).",
  "repo_url": "ბრაუზერის გახსნა ვერ მოხერხდა. პროექტის გვერდი:\n{url}",
  "upd_nogit": "ამ კომპიუტერზე git დაყენებული არ არის: განახლება მის გარეშეც მუშაობს (Python ჩამოტვირთავს GitHub-ის ასლს).",
  "upd_archive": "ეს ასლი: GitHub-ის კომიტი {short} (განახლებულია git-ის გარეშე)\nსაქაღალდე: {folder}",
@@ -634,6 +644,10 @@ class App(tk.Tk):
             return t("yes") if extras.deb_installed(extras.VBOX_PACKAGE, "VBoxManage") else None
         if ex_id == "filee":
             return t("yes") if extras.filee_installed() else None
+        if ex_id == "flutter":
+            return extras.flutter_version() or (t("yes") if extras.flutter_installed() else None)
+        if ex_id == "dart":
+            return t("yes") if extras.deb_installed("dart") else None
         if ex_id == "codex":
             return extras.codex_version() or (t("yes") if extras.codex_installed() else None)
         if ex_id == "discord":
@@ -718,6 +732,8 @@ class App(tk.Tk):
                     else "Brave: download Brave's install script (HTTPS), show it, run it as administrator after you agree" if ex_id == "brave"
                     else "Claude Desktop: Anthropic's apt repository, key fingerprint checked, apt install claude-desktop" if ex_id == "claude"
                     else "Visual Studio Code: Microsoft's apt repository, key fingerprint checked, apt install code" if ex_id == "vscode"
+                    else "Flutter: prerequisites (only if missing) → Google's archive, SHA-256 checked → ~/development/flutter" if ex_id == "flutter"
+                    else "Dart SDK: Google's apt repository, key fingerprint checked, apt install dart" if ex_id == "dart"
                     else "Codex: GitHub release (SHA-256 checked) → ~/.local/bin/codex, no password" if ex_id == "codex"
                     else "Filee: GitHub release (SHA-256 checked) → its own install.sh as you, no password" if ex_id == "filee"
                     else "VirtualBox: Oracle's apt repository, key fingerprint checked, apt install virtualbox-7.2 + dkms" if ex_id == "virtualbox"
@@ -797,6 +813,8 @@ class App(tk.Tk):
                         self.virtualbox_jobs(action) if ex_id == "virtualbox" else
                         self.filee_jobs(action) if ex_id == "filee" else
                         self.codex_jobs(action) if ex_id == "codex" else
+                        self.flutter_jobs(action) if ex_id == "flutter" else
+                        self.dart_jobs(action) if ex_id == "dart" else
                         self.discord_jobs(action) if ex_id == "discord" else
                         self.github_jobs(action, ex_id) if ex_id in extras.GITHUB_APPS else self.package_jobs(action, ex_id))
             if jobs_for is None:
@@ -1530,6 +1548,50 @@ class App(tk.Tk):
             return None
         if not messagebox.askyesno(t("title"), t("codex_ask", version=info["version"], file=info["file"], mb=info["mb"],
                                                   source=info["source"], sha=info["sha256"], target=info["target"], notes=info["notes"])):
+            return None
+        return self.steps_to_jobs(steps)
+
+    def flutter_jobs(self, action):
+        """Flutter SDK (with Dart): prerequisites (one administrator step, only if something is missing), then Google's archive."""
+        import platform
+        if action == "uninstall":
+            return self.steps_to_jobs(extras.flutter_remove_steps())
+        pm = detect_pm()
+        missing = extras.flutter_missing()
+        if missing and pm not in extras.FLUTTER_PREREQ:
+            messagebox.showwarning(t("title"), t("flutter_noprereq", missing=", ".join(missing), url=extras.FLUTTER_PAGE))
+            return None
+        self.lbl_status.config(text=t("looking"))
+        self.update_idletasks()
+        try:
+            release = extras.flutter_release()
+        except Exception as e:  # noqa: BLE001
+            self.lbl_status.config(text=t("note"))
+            messagebox.showwarning(t("title"), t("lookup_fail", e=e))
+            return None
+        self.lbl_status.config(text=t("note"))
+        steps, info = extras.flutter_steps(release, platform.machine(), pm, missing)
+        if not steps:
+            messagebox.showinfo(t("title"), t("gh_manual", name="Flutter", url=info["manual"]))
+            return None
+        pre = (t("flutter_pre_yes", pkgs=info["prereq"]) if info["prereq"] else t("flutter_pre_no"))
+        if not messagebox.askyesno(t("title"), t("flutter_ask", version=info["version"], dart=info["dart"], file=info["file"],
+                                                  gb=f"{info['mb'] / 1024:.1f}", source=info["source"], sha=info["sha256"], sdk=info["sdk"],
+                                                  pre=pre, free=info["min_gb"], notes=info["notes"])):
+            return None
+        return self.steps_to_jobs(steps)
+
+    def dart_jobs(self, action):
+        import platform
+        pm = detect_pm()
+        if action == "uninstall":
+            steps = extras.dart_remove_steps(pm)
+        else:
+            steps, info = extras.dart_steps(pm, platform.machine())
+            if steps and not messagebox.askyesno(t("title"), t("dart_ask", fpr=info["fingerprint"])):
+                return None
+        if not steps:
+            messagebox.showinfo(t("title"), t("gh_manual", name="Dart", url=extras.DART_PAGE))
             return None
         return self.steps_to_jobs(steps)
 
