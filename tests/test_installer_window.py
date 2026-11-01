@@ -113,6 +113,129 @@ class Window(unittest.TestCase):
         finally:
             app.destroy()
 
+    def row_of(self, app, name):
+        """(checkbox widget, state text, description text) of a program row in the 'other programs' list."""
+        kids = app.f_extra.winfo_children()
+        for i, w in enumerate(kids):
+            if w.winfo_class() == "TCheckbutton" and w.cget("text") == name:
+                return w, kids[i + 1].cget("text"), kids[i + 2].cget("text")
+        self.fail(f"no row {name}")
+
+    def test_the_list_says_what_this_system_can_install(self):
+        osr = {"PRETTY_NAME": "Manjaro Linux", "ID": "manjaro", "ID_LIKE": "arch"}
+        with mock.patch.object(gui, "detect_pm", lambda: "pacman"), mock.patch("platform.machine", lambda: "x86_64"), \
+                mock.patch.object(gui.extras, "os_release", lambda *a: osr), \
+                mock.patch.object(gui.extras, "aur_installed", lambda p: None), \
+                mock.patch.object(gui.extras, "flatpak_scopes", lambda i: set()), \
+                mock.patch.object(gui.extras.shutil, "which", lambda c: None):
+            app = gui.App()
+            try:
+                self.pump(app)
+                self.assertEqual(app.lbl_sys.cget("text"), "This system: Manjaro Linux - pacman, x86_64")
+                box, state, info = self.row_of(app, "Claude Desktop (beta)")
+                self.assertEqual(state, gui.t("na"))
+                self.assertTrue(box.instate(["disabled"]))
+                self.assertIn("Debian / Ubuntu / Mint", info)
+                box, state, info = self.row_of(app, "Tabby")
+                self.assertEqual(state, "AUR")
+                self.assertFalse(box.instate(["disabled"]))
+                self.assertIn("AUR", info)
+                self.assertEqual(self.row_of(app, "Discord")[1], "Flatpak")
+                self.assertEqual(self.row_of(app, "Brave Browser")[1], gui.t("none"))
+                app.toggle_lang()
+                self.pump(app)
+                self.assertEqual(self.row_of(app, next(x for x in gui.EXTRAS if x["id"] == "claude")["name"]["ka"])[1], gui.t("na"))
+                self.assertIn("ეს სისტემა", app.lbl_sys.cget("text"))
+            finally:
+                gui.save_lang("en")
+                app.destroy()
+
+    def test_a_program_that_is_installed_can_still_be_removed_where_nothing_new_installs(self):
+        with mock.patch.object(gui, "detect_pm", lambda: "dnf"), mock.patch("platform.machine", lambda: "x86_64"), \
+                mock.patch.object(gui.App, "ex_native_state", lambda self, i: "1.2" if i == "claude" else None):
+            app = gui.App()
+            try:
+                self.pump(app)
+                box, state, _ = self.row_of(app, "Claude Desktop (beta)")
+                self.assertEqual(state, "1.2")
+                self.assertFalse(box.instate(["disabled"]))
+            finally:
+                app.destroy()
+
+    def test_aur_install_shows_the_pkgbuild_and_builds_only_after_yes(self):
+        info = {"dir": "/c/aur/tabby-bin", "meta": {"Version": "1-1", "Maintainer": "m", "NumVotes": 3},
+                "files": {"PKGBUILD": "pkgname=tabby-bin\n"}, "sha256": "f" * 64}
+        with mock.patch.object(gui, "detect_pm", lambda: "pacman"), mock.patch("platform.machine", lambda: "x86_64"), \
+                mock.patch.object(gui.extras, "aur_fetch", lambda pkg: info), mock.patch.object(gui.extras, "aur_installed", lambda p: None), \
+                mock.patch.object(gui, "elevate", lambda cmd: ["pkexec"] + cmd), mock.patch.object(gui.extras.shutil, "which", lambda c: None), \
+                mock.patch.object(gui.os, "geteuid", lambda: 1000):
+            app = gui.App()
+            try:
+                self.pump(app)
+                with mock.patch.object(gui.App, "confirm_aur", lambda self, name, pkg, i: False):
+                    self.assertEqual(app.aur_jobs("install", "tabby"), (True, None))
+                shown = {}
+                with mock.patch.object(gui.App, "confirm_aur", lambda self, name, pkg, i: shown.update(name=name, pkg=pkg) or True):
+                    handled, jobs = app.aur_jobs("install", "tabby")
+                self.assertTrue(handled)
+                self.assertEqual(shown, {"name": "Tabby", "pkg": "tabby-bin"})
+                self.assertEqual([j[0] == "pkexec" for j in jobs], [True, False, True, False])
+                self.assertEqual(app.aur_jobs("install", "brave"), (False, []))          # no AUR entry: the normal route
+                with mock.patch.object(gui.os, "geteuid", lambda: 0):                    # makepkg refuses root: say so, build nothing
+                    self.assertEqual(app.aur_jobs("install", "tabby"), (True, None))
+                self.assertEqual(self.msgs[-1][0], "warn")
+                with mock.patch.object(gui.extras, "aur_installed", lambda p: "1-1"):
+                    handled, jobs = app.aur_jobs("uninstall", "tabby")
+                self.assertTrue(handled)
+                self.assertIn("pacman -R --noconfirm tabby-bin", jobs[0][-1])
+            finally:
+                app.destroy()
+
+    def test_aur_is_never_used_where_flathub_or_the_publisher_already_serve(self):
+        with mock.patch.object(gui, "detect_pm", lambda: "apt-get"), mock.patch("platform.machine", lambda: "x86_64"):
+            app = gui.App()
+            try:
+                self.pump(app)
+                self.assertEqual(app.aur_jobs("install", "tabby"), (False, []))
+                self.assertEqual(app.aur_jobs("install", "discord"), (False, []))
+            finally:
+                app.destroy()
+
+    def test_the_review_window_shows_the_pkgbuild_and_the_answer_is_the_button(self):
+        info = {"meta": {"Version": "1-1", "Maintainer": "m", "NumVotes": 3, "OutOfDate": 1700000000},
+                "files": {"PKGBUILD": "pkgname=tabby-bin\n", "x.install": "post_install() { :; }\n"}, "sha256": "f" * 64}
+        app = gui.App()
+        try:
+            self.pump(app)
+            seen = {}
+
+            def press(button_text):
+                def fake_wait(win):
+                    texts = [w for w in win.winfo_children()]
+
+                    def find(widget, cls):
+                        for c in widget.winfo_children():
+                            if c.winfo_class() == cls:
+                                return c
+                            hit = find(c, cls)
+                            if hit:
+                                return hit
+                    seen["head"] = [w.cget("text") for w in texts if w.winfo_class() == "TLabel"][0]
+                    seen["body"] = find(win, "Text").get("1.0", "end")
+                    bar = [w for w in texts if w.winfo_class() == "TFrame"][0]
+                    next(b for b in bar.winfo_children() if b.cget("text") == gui.t(button_text)).invoke()
+                return fake_wait
+            with mock.patch.object(app, "wait_window", press("aur_install")):
+                self.assertTrue(app.confirm_aur("Tabby", "tabby-bin", info))
+            self.assertIn("pkgname=tabby-bin", seen["body"])
+            self.assertIn("post_install", seen["body"])
+            self.assertIn("OUT OF DATE", seen["head"])
+            self.assertIn("f" * 64, seen["head"])
+            with mock.patch.object(app, "wait_window", press("aur_cancel")):
+                self.assertFalse(app.confirm_aur("Tabby", "tabby-bin", info))
+        finally:
+            app.destroy()
+
     def test_groups_headings_are_shown(self):
         app = gui.App()
         try:

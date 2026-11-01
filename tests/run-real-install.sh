@@ -29,4 +29,9 @@ echo "=================== Codex on ubuntu:24.04"
 echo "=================== Flutter prerequisites + Dart on ubuntu:24.04"
 "$root/tests/retry-on-network.sh" docker run --rm ${FLUTTER_FULL:+-e FLUTTER_FULL=1} -v "$root":/repo:ro ubuntu:24.04 sh -c \
   "apt-get update -qq >/dev/null && apt-get install -y -qq python3 >/dev/null && python3 /repo/tests/real_flutter_container_test.py" || rc=1
+# AUR (Arch, Manjaro ...): the real AUR - our package names exist, and a package is fetched, built by makepkg as a normal user
+# (dependencies through PACMAN_AUTH), installed with pacman -U and removed again
+echo "=================== AUR on archlinux:latest"
+"$root/tests/retry-on-network.sh" docker run --rm -v "$root":/repo:ro archlinux:latest sh -c \
+  "pacman -Syu --noconfirm --quiet python >/dev/null && python3 /repo/tests/real_aur_container_test.py" || rc=1
 exit "${rc:-0}"

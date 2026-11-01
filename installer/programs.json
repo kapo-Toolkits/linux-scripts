@@ -120,6 +120,7 @@
    "id": "tabby",
    "group": "dev",
    "kind": "github",
+   "aur": "tabby-bin",
    "name": {
     "en": "Tabby",
     "ka": "Tabby"
@@ -205,6 +206,7 @@
    "id": "etcher",
    "group": "disk",
    "kind": "etcher",
+   "aur": "etcher-bin",
    "name": {
     "en": "balenaEtcher",
     "ka": "balenaEtcher"
@@ -314,6 +316,7 @@
    "id": "winboat",
    "group": "more",
    "kind": "github",
+   "aur": "winboat-bin",
    "name": {
     "en": "WinBoat",
     "ka": "WinBoat"

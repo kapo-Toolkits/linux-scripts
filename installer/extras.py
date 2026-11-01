@@ -54,6 +54,8 @@ def load_programs(path=None):
         for key in NEEDED.get(p["kind"], ()):
             if not p.get(key):
                 raise ValueError(f"programs.json: {i}: kind {p['kind']} needs '{key}'")
+        if "aur" in p and not re.fullmatch(r"[a-z0-9][a-z0-9@._+-]*", str(p["aur"])):
+            raise ValueError(f"programs.json: {i}: 'aur' must be an AUR package name ({p['aur']})")
         for d in p.get("data", []):
             if not d.startswith("~/") or ".." in d:
                 raise ValueError(f"programs.json: {i}: data paths must start with ~/ and stay inside it ({d})")
@@ -66,6 +68,7 @@ GITHUB_APPS = {p["id"]: {"name": p["display"], "repo": p["repo"], "package": p["
 PACKAGE_APPS = {p["id"]: {"cmd": p["cmd"], "name": p["display"], "fallback": p.get("fallback", {})}
                 for p in PROGRAMS if p["kind"] == "package"}
 FLATPAK_IDS = {p["id"]: p["flatpak"] for p in PROGRAMS if p.get("flatpak")}
+AUR_IDS = {p["id"]: p["aur"] for p in PROGRAMS if p.get("aur")}
 DATA_DIRS = {p["id"]: p.get("data", []) for p in PROGRAMS}
 
 
@@ -1120,6 +1123,170 @@ def flatpak_steps(app_id, pm, have_flatpak, remove_scopes=None):
     steps.append({"root": False, "sh": f"set -eu\nflatpak remote-add --user --if-not-exists flathub {q(FLATHUB_REPO)}\n"
                                        f"flatpak install -y --user flathub {q(fid)}\n"})
     return steps, {"id": fid, "needs_flatpak": not have_flatpak, "source": "flathub.org"}
+
+
+# ---- what can be installed on THIS system, and how ----
+ARM = ("arm64", "aarch64")
+# the recipe of each kind: (package managers it works with, None = any; CPUs it works on, None = any) - tests/test_units.py
+# checks this table against the recipes themselves
+NATIVE = {
+    "claude": ({"apt-get"}, (*X86, *ARM)), "vscode": ({"apt-get"}, (*X86, *ARM)), "virtualbox": ({"apt-get"}, X86),
+    "dart": ({"apt-get"}, (*X86, *ARM)), "discord": ({"apt-get"}, X86), "etcher": ({"apt-get", "dnf", "zypper"}, X86),
+    "brave": ({"apt-get", "dnf", "yum", "zypper", "pacman"}, None), "filee": (None, (*X86, *ARM)),
+    "codex": (None, (*X86, *ARM)), "flutter": (None, X86), "github": ({"apt-get"}, None), "package": (None, None)}
+
+
+def os_release(path="/etc/os-release"):
+    """/etc/os-release as a dict ({} when unreadable)."""
+    out = {}
+    try:
+        with open(path, encoding="utf-8") as f:
+            for line in f:
+                k, sep, v = line.strip().partition("=")
+                if sep:
+                    out[k] = v.strip().strip('"').strip("'")
+    except OSError:
+        pass
+    return out
+
+
+def system_summary(pm, arch, osr=None):
+    """'Manjaro Linux - pacman, x86_64' for the window."""
+    osr = os_release() if osr is None else osr
+    return f"{osr.get('PRETTY_NAME') or osr.get('NAME') or 'Linux'} - {pm.replace('-get', '') or '?'}, {arch}"
+
+
+def is_arch_family(osr=None):
+    osr = os_release() if osr is None else osr
+    return "arch" in (osr.get("ID", "") + " " + osr.get("ID_LIKE", "")).split()
+
+
+def native_route(program, pm, arch):
+    """True when the program's own recipe can install it with this package manager on this CPU."""
+    kind = program["kind"]
+    pms, cpus = NATIVE[kind]
+    if kind == "package":
+        return bool(package_name(program["id"], pm))
+    if kind == "github":
+        cpus = tuple(c for k, group in (("x86", X86), ("arm", ARM)) if k in program["asset"] for c in group)
+    return (pms is None or pm in pms) and (cpus is None or arch in cpus)
+
+
+def route(program, pm, arch):
+    """-> (how, why).  how: 'native' (the program's own recipe), 'flatpak' (Flathub, for you only), 'aur' (Arch User Repository,
+    built here) or 'none'; why (only for 'none'): 'cpu' = not offered for this processor, 'pm' = the publisher serves other
+    distributions only."""
+    if native_route(program, pm, arch):
+        return "native", ""
+    if program.get("flatpak") and arch in (*X86, *ARM) and (shutil.which("flatpak") or pm in _INSTALL):
+        return "flatpak", ""
+    if program.get("aur") and pm == "pacman" and arch in X86:
+        return "aur", ""
+    pms, cpus = NATIVE[program["kind"]]
+    return "none", "cpu" if program["kind"] != "package" and (pms is None or pm in pms) else "pm"
+
+
+# ---- the Arch User Repository (Arch, Manjaro, EndeavourOS ...): packages written by users, built on this computer ----
+AUR_HOST = "https://aur.archlinux.org"
+AUR_INFO = AUR_HOST + "/rpc/v5/info?arg[]={p}"
+AUR_SNAPSHOT = AUR_HOST + "/cgit/aur.git/snapshot/{p}.tar.gz"
+AUR_MAX_BYTES = 8 * 1024 * 1024
+
+
+def aur_workdir(cache_dir=None):
+    return os.path.join(os.path.expanduser(cache_dir or CACHE), "aur")
+
+
+def aur_extract(data, dest, pkg):
+    """Unpack an AUR snapshot (.tar.gz bytes) into dest/<pkg>: plain files and folders only, nothing outside the folder."""
+    import io
+    import tarfile
+    shutil.rmtree(dest, ignore_errors=True)
+    os.makedirs(dest)
+    root = os.path.realpath(dest)
+    with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as tar:
+        members = tar.getmembers()
+        for m in members:
+            target = os.path.realpath(os.path.join(dest, m.name))
+            if not (m.isfile() or m.isdir()) or not (target == root or target.startswith(root + os.sep)):
+                raise ValueError(f"unsafe entry in the AUR archive: {m.name}")
+            if not (m.name == pkg or m.name.startswith(pkg + "/")):
+                raise ValueError(f"unexpected entry in the AUR archive: {m.name}")
+            m.mode = 0o755 if m.isdir() else 0o644
+        try:
+            tar.extractall(dest, members=members, filter="data")      # every member was checked above; this is the second belt
+        except TypeError:                                              # Python without extraction filters
+            tar.extractall(dest, members=members)  # noqa: S202
+    return os.path.join(dest, pkg)
+
+
+def aur_fetch(pkg, cache_dir=None, opener=urllib.request.urlopen):
+    """Download the AUR snapshot of a package and read what the user must see before anything is built.
+    -> {'dir', 'meta', 'files': {'PKGBUILD': text, 'x.install': text}, 'sha256'}.  Raises on anything unexpected."""
+    import hashlib
+
+    def get(url, limit):
+        with opener(urllib.request.Request(url, headers={"User-Agent": "linux-scripts"}), timeout=30) as r:
+            data = r.read(limit + 1)
+        if len(data) > limit:
+            raise ValueError("the AUR answer is larger than expected")
+        return data
+    if not re.fullmatch(r"[a-z0-9][a-z0-9@._+-]*", pkg):
+        raise ValueError(f"not an AUR package name: {pkg}")
+    info = json.loads(get(AUR_INFO.format(p=pkg), 1 << 20).decode())
+    found = [r for r in info.get("results", []) if r.get("Name") == pkg]
+    if not found:
+        raise ValueError(f"{pkg} is not in the AUR (any more)")
+    folder = aur_extract(get(AUR_SNAPSHOT.format(p=pkg), AUR_MAX_BYTES), aur_workdir(cache_dir), pkg)
+    files = {}
+    for name in sorted(os.listdir(folder)):
+        if name == "PKGBUILD" or name.endswith(".install"):
+            with open(os.path.join(folder, name), encoding="utf-8", errors="replace") as f:
+                files[name] = f.read()
+    if "PKGBUILD" not in files:
+        raise ValueError("the AUR package has no PKGBUILD")
+    digest = hashlib.sha256("".join(files[n] for n in sorted(files)).encode()).hexdigest()
+    return {"dir": folder, "meta": found[0], "files": files, "sha256": digest}
+
+
+def aur_steps(pkg, folder):
+    """Build the package as the user (makepkg refuses root) and install it: dependencies come through pacman with the password
+    asked by pkexec (PACMAN_AUTH in a private copy of makepkg.conf), then the built file is installed as administrator."""
+    q = shlex.quote
+    work = os.path.dirname(folder)
+    conf = os.path.join(work, "makepkg-aur.conf")
+    build = f"""set -eu
+cd {q(folder)}
+{{ cat /etc/makepkg.conf; echo 'PACMAN_AUTH=(pkexec)'; }} > {q(conf)}
+makepkg --config {q(conf)} --syncdeps --rmdeps --noconfirm
+"""
+    install = f"""set -eu
+cd {q(folder)}
+files=""
+for f in *.pkg.tar.*; do
+  case "$f" in *.sig|*-debug-*) ;; *) files="$files $f" ;; esac
+done
+[ -n "$files" ] || {{ echo "no package was built" >&2; exit 1; }}
+pacman -U --noconfirm $files
+"""
+    return [{"root": True, "sh": "set -eu\npacman -S --needed --noconfirm base-devel\n"},
+            {"root": False, "sh": build}, {"root": True, "sh": install},
+            {"root": False, "sh": f"rm -rf {q(work)}\n"}]
+
+
+def aur_remove_steps(pkg):
+    return [{"root": True, "sh": f"set -u\npacman -R --noconfirm {shlex.quote(pkg)}\n"}]
+
+
+def aur_installed(pkg, run=subprocess.run, which=shutil.which):
+    """The installed version of an AUR (or any pacman) package, None when not installed."""
+    if not which("pacman"):
+        return None
+    try:
+        r = run(["pacman", "-Q", pkg], capture_output=True, text=True, timeout=30)
+    except Exception:  # noqa: BLE001
+        return None
+    return (r.stdout.split() + [""])[1] if r.returncode == 0 else None
 
 
 def main(argv):
