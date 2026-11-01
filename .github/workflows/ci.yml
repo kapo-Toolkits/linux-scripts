@@ -2,6 +2,7 @@ name: CI
 
 on:
   push:
+    branches: [main]      # branches are tested once, by their pull request (a push run AND a PR run at the same time hammered qgis.org)
   pull_request:
   workflow_dispatch:
   schedule:
@@ -13,7 +14,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: shellcheck
-        run: shellcheck -S warning install.sh get.sh wifi-hotspot/hotspot-uplink.sh usb-eject/usb-eject.sh wifi-hotspot/hotspot.sh tests/run-qgis-containers.sh
+        run: shellcheck -S warning install.sh get.sh tests/retry-on-network.sh wifi-hotspot/hotspot-uplink.sh usb-eject/usb-eject.sh wifi-hotspot/hotspot.sh tests/run-qgis-containers.sh
       - name: syntax of generated/embedded shell is covered by unit tests; compile all python
         run: python3 -m compileall -q common usb-eject wifi-hotspot printer-setup qgis-installer tests
       - name: unit tests (offline)
@@ -48,7 +49,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: tests/retry-on-network.sh tests/run-distros.sh
+      - run: tests/run-distros.sh
 
   printhub:
     # PrintHub (Qt) offscreen tests, and install.sh printhub into a temp prefix (private venv with PySide6)
@@ -80,14 +81,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: tests/retry-on-network.sh tests/run-qr-decode.sh
+      - run: tests/run-qr-decode.sh
 
   qgis-containers:
     # real apt + qgis.org inside throwaway containers: key fingerprint check, repo config, uninstall
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: tests/retry-on-network.sh tests/run-qgis-containers.sh
+      - run: tests/run-qgis-containers.sh
 
   qgis-recipes:
     # every other install recipe of the installation guide, resolved (dry run) on its own distribution:
@@ -95,7 +96,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: tests/retry-on-network.sh tests/run-recipes-containers.sh
+      - run: tests/run-recipes-containers.sh
 
   real-install:
     # the "other programs" recipes against the real publishers in a throwaway Ubuntu: Claude Desktop and VS Code repositories
@@ -103,14 +104,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: tests/retry-on-network.sh tests/run-real-install.sh
+      - run: tests/run-real-install.sh
 
   gis-names:
     # every package name in installer/gis.json exists in the real repositories of Ubuntu, Debian, Fedora, Arch and openSUSE
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: tests/retry-on-network.sh tests/run-gis-names.sh
+      - run: tests/run-gis-names.sh
 
   hotspot-uplink:
     # real kernel routing (dummy interfaces in a privileged container): the hotspot's traffic goes through the chosen network,
@@ -118,7 +119,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: tests/retry-on-network.sh tests/run-hotspot-uplink.sh
+      - run: tests/run-hotspot-uplink.sh
 
   guide-drift:
     # weekly: has the QGIS installation guide moved on (new release, LTR, Ubuntu/Debian codename, signing key)?
