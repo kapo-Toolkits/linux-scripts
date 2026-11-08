@@ -134,6 +134,7 @@ STR = {
  "flutter_ask": "Install the Flutter SDK {version} (with Dart {dart})?\n\nDownload: {file} ({gb} GB)\nFrom: {source} (Google's release manifest)\nChecked with SHA-256 before anything is unpacked:\n{sha}\n\nSDK folder (yours, no administrator rights): {sdk}\nThe commands flutter and dart are linked into ~/.local/bin; no shell file is edited.\nDisk space: about {free} GB must be free.\n\n{pre}\n\n{notes}",
  "flutter_pre_yes": "Prerequisites from the Flutter docs are installed first from your distribution (administrator password, once): {pkgs}",
  "flutter_pre_no": "All prerequisites from the Flutter docs (curl, git, unzip, xz, zip, GLU) are already installed.",
+ "fl_ask": "Install the tools for building Flutter apps for Linux desktop?\n\nFrom your distribution ({pm}), administrator password once:\n{pkgs}\n\nOnly what is missing is installed. Removing this later takes away only what this installer added. Not needed for web, Android or the Dart commands.\n\nThen check with: flutter doctor",
  "flutter_noprereq": "Flutter needs these tools, which are missing: {missing}\n\nThis system's package manager is not known here. Install them (see {url}) and try again.",
  "dart_ask": "Install the standalone Dart SDK?\n\n(Flutter already includes Dart - only choose this for Dart without Flutter.)\nAdds Google's apt repository. The signing key file is downloaded over HTTPS and must contain the key with fingerprint\n{fpr}\notherwise nothing is installed; only that one key is kept. Then apt installs 'dart' (administrator password).",
  "repo_url": "Could not open a browser. The project page:\n{url}",
@@ -225,6 +226,7 @@ STR = {
  "flutter_ask": "დავაყენო Flutter SDK {version} (Dart {dart}-ით)?\n\nჩამოტვირთვა: {file} ({gb} GB)\nსაიდან: {source} (Google-ის გამოშვებების მანიფესტი)\nსანამ რამე გაიხსნება, შემოწმდება SHA-256-ით:\n{sha}\n\nSDK-ს საქაღალდე (თქვენია, ადმინისტრატორის უფლებების გარეშე): {sdk}\nბრძანებები flutter და dart ~/.local/bin-ში დაიკავშირება; shell-ის ფაილები არ იცვლება.\nადგილი დისკზე: დაახლოებით {free} GB უნდა იყოს თავისუფალი.\n\n{pre}\n\n{notes}",
  "flutter_pre_yes": "ჯერ დაყენდება Flutter-ის დოკუმენტაციის წინაპირობები თქვენი დისტრიბუციიდან (ადმინისტრატორის პაროლი, ერთხელ): {pkgs}",
  "flutter_pre_no": "Flutter-ის დოკუმენტაციის ყველა წინაპირობა (curl, git, unzip, xz, zip, GLU) უკვე დაყენებულია.",
+ "fl_ask": "დავაყენო Linux დესკტოპისთვის Flutter აპების ასაგები ხელსაწყოები?\n\nთქვენი დისტრიბუციიდან ({pm}), ადმინისტრატორის პაროლი ერთხელ:\n{pkgs}\n\nდაყენდება მხოლოდ ის, რაც აკლია. მოგვიანებით წაშლისას მხოლოდ ის მოიხსნება, რაც ამ პროგრამამ დააყენა. ვებისთვის, Android-ისა და Dart-ის ბრძანებებისთვის საჭირო არაა.\n\nშემდეგ შეამოწმეთ: flutter doctor",
  "flutter_noprereq": "Flutter-ს ეს ხელსაწყოები სჭირდება და აკლია: {missing}\n\nამ სისტემის პაკეტ-მენეჯერი აქ უცნობია. დააყენეთ ისინი ({url}) და სცადეთ ხელახლა.",
  "dart_ask": "დავაყენო ცალკე Dart SDK?\n\n(Flutter-ში Dart უკვე შედის — ეს აირჩიეთ მხოლოდ Dart-ისთვის Flutter-ის გარეშე.)\nემატება Google-ის apt რეპოზიტორია. ხელმოწერის გასაღებების ფაილი ჩამოიტვირთება HTTPS-ით და უნდა შეიცავდეს გასაღებს თითის ანაბეჭდით\n{fpr}\nსაწინააღმდეგო შემთხვევაში არაფერი დაყენდება; ინახება მხოლოდ ეს ერთი გასაღები. მერე apt დააყენებს 'dart'-ს (ადმინისტრატორის პაროლი).",
  "repo_url": "ბრაუზერის გახსნა ვერ მოხერხდა. პროექტის გვერდი:\n{url}",
@@ -675,6 +677,8 @@ class App(tk.Tk):
             return t("yes") if extras.filee_installed() else None
         if ex_id == "flutter":
             return extras.flutter_version() or (t("yes") if extras.flutter_installed() else None)
+        if ex_id == "flutter-linux":
+            return t("yes") if extras.flutter_linux_ready() else None
         if ex_id == "dart":
             return t("yes") if extras.deb_installed("dart") else None
         if ex_id == "codex":
@@ -780,6 +784,7 @@ class App(tk.Tk):
                     else "Claude Desktop: Anthropic's apt repository, key fingerprint checked, apt install claude-desktop" if ex_id == "claude"
                     else "Visual Studio Code: Microsoft's apt repository, key fingerprint checked, apt install code" if ex_id == "vscode"
                     else "Flutter: prerequisites (only if missing) → Google's archive, SHA-256 checked → ~/development/flutter" if ex_id == "flutter"
+                    else "Flutter Linux desktop tools: the missing ones (clang, cmake, ninja, pkg-config, GTK 3 headers) from your distribution" if ex_id == "flutter-linux"
                     else "Dart SDK: Google's apt repository, key fingerprint checked, apt install dart" if ex_id == "dart"
                     else "Codex: GitHub release (SHA-256 checked) → ~/.local/bin/codex, no password" if ex_id == "codex"
                     else "Filee: GitHub release (SHA-256 checked) → its own install.sh as you, no password" if ex_id == "filee"
@@ -867,6 +872,7 @@ class App(tk.Tk):
                         self.filee_jobs(action) if ex_id == "filee" else
                         self.codex_jobs(action) if ex_id == "codex" else
                         self.flutter_jobs(action) if ex_id == "flutter" else
+                        self.flutter_linux_jobs(action) if ex_id == "flutter-linux" else
                         self.dart_jobs(action) if ex_id == "dart" else
                         self.discord_jobs(action) if ex_id == "discord" else
                         self.github_jobs(action, ex_id) if ex_id in extras.GITHUB_APPS else self.package_jobs(action, ex_id))
@@ -1693,6 +1699,23 @@ class App(tk.Tk):
         if not messagebox.askyesno(t("title"), t("flutter_ask", version=info["version"], dart=info["dart"], file=info["file"],
                                                   gb=f"{info['mb'] / 1024:.1f}", source=info["source"], sha=info["sha256"], sdk=info["sdk"],
                                                   pre=pre, free=info["min_gb"], notes=info["notes"])):
+            return None
+        return self.steps_to_jobs(steps)
+
+    def flutter_linux_jobs(self, action):
+        """The Linux desktop toolchain of Flutter: only the missing packages, from the distribution; removal takes back only those."""
+        pm = detect_pm()
+        if action == "uninstall":
+            steps = extras.flutter_linux_remove_steps(pm)
+            if not steps:
+                messagebox.showinfo(t("title"), t("pkg_unknown", name="Flutter", pm=pm or "?"))
+                return None
+            return self.steps_to_jobs(steps)
+        steps, info = extras.flutter_linux_steps(pm)
+        if not steps:
+            messagebox.showinfo(t("title"), t("gh_manual", name="Flutter", url=info["manual"]))
+            return None
+        if not messagebox.askyesno(t("title"), t("fl_ask", pm=pm.replace("-get", ""), pkgs=" ".join(info["packages"]))):
             return None
         return self.steps_to_jobs(steps)
 
