@@ -4,7 +4,7 @@ from __future__ import annotations
 import os
 import tempfile
 
-from PySide6.QtCore import Qt, QSettings
+from PySide6.QtCore import Qt, QSettings, QTimer
 from PySide6.QtGui import QAction, QActionGroup, QKeySequence, QPageLayout, QPageSize
 from PySide6.QtPdf import QPdfDocument
 from PySide6.QtPdfWidgets import QPdfView
@@ -20,14 +20,18 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QDockWidget,
+    QDoubleSpinBox,
     QFileDialog,
     QFormLayout,
+    QGroupBox,
+    QHBoxLayout,
     QLabel,
     QLineEdit,
     QListWidget,
     QListWidgetItem,
     QMainWindow,
     QMessageBox,
+    QScrollArea,
     QSpinBox,
     QSplitter,
     QStackedWidget,
@@ -44,6 +48,10 @@ from .convert import (
     to_pdf,
 )
 from .i18n import I18n, initial_language, share_language
+from .photo import (
+    ACTUAL, CENTER, FILL, FIT, PRESET_LABELS, PRESETS_CM, SIZE, TOP_LEFT,
+    PhotoLeaf, PhotoSettings, photo_to_pdf, quality,
+)
 from .printing import (
     NUP_GRID,
     parse_page_range,
@@ -63,6 +71,13 @@ _SCALE_MODES = [
     ("scale_fill", SCALE_FILL),
     ("scale_actual", SCALE_ACTUAL),
 ]
+# Photo mode: print size entries (i18n-key, (mode, size in cm or None)); the presets are photo-lab sizes.
+_PHOTO_SIZES = (
+    [("ps_fill", (FILL, None)), ("ps_fit", (FIT, None))]
+    + [(f"ps_{int(w)}x{int(h)}", (SIZE, (w, h))) for w, h in PRESETS_CM]
+    + [("ps_custom", (SIZE, None)), ("ps_actual", (ACTUAL, None))]
+)
+_PHOTO_POS = [("pos_center", CENTER), ("pos_top_left", TOP_LEFT)]
 _ORIENTATIONS = [
     ("ori_portrait", QPageLayout.Orientation.Portrait),
     ("ori_landscape", QPageLayout.Orientation.Landscape),
@@ -149,7 +164,7 @@ class MainWindow(QMainWindow):
         self._populate_printers()            # driver list
         self._populate_from_printer()        # driver capabilities
         self._set_print_enabled(False)
-        self.scale_combo.setEnabled(False)  # enabled only once an image loads
+        self._update_photo_ui()  # scaling / photo settings come alive only once an image loads
         self.retranslate()
 
     # ------------------------------------------------------------------ UI
@@ -163,6 +178,137 @@ class MainWindow(QMainWindow):
         c.setToolTip(tooltip)
         self._i18n_combos.append((c, keys))
         return c
+
+    def _build_photo_group(self) -> None:
+        """Photo mode: print size, margin, position ... what a photo needs that a document does not."""
+        st = self._settings
+        self.photo_box = QGroupBox()
+        self.photo_box.setCheckable(True)
+        self.photo_box.setChecked(st.value("photo/on", True, type=bool))
+
+        self.pscombo = self._combo(_PHOTO_SIZES, "Print size")
+        idx = st.value("photo/size", 0, type=int)
+        self.pscombo.setCurrentIndex(idx if 0 <= idx < self.pscombo.count() else 0)
+        self.photo_w = QDoubleSpinBox()
+        self.photo_h = QDoubleSpinBox()
+        for sp, key, default in ((self.photo_w, "photo/w", 10.0), (self.photo_h, "photo/h", 15.0)):
+            sp.setRange(0.5, 100.0)
+            sp.setDecimals(1)
+            sp.setSingleStep(0.5)
+            sp.setValue(st.value(key, default, type=float))
+        self.photo_margin = QDoubleSpinBox()
+        self.photo_margin.setRange(0.0, 50.0)
+        self.photo_margin.setDecimals(1)
+        self.photo_margin.setSingleStep(1.0)
+        self.photo_margin.setValue(st.value("photo/margin", 0.0, type=float))
+        self.pos_combo = self._combo(_PHOTO_POS, "Position")
+        pidx = st.value("photo/pos", 0, type=int)
+        self.pos_combo.setCurrentIndex(pidx if 0 <= pidx < self.pos_combo.count() else 0)
+        self.photo_rotate = QCheckBox()
+        self.photo_rotate.setChecked(st.value("photo/rotate", True, type=bool))
+        self.photo_crop = QCheckBox()
+        self.photo_crop.setChecked(st.value("photo/crop", True, type=bool))
+        self.photo_repeat = QCheckBox()
+        self.photo_repeat.setChecked(st.value("photo/repeat", False, type=bool))
+        self.photo_info = QLabel()
+        self.photo_info.setWordWrap(True)
+
+        dims = QWidget()
+        hb = QHBoxLayout(dims)
+        hb.setContentsMargins(0, 0, 0, 0)
+        hb.addWidget(self.photo_w)
+        hb.addWidget(QLabel("×"))
+        hb.addWidget(self.photo_h)
+        self._photo_dims = dims
+
+        pf = QFormLayout(self.photo_box)
+        pf.setSpacing(6)
+        self._photo_labels: dict[str, QLabel] = {}
+        for key, widget in (("photo_size", self.pscombo), ("photo_dims", dims), ("photo_margin", self.photo_margin),
+                            ("photo_pos", self.pos_combo)):
+            lbl = QLabel()
+            self._photo_labels[key] = lbl
+            pf.addRow(lbl, widget)
+        pf.addRow(self.photo_rotate)
+        pf.addRow(self.photo_crop)
+        pf.addRow(self.photo_repeat)
+        pf.addRow(self.photo_info)
+
+        # Any change re-lays the preview (debounced: typing in a spin box must not re-render per key) and is remembered.
+        self._photo_timer = QTimer(self)
+        self._photo_timer.setSingleShot(True)
+        self._photo_timer.setInterval(250)
+        self._photo_timer.timeout.connect(self._relay_photo)
+        for sig in (self.photo_box.toggled, self.pscombo.currentIndexChanged, self.photo_w.valueChanged,
+                    self.photo_h.valueChanged, self.photo_margin.valueChanged, self.pos_combo.currentIndexChanged,
+                    self.photo_rotate.toggled, self.photo_crop.toggled, self.photo_repeat.toggled,
+                    self.papersize_combo.currentIndexChanged, self.orient_combo.currentIndexChanged):
+            sig.connect(self._photo_changed)
+
+    def _photo_settings(self) -> PhotoSettings:
+        mode, size = self.pscombo.currentData()
+        if mode == SIZE and size is None:
+            size = (self.photo_w.value(), self.photo_h.value())
+        return PhotoSettings(
+            mode=mode, size_cm=size or (10.0, 15.0), margin_mm=self.photo_margin.value(),
+            anchor=self.pos_combo.currentData(), auto_rotate=self.photo_rotate.isChecked(),
+            crop_to_size=self.photo_crop.isChecked(), repeat=self.photo_repeat.isChecked(),
+        )
+
+    def _photo_on(self) -> bool:
+        """Photo mode is switched on (it applies to the image files, not to documents)."""
+        return self.photo_box.isChecked()
+
+    def _photo_changed(self) -> None:
+        st = self._settings
+        st.setValue("photo/on", self.photo_box.isChecked())
+        st.setValue("photo/size", self.pscombo.currentIndex())
+        st.setValue("photo/w", self.photo_w.value())
+        st.setValue("photo/h", self.photo_h.value())
+        st.setValue("photo/margin", self.photo_margin.value())
+        st.setValue("photo/pos", self.pos_combo.currentIndex())
+        st.setValue("photo/rotate", self.photo_rotate.isChecked())
+        st.setValue("photo/crop", self.photo_crop.isChecked())
+        st.setValue("photo/repeat", self.photo_repeat.isChecked())
+        self._update_photo_ui()
+        if self.current_source and self._is_image(self.current_source):
+            self._photo_timer.start()
+
+    def _relay_photo(self) -> None:
+        if self.current_source and self._is_image(self.current_source):
+            self.load(self.current_source)
+
+    def _update_photo_ui(self) -> None:
+        """Enable only what means something for the chosen print size, and say so when photo mode does not apply."""
+        mode, size = self.pscombo.currentData()
+        applies = self._is_image(self.current_source) or any(self._is_image(q) for q in self.queue)
+        for w in (self.pscombo, self.photo_margin, self.photo_rotate):
+            w.setEnabled(applies)
+        self._photo_dims.setEnabled(applies and mode == SIZE and size is None)
+        self.pos_combo.setEnabled(applies and mode in (FIT, SIZE, ACTUAL))
+        self.photo_crop.setEnabled(applies and mode == SIZE)
+        self.photo_repeat.setEnabled(applies and mode == SIZE)
+        self.photo_box.setToolTip("" if applies else self.i18n.t("photo_na"))
+        # the old image-scaling choice only matters when photo mode is off
+        self.scale_combo.setEnabled(self._is_image(self.current_source) and not self._photo_on())
+        if not applies:
+            self.photo_info.setText(self.i18n.t("photo_na"))
+
+    def _show_photo_info(self, lay) -> None:
+        """One line under the settings: the print size, the resolution it gives, what is cropped."""
+        t = self.i18n.t
+        q = quality(lay.dpi)
+        color = {"good": "#2a8f3c", "ok": "#b7791f", "low": "#c53030"}[q]
+        bw, bh = lay.box_mm
+        n = len(lay.placements)
+        lines = [t("photo_size_line", w=f"{bw / 10:.1f}", h=f"{bh / 10:.1f}") + (f"  ×  {n}" if n > 1 else ""),
+                 f"<span style='color:{color}'>{t('photo_dpi_' + q, dpi=round(lay.dpi))}</span>"]
+        if lay.cropped > 0.005:
+            lines.append(t("photo_cropped", pct=round(lay.cropped * 100)))
+        if lay.shrunk:
+            lines.append(t("photo_shrunk"))
+        self.photo_info.setTextFormat(Qt.TextFormat.RichText)
+        self.photo_info.setText("<br>".join(lines))
 
     def _build_settings_dock(self) -> None:
         """Right-hand panel with every print parameter (like a print dialog)."""
@@ -195,6 +341,8 @@ class MainWindow(QMainWindow):
         self.scale_combo = self._combo(_SCALE_MODES, "Image scaling")
         self.scale_combo.currentIndexChanged.connect(self._on_scale_changed)
 
+        self._build_photo_group()
+
         form = QFormLayout()
         form.setContentsMargins(12, 12, 12, 12)
         form.setSpacing(8)
@@ -225,6 +373,7 @@ class MainWindow(QMainWindow):
         v.setContentsMargins(0, 0, 0, 0)
         v.addWidget(self._panel_title)
         v.addLayout(form)
+        v.addWidget(self.photo_box)
         v.addStretch(1)
 
         self._settings_dock = QDockWidget(self)
@@ -232,8 +381,12 @@ class MainWindow(QMainWindow):
         self._settings_dock.setAllowedAreas(
             Qt.DockWidgetArea.RightDockWidgetArea | Qt.DockWidgetArea.LeftDockWidgetArea
         )
-        self._settings_dock.setWidget(panel)
-        self._settings_dock.setMinimumWidth(250)
+        scroll = QScrollArea()                    # the photo group makes the panel tall: it scrolls on small screens
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+        scroll.setWidget(panel)
+        self._settings_dock.setWidget(scroll)
+        self._settings_dock.setMinimumWidth(290)
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self._settings_dock)
 
     def _build_toolbar(self) -> None:
@@ -417,6 +570,17 @@ class MainWindow(QMainWindow):
         self._panel_title.setText("  " + t("settings"))
         for key, lbl in self._form_labels.items():
             lbl.setText(t(key))
+        self.photo_box.setTitle(t("photo_group"))
+        for key, lbl in self._photo_labels.items():
+            lbl.setText(t(key))
+        self.photo_rotate.setText(t("photo_rotate"))
+        self.photo_crop.setText(t("photo_crop"))
+        self.photo_repeat.setText(t("photo_repeat"))
+        self.pscombo.setToolTip(t("tt_photo_size"))
+        self.photo_margin.setToolTip(t("tt_photo_margin"))
+        self.photo_rotate.setToolTip(t("tt_photo_rotate"))
+        self.photo_crop.setToolTip(t("tt_photo_crop"))
+        self.photo_repeat.setToolTip(t("tt_photo_repeat"))
         self.collate_check.setText(t("collate"))
         self.collate_check.setToolTip(t("tt_collate"))
         self.pages_edit.setPlaceholderText(t("ph_all"))
@@ -429,6 +593,9 @@ class MainWindow(QMainWindow):
             for i, key in enumerate(keys):
                 combo.setItemText(i, t(key))
         self._rebuild_duplex()  # duplex labels are translated
+        self._update_photo_ui()
+        if self.current_source and self._is_image(self.current_source) and self._photo_on():
+            self._photo_timer.start()  # the info line is words: say it in the new language
 
         # Refresh the status line for the current state.
         if self.current_source and self.doc.pageCount():
@@ -490,8 +657,16 @@ class MainWindow(QMainWindow):
         # Release any previously loaded PDF *before* conversion: converting an
         # image re-writes image_<mode>.pdf, and Windows locks open files.
         self.doc.close()
+        photo_layout = None
         try:
-            pdf = to_pdf(path, self._tmp.name, self.scale_combo.currentData())
+            if self._is_image(path) and self._photo_on():
+                # the preview is the chosen paper with the photo laid out by the same code that prints it
+                self._photo_seq = getattr(self, "_photo_seq", 0) + 1
+                pdf = os.path.join(self._tmp.name, f"photo_{self._photo_seq}.pdf")
+                photo_layout = photo_to_pdf(path, pdf, self.papersize_combo.currentData() or QPageSize(QPageSize.PageSizeId.A4),
+                                            self.orient_combo.currentData(), self._photo_settings())
+            else:
+                pdf = to_pdf(path, self._tmp.name, self.scale_combo.currentData())
         except Exception as exc:  # conversion/format errors are expected
             QMessageBox.critical(self, t("cannot_open"), str(exc))
             self._reset_empty()
@@ -503,12 +678,19 @@ class MainWindow(QMainWindow):
             self._reset_empty()
             return
 
+        old_pdf = self.current_pdf
         self.current_pdf = pdf
         self.current_source = path
+        if old_pdf and old_pdf != pdf and os.path.basename(old_pdf).startswith("photo_"):
+            try:
+                os.remove(old_pdf)                       # the earlier preview of this photo (the document no longer holds it)
+            except OSError:
+                pass
         self.stack.setCurrentIndex(1)
         self._set_print_enabled(True)
-        # Scaling only makes sense for images.
-        self.scale_combo.setEnabled(self._is_image(path))
+        self._update_photo_ui()
+        if photo_layout is not None:
+            self._show_photo_info(photo_layout)
         self.setWindowTitle(f"PrintHub — {name}")
         self.statusBar().showMessage(t("loaded", name=name, n=self.doc.pageCount()))
 
@@ -517,7 +699,7 @@ class MainWindow(QMainWindow):
         self.current_source = None
         self.stack.setCurrentIndex(0)
         self._set_print_enabled(False)
-        self.scale_combo.setEnabled(False)
+        self._update_photo_ui()
         self.setWindowTitle(f"PrintHub — {self.i18n.t('app_subtitle')}")
         self.statusBar().showMessage(self.i18n.t("ready"))
 
@@ -598,9 +780,15 @@ class MainWindow(QMainWindow):
             return None
         return pages
 
+    def _photo_job(self) -> bool:
+        """The file on screen is a photo and photo mode is on: it is printed from the file by the photo layout."""
+        return bool(self.current_source) and self._is_image(self.current_source) and self._photo_on()
+
     def print_file(self) -> None:
         if not self.current_pdf:
             return
+        if self._photo_job():
+            return self._print_photo()
         pages = self._resolve_pages()
         if pages is None:
             return
@@ -623,8 +811,30 @@ class MainWindow(QMainWindow):
                 if ok else self.i18n.t("print_failed")
             )
 
+    def _print_photo(self) -> None:
+        printer = self._make_printer()
+        self._configure_printer(printer)
+        dlg = QPrintDialog(printer, self)
+        dlg.setWindowTitle(self.i18n.t("print").rstrip("… "))
+        dlg.setOption(QAbstractPrintDialog.PrintDialogOption.PrintPageRange, False)
+        if dlg.exec() == QPrintDialog.DialogCode.Accepted:
+            self.copies_spin.setValue(printer.copyCount())
+            # whatever paper the dialog ended up with is the one the photo is laid out on
+            ok = render_leaves_to_printer([PhotoLeaf(self.current_source)], printer, 1, self._photo_settings())
+            n = printer.copyCount()
+            self.statusBar().showMessage(
+                self.i18n.t("sent_photo", c=n) if ok else self.i18n.t("print_failed"))
+
     def print_preview(self) -> None:
         if not self.current_pdf:
+            return
+        if self._photo_job():
+            printer = self._make_printer()
+            self._configure_printer(printer, with_copies=False)
+            dlg = QPrintPreviewDialog(printer, self)
+            leaves, ps = [PhotoLeaf(self.current_source)], self._photo_settings()
+            dlg.paintRequested.connect(lambda p: render_leaves_to_printer(leaves, p, 1, ps))
+            dlg.exec()
             return
         pages = self._resolve_pages()
         if pages is None:
@@ -647,9 +857,13 @@ class MainWindow(QMainWindow):
         """
         mode = self.scale_combo.currentData()
         page_text = self.pages_edit.text()
+        photos = self._photo_on()
         docs: list[QPdfDocument] = []
-        leaves: list[tuple[QPdfDocument, int]] = []
+        leaves: list = []
         for i, path in enumerate(self.queue):
+            if photos and self._is_image(path):
+                leaves.append(PhotoLeaf(path))         # a photo is painted from its file, one sheet each
+                continue
             sub = os.path.join(self._tmp.name, f"batch_{i}")
             os.makedirs(sub, exist_ok=True)
             pdf = to_pdf(path, sub, mode)
@@ -688,9 +902,9 @@ class MainWindow(QMainWindow):
         dlg.setOption(QAbstractPrintDialog.PrintDialogOption.PrintPageRange, False)
         try:
             if dlg.exec() == QPrintDialog.DialogCode.Accepted:
-                ok = render_leaves_to_printer(leaves, printer, nup)
+                ok = render_leaves_to_printer(leaves, printer, nup, self._photo_settings())
                 self.statusBar().showMessage(
-                    t("sent_batch", f=len(docs), p=len(leaves))
+                    t("sent_batch", f=len(self.queue), p=len(leaves))
                     if ok else t("print_failed")
                 )
         finally:

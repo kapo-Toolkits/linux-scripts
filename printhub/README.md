@@ -43,6 +43,37 @@ Dark). Defaults are English and light; both choices persist via `QSettings`.
 Translations live in a plain dict in `printhub/i18n.py` — no `.ts/.qm`
 toolchain needed to add a language.
 
+## Photo mode
+
+![Photo mode: two 10×15 prints on an A4 sheet, with the panel](docs/photo_mode.png)
+
+Printing a photo is not printing a document page: the paper *is* the print, the photo should reach the edges (or sit at an
+exact size), and the preview must be what comes out. Images used to be laid on an A4 stand-in page, which was then shrunk
+into the printable area of whatever paper was chosen — hence the white bands. **Photo mode** (a checked box in the settings
+panel, on by default for images) lays the photo out directly on the chosen paper, in millimetres:
+
+| Print size | What happens |
+|---|---|
+| **Fill the paper** | the photo covers the whole paper (inside the margin); the overflow is cut, and the panel says how many % |
+| **Whole photo** | nothing is cut; margins show on the sides where the proportions differ |
+| **9×13, 10×15 (4×6″), 13×18 (5×7″), 15×21, 20×25 (8×10″), 20×30 cm, or your own** | an exact print size, centred or in the top-left corner; *Crop to the print size* (on) fills that size, off puts the whole photo inside it; *Fill the sheet with copies* prints as many as fit (two 10×15 on an A4) |
+| **Actual size** | the photo's own physical size from the DPI stored in the file |
+
+* **Margin** (mm) around the photo; **Turn the photo to suit the paper** turns a landscape photo on portrait paper (and the
+  other way round) instead of cropping or shrinking it. The camera's rotation (EXIF) is applied.
+* The panel shows the resulting **print size and resolution** (green ≥ 240 dpi, amber ≥ 150, red below: "will look soft") and what is cut off.
+* The **preview** (central view, Print Preview) and the **print** use the same two functions (`photo.layout_photo`,
+  `photo.paint_layout`); the print is painted from the original file, not from a re-rendered PDF, on the *full* paper, so a
+  photo can reach the paper's edge. The layout follows the paper the printer actually ends up with, also when you change it in the native dialog.
+* **Borderless**: the program places the photo exactly to the paper's edge, but whether the printer prints to the edge is the
+  driver's decision. Pick the printer's **borderless paper size** (it appears in the *Paper size* list, e.g. "4x6 (Borderless)")
+  and use *Fill the paper* with margin 0; with a normal paper size the printer leaves its own few-millimetre border.
+* Each photo gets a sheet of its own (N-up applies to documents); with *Print All*, photos and documents can be mixed in one job.
+  Switch the box off to get the old image behaviour (A4 stand-in, *Image scaling*).
+
+`tests/test_photo.py` checks the geometry as numbers and the printing on pixels (a PDF printer, corners and margins probed);
+`tests/test_photo_ui.py` drives the window.
+
 ## Why Qt / PySide6
 
 Printing is the hard part to make portable, and Qt already solved it:
@@ -59,7 +90,7 @@ file ──► normalize to PDF ──► QtPdf preview ──► QPrintDialog �
 ```
 
 * **PDF** → used as-is
-* **Images** (PNG/JPG/TIFF/…) → laid onto an auto-oriented A4 page (`QPdfWriter`)
+* **Images** (PNG/JPG/TIFF/…) → in **photo mode** laid out directly on the chosen paper (see below); otherwise onto an auto-oriented A4 page (`QPdfWriter`)
 * **Office/text** (DOCX/XLSX/ODT/…) → `libreoffice --headless --convert-to pdf`
 
 Everything funnels through one printing function (`printing.py`), so the real
