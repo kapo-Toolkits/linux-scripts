@@ -68,7 +68,7 @@ jobs:
       - name: PrintHub tests
         working-directory: printhub
         run: |
-          for t in tests/smoke.py tests/test_pages.py tests/test_nup.py tests/test_scale.py tests/test_batch.py tests/test_settings.py tests/test_i18n.py; do
+          for t in tests/smoke.py tests/test_pages.py tests/test_nup.py tests/test_scale.py tests/test_batch.py tests/test_settings.py tests/test_i18n.py tests/test_photo.py tests/test_photo_ui.py; do
             QT_QPA_PLATFORM=offscreen "$PY" "$t" && echo "PASS $t"
           done
       - name: uninstall leaves nothing

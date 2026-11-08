@@ -8,8 +8,10 @@ on Linux, so this code is platform-agnostic.
 from __future__ import annotations
 
 from PySide6.QtCore import QRectF, QSize, Qt
-from PySide6.QtGui import QPainter
+from PySide6.QtGui import QPageLayout, QPainter
 from PySide6.QtPdf import QPdfDocument
+
+from .photo import PhotoLeaf, PhotoSettings, layout_for, load_image, paint_layout
 
 # Cap raster page size so a huge page can't blow up memory.
 _MAX_PX = 5000
@@ -84,9 +86,9 @@ def _draw_into(painter: QPainter, image, rect: QRectF) -> None:
     painter.drawImage(QRectF(x, y, s.width(), s.height()), image)
 
 
-def _paint_sheet(painter, res, sheet, cols, rows) -> None:
-    """Lay a group of (doc, page_index) leaves out on one printer sheet."""
-    vp = painter.viewport()  # paintable area in device pixels
+def _paint_sheet(painter, res, sheet, cols, rows, area=None) -> None:
+    """Lay a group of (doc, page_index) leaves out on one printer sheet (in `area`, default: the paintable area)."""
+    vp = painter.viewport() if area is None else area  # paintable area in device pixels
     cell_w = vp.width() / cols
     cell_h = vp.height() / rows
     gutter = min(cell_w, cell_h) * 0.04 if (cols * rows) > 1 else 0.0
@@ -106,37 +108,74 @@ def _paint_sheet(painter, res, sheet, cols, rows) -> None:
         _draw_into(painter, image, cell)
 
 
-def render_leaves_to_printer(leaves, printer, nup: int = 1) -> bool:
-    """Paint a flat list of (QPdfDocument, page_index) leaves onto `printer`.
+def _group_sheets(leaves, per_sheet):
+    """Consecutive document pages share a sheet (N-up); a photo always has a sheet of its own."""
+    sheets, cur = [], []
+    for leaf in leaves:
+        if isinstance(leaf, PhotoLeaf):
+            if cur:
+                sheets.append(cur)
+                cur = []
+            sheets.append([leaf])
+        else:
+            cur.append(leaf)
+            if len(cur) == per_sheet:
+                sheets.append(cur)
+                cur = []
+    if cur:
+        sheets.append(cur)
+    return sheets
 
-    This is the batch-capable core: leaves may come from several documents, so
-    a single print job can span a whole queue. N-up groups consecutive leaves
-    onto each sheet. Copies come from `printer.copyCount()` (driver-handled
-    when possible, otherwise repeated); duplex is a printer property.
+
+def render_leaves_to_printer(leaves, printer, nup: int = 1, photo: PhotoSettings | None = None) -> bool:
+    """Paint a flat list of leaves onto `printer`.
+
+    A leaf is (QPdfDocument, page_index) or a `PhotoLeaf` (a photo file, laid out by `photo` settings on the whole paper).
+    This is the batch-capable core: leaves may come from several documents, so a single print job can span a whole queue.
+    N-up groups consecutive document pages onto each sheet. Copies come from `printer.copyCount()` (driver-handled when
+    possible, otherwise repeated); duplex is a printer property.
+
+    With photos the painting origin is the paper's corner (full page), so a photo can reach the paper's edge; document
+    pages in the same job are still kept inside the printable area.
     """
-    leaves = [(d, i) for (d, i) in leaves if 0 <= i < d.pageCount()]
+    leaves = [x for x in leaves if isinstance(x, PhotoLeaf) or 0 <= x[1] < x[0].pageCount()]
     if not leaves:
         return False
 
     cols, rows = NUP_GRID.get(nup, (1, 1))
-    per_sheet = cols * rows
-    sheets = [leaves[i:i + per_sheet] for i in range(0, len(leaves), per_sheet)]
+    sheets = _group_sheets(leaves, cols * rows)
+    has_photo = any(isinstance(x, PhotoLeaf) for x in leaves)
+    photo = photo or PhotoSettings()
 
     copies = max(1, printer.copyCount())
     outer = 1 if printer.supportsMultipleCopies() else copies
 
+    if has_photo:
+        printer.setFullPage(True)
     painter = QPainter()
     if not painter.begin(printer):
         return False
     try:
         res = printer.resolution()
+        pl = printer.pageLayout()
+        paper = pl.fullRect(QPageLayout.Unit.Millimeter)
+        paper_mm = (paper.width(), paper.height())
+        printable = QRectF(pl.paintRectPixels(res)) if has_photo else None
+        images = {}
         first = True
         for _ in range(outer):
             for sheet in sheets:
                 if not first:
                     printer.newPage()
                 first = False
-                _paint_sheet(painter, res, sheet, cols, rows)
+                if isinstance(sheet[0], PhotoLeaf):
+                    path = sheet[0].path
+                    if path not in images:
+                        images[path] = load_image(path)
+                    vp = painter.viewport()
+                    paint_layout(painter, QRectF(vp), images[path], layout_for(images[path], paper_mm, photo))
+                else:
+                    _paint_sheet(painter, res, sheet, cols, rows, printable)
         return True
     finally:
         painter.end()

@@ -63,6 +63,7 @@ def main() -> int:
     # queue = [image(1), pdf(3), image(1)]  -> 5 source pages total
 
     win = MainWindow()
+    win.photo_box.setChecked(False)   # this test pins the document path (images as pages, N-up); photo mode has test_photo*.py
     win.add_files([a, b, c])
 
     ok = True

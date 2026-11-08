@@ -1192,7 +1192,7 @@ class ProgramUpdates(unittest.TestCase):
         have = {"rustdesk": "1.4.0", "tabby-terminal": "1.0.238", "balena-etcher": "2.1.7"}
         rel = {"rustdesk": "1.5.0", "tabby": "1.0.238", "winboat": "9.9.9", "artcraft": "9.9.9"}
         found, failed = self.ex.outdated(installed=have.get, github=lambda i: {"version": rel[i]},
-                                         etcher=lambda: {"version": "2.1.8"})
+                                         etcher=lambda: {"version": "2.1.8"}, codex_have=lambda: None)   # not the Codex on this machine
         self.assertEqual({x["id"] for x in found}, {"rustdesk", "etcher"})      # winboat/artcraft not installed, tabby current
         self.assertEqual(failed, [])
         r = next(x for x in found if x["id"] == "rustdesk")
@@ -1201,7 +1201,7 @@ class ProgramUpdates(unittest.TestCase):
     def test_a_failed_lookup_is_named_not_guessed(self):
         def boom(i):
             raise OSError("offline")
-        found, failed = self.ex.outdated(installed=lambda p: "1.0" if p == "rustdesk" else None, github=boom)
+        found, failed = self.ex.outdated(installed=lambda p: "1.0" if p == "rustdesk" else None, github=boom, codex_have=lambda: None)
         self.assertEqual((found, failed), ([], ["rustdesk"]))
 
     def test_installed_version(self):
