@@ -790,7 +790,7 @@ class App(tk.Tk):
                     else "Filee: GitHub release (SHA-256 checked) → its own install.sh as you, no password" if ex_id == "filee"
                     else "VirtualBox: Oracle's apt repository, key fingerprint checked, apt install virtualbox-7.2 + dkms" if ex_id == "virtualbox"
                     else "Discord: the publisher's .deb over HTTPS (no checksum published), apt install" if ex_id == "discord"
-                    else f"{ex_id}: GitHub release .deb over HTTPS → sha256sum -c → apt install" if ex_id in extras.GITHUB_APPS
+                    else f"{ex_id}: GitHub release .deb/.rpm over HTTPS → sha256sum -c → apt/dnf/zypper install" if ex_id in extras.GITHUB_APPS
                     else f"{ex_id}: the distribution's package manager (install {extras.package_name(ex_id, detect_pm()) or ex_id})")
             shown = (shown + "\n" if shown else "") + note
         self.lbl_cmd.config(text=shown)
@@ -1575,7 +1575,7 @@ class App(tk.Tk):
         import platform
         pm, app = detect_pm(), extras.GITHUB_APPS[app_id]
         if action == "uninstall":
-            steps = extras.apt_remove_steps(app["package"], pm)
+            steps = extras.github_remove_steps(app["package"], pm)
             if not steps:
                 messagebox.showinfo(t("title"), t("gh_manual", name=app["name"], url="https://github.com/" + app["repo"]))
                 return None

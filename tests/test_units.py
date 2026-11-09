@@ -1106,6 +1106,7 @@ class VendorPrograms(unittest.TestCase):
     def test_github_apps_pick_the_right_deb_and_gate_on_sha256(self):
         for app_id, app in self.ex.GITHUB_APPS.items():
             rel = self.release(app_id, app["asset"].values())
+            self.assertEqual(bool(self.ex.github_steps(app_id, rel, "dnf", "x86_64")[0]), "rpm_x86" in app["asset"], app_id)
             steps, info = self.ex.github_steps(app_id, rel, "apt-get", "x86_64")
             self.assertEqual([x["root"] for x in steps], [False, True, False], app_id)
             self.assertIn("sha256sum -c", steps[0]["sh"])
@@ -1115,10 +1116,27 @@ class VendorPrograms(unittest.TestCase):
             self.assertEqual(info["sha256"], "ab" * 32)
             for st in steps:
                 self.assertEqual(subprocess.run(["sh", "-n", "-c", st["sh"]], capture_output=True).returncode, 0, app_id)
-            for pm, arch in (("dnf", "x86_64"), ("apt-get", "i386"), ("pacman", "x86_64")):
+            for pm, arch in (("dnf", "i386"), ("apt-get", "i386"), ("pacman", "x86_64")) + ((() if "rpm_x86" in app["asset"] else (("dnf", "x86_64"),))):
                 steps, info = self.ex.github_steps(app_id, rel, pm, arch)
                 self.assertEqual(steps, [])
                 self.assertIn("github.com/" + app["repo"], info["manual"])
+
+    def test_electerm_rpm(self):
+        app = self.ex.GITHUB_APPS["electerm"]
+        rel = self.release("electerm", app["asset"].values())
+        for pm, cpu, name, cmd in (("dnf", "x86_64", "electerm-9.9.9-linux-x86_64.rpm", "dnf install -y"),
+                                   ("dnf", "aarch64", "electerm-9.9.9-linux-aarch64.rpm", "dnf install -y"),
+                                   ("zypper", "x86_64", "electerm-9.9.9-linux-x86_64.rpm", "--allow-unsigned-rpm")):
+            steps, info = self.ex.github_steps("electerm", rel, pm, cpu)
+            self.assertEqual((info["file"], [x["root"] for x in steps]), (name, [False, True, False]))
+            self.assertIn(cmd, steps[1]["sh"])
+            self.assertIn("sha256sum -c", steps[0]["sh"])
+        self.assertEqual(self.ex.github_steps("electerm", rel, "pacman", "x86_64")[0], [])
+        self.assertIn("dnf remove -y electerm", self.ex.github_remove_steps("electerm", "dnf")[0]["sh"])
+        self.assertIn("zypper --non-interactive remove electerm", self.ex.github_remove_steps("electerm", "zypper")[0]["sh"])
+        self.assertEqual(self.ex.github_remove_steps("electerm", "pacman"), [])
+        self.assertEqual(self.ex.installed_version("electerm", which=lambda c: "/x" if c == "rpm" else None,
+                         run=lambda *a, **k: subprocess.CompletedProcess(a, 0, "5.9.0-1", "")), "5.9.0-1")
 
     def test_no_digest_means_no_install(self):
         rel = self.release("tabby", self.ex.GITHUB_APPS["tabby"]["asset"].values())
@@ -1375,6 +1393,9 @@ class WhatInstallsHere(unittest.TestCase):
         self.assertEqual(self.how("etcher", "dnf")[0], "native")                # the publisher's .rpm
         self.assertEqual(self.how("vscode", "dnf")[0], "flatpak")
         self.assertEqual(self.how("tabby", "dnf"), ("none", "pm"))              # no AUR on Fedora, no .rpm from the project
+        self.assertEqual(self.how("electerm", "dnf")[0], "native")              # but electerm publishes an .rpm
+        self.assertEqual(self.how("electerm", "zypper")[0], "native")
+        self.assertEqual(self.how("electerm", "dnf", "i686"), ("none", "cpu"))
         self.assertEqual(self.how("claude", "zypper"), ("none", "pm"))
 
     def test_an_unsupported_processor_says_so(self):
@@ -2910,6 +2931,13 @@ class PackagePrograms(unittest.TestCase):
 
     ex = Installer.m.extras
 
+    def test_everyday_cli_tools_use_the_right_package_names(self):
+        for app, per_pm in {"git": {}, "curl": {}, "htop": {}, "net-tools": {}, "vim": {"dnf": "vim-enhanced"}}.items():
+            for pm in ("apt-get", "dnf", "pacman", "zypper", "apk"):
+                self.assertEqual(self.ex.package_name(app, pm), per_pm.get(pm, app), (app, pm))
+        self.assertIn("apt-get install -y net-tools\n", self.ex.package_steps("net-tools", "apt-get")[0]["sh"])
+        self.assertIn("dnf install -y vim-enhanced\n", self.ex.package_steps("vim", "dnf")[0]["sh"])
+
     def test_steps_per_package_manager_and_names(self):
         want = {"apt-get": "apt-get install -y {}", "dnf": "dnf install -y {}", "pacman": "pacman -S --noconfirm {}",
                 "zypper": "zypper --non-interactive install {}", "apk": "apk add {}"}
@@ -2920,7 +2948,7 @@ class PackagePrograms(unittest.TestCase):
                 self.assertIn(cmd.format(app) + "\n", steps[0]["sh"])
                 self.assertEqual(subprocess.run(["sh", "-n", "-c", steps[0]["sh"]], capture_output=True).returncode, 0)
                 self.assertEqual(self.ex.package_name(app, pm), app)
-        self.assertEqual(set(self.ex.PACKAGE_APPS), {"brasero", "xfburn", "k3b", "unrar"})
+        self.assertEqual(set(self.ex.PACKAGE_APPS), {"brasero", "xfburn", "k3b", "unrar", "git", "curl", "vim", "htop", "net-tools"})
         self.assertEqual({x["id"] for x in Installer.m.EXTRAS}, set(self.ex.PACKAGE_APPS) | {"etcher", "brave", "claude", "vscode", "virtualbox", "filee", "codex", "flutter", "flutter-linux", "dart", "discord"} | set(self.ex.GITHUB_APPS))   # window and logic agree
         self.assertEqual({x["id"] for x in Shortcuts.m.TOOLS} >= {i for i in self.ex.PACKAGE_APPS if not PackagePrograms.cli(i)}, True)       # and shortcuts know them
         self.assertIn("apt-get purge -y brasero", self.ex.package_steps("brasero", "apt-get", remove=True)[0]["sh"])

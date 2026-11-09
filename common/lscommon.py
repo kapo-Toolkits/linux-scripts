@@ -216,3 +216,9 @@ PKG_FOR["bluetoothctl"] = {"apt-get": "bluez", "dnf": "bluez", "yum": "bluez", "
 PKG_FOR["brasero"] = _ALL("brasero")          # CD/DVD burner, in every major distribution's own repositories
 PKG_FOR["xfburn"] = _ALL("xfburn")
 PKG_FOR["k3b"] = _ALL("k3b")
+# everyday command-line tools (installer, group "tools"); Fedora/RHEL's plain 'vim' is only the tiny vim-minimal, the real one is vim-enhanced
+PKG_FOR["git"] = _ALL("git")
+PKG_FOR["curl"] = _ALL("curl")
+PKG_FOR["htop"] = _ALL("htop")
+PKG_FOR["ifconfig"] = _ALL("net-tools")
+PKG_FOR["vim"] = {**_ALL("vim"), "dnf": "vim-enhanced", "yum": "vim-enhanced"}
