@@ -156,6 +156,26 @@
    ]
   },
   {
+      "id": "electerm",
+      "group": "dev",
+      "kind": "github",
+      "aur": "electerm-bin",
+      "name": {"en": "Electerm", "ka": "Electerm"},
+      "info": {
+        "en": "SSH / SFTP / telnet / serial client; .deb from GitHub, SHA-256 checked (~100 MB)",
+        "ka": "SSH / SFTP / telnet / serial კლიენტი; .deb GitHub-იდან, SHA-256 მოწმდება (~100 MB)"
+      },
+      "display": "Electerm",
+      "repo": "electerm/electerm",
+      "package": "electerm",
+      "cmd": "electerm",
+      "asset": {
+        "x86": "electerm-{v}-linux-amd64.deb",
+        "arm": "electerm-{v}-linux-arm64.deb"
+      },
+      "data": ["~/.config/electerm"]
+    },
+    {
    "id": "discord",
    "group": "net",
    "kind": "discord",
