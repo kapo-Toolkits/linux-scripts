@@ -273,22 +273,53 @@ def github_release(app_id, fetch=fetch_json):
     return {"tag": tag, "version": tag.lstrip("v"), "assets": assets}
 
 
+def github_pm_kind(app, pm):
+    """('deb'|'rpm', asset-key prefix) for the package manager, or None: .deb for apt, .rpm for dnf / zypper (only when the
+    project publishes one: an 'rpm_x86' / 'rpm_arm' entry in programs.json)."""
+    if pm == "apt-get":
+        return "deb", ""
+    if pm in ("dnf", "zypper") and any(k.startswith("rpm_") for k in app["asset"]):
+        return "rpm", "rpm_"
+    return None
+
+
 def github_steps(app_id, release, pm, arch, cache_dir=None):
-    """-> (steps, info) as etcher_steps; steps is [] with info['manual'] when there is no checked .deb for this system."""
+    """-> (steps, info) as etcher_steps; steps is [] with info['manual'] when there is no checked package for this system."""
     app = GITHUB_APPS[app_id]
     page = "https://github.com/" + app["repo"] + "/releases/latest"
-    kind = "x86" if arch in X86 else "arm" if arch in ("arm64", "aarch64") else None
-    pattern = app["asset"].get(kind) if kind else None
-    a = release["assets"].get(pattern.format(v=release["version"])) if pattern and pm == "apt-get" else None
+    cpu = "x86" if arch in X86 else "arm" if arch in ARM else None
+    how = github_pm_kind(app, pm)
+    pattern = app["asset"].get(how[1] + cpu) if cpu and how else None
+    a = release["assets"].get(pattern.format(v=release["version"])) if pattern else None
     if not a or not a["sha256"]:
         return [], {"manual": page, "version": release["version"]}
     asset = dict(a, name=pattern.format(v=release["version"]))
     path = os.path.join(os.path.expanduser(cache_dir or CACHE), asset["name"])
+    q = shlex.quote(path)
+    install = {"apt-get": f"export DEBIAN_FRONTEND=noninteractive\napt-get install -y {q}", "dnf": f"dnf install -y {q}",
+               "zypper": f"zypper --non-interactive install --allow-unsigned-rpm {q}"}[pm]
     steps = [{"root": False, "sh": download_script(asset, cache_dir)},
-             {"root": True, "sh": f"set -eu\nexport DEBIAN_FRONTEND=noninteractive\napt-get install -y {shlex.quote(path)}\n"},
-             {"root": False, "sh": f"rm -f {shlex.quote(path)}\n"}]
+             {"root": True, "sh": f"set -eu\n{install}\n"},
+             {"root": False, "sh": f"rm -f {q}\n"}]
     return steps, {"version": release["version"], "file": asset["name"], "mb": round(asset["size"] / 1048576),
                    "url": asset["url"], "sha256": asset["sha256"], "source": "github.com/" + app["repo"]}
+
+
+def github_remove_steps(package, pm):
+    cmd = {"apt-get": f"apt-get purge -y {package}", "dnf": f"dnf remove -y {package}",
+           "zypper": f"zypper --non-interactive remove {package}"}.get(pm)
+    return [{"root": True, "sh": f"set -u\n{cmd}\n"}] if cmd else []
+
+
+def rpm_version(package, run=subprocess.run, which=shutil.which):
+    """The rpm version of an installed package (e.g. '5.9.0-1'), or None."""
+    if not which("rpm"):
+        return None
+    try:
+        r = run(["rpm", "-q", "--qf", "%{VERSION}-%{RELEASE}", package], capture_output=True, text=True, timeout=20)
+    except Exception:  # noqa: BLE001
+        return None
+    return r.stdout.strip() if r.returncode == 0 and r.stdout.strip() else None
 
 
 def deb_installed(package, cmd=None, run=subprocess.run, which=shutil.which):
@@ -300,18 +331,21 @@ def deb_installed(package, cmd=None, run=subprocess.run, which=shutil.which):
                 return True
         except Exception:  # noqa: BLE001
             pass
+    if rpm_version(package, run=run, which=which):
+        return True
     return bool(cmd and which(cmd))
 
 
 def installed_version(package, run=subprocess.run, which=shutil.which):
-    """The dpkg version string of an installed package, or None."""
-    if not which("dpkg-query"):
-        return None
-    try:
-        r = run(["dpkg-query", "-W", "-f=${Status} ${Version}", package], capture_output=True, text=True, timeout=20)
-    except Exception:  # noqa: BLE001
-        return None
-    return r.stdout.split()[-1] if r.returncode == 0 and r.stdout.startswith("install ok installed") else None
+    """The dpkg (or rpm) version string of an installed package, or None."""
+    if which("dpkg-query"):
+        try:
+            r = run(["dpkg-query", "-W", "-f=${Status} ${Version}", package], capture_output=True, text=True, timeout=20)
+        except Exception:  # noqa: BLE001
+            r = None
+        if r is not None and r.returncode == 0 and r.stdout.startswith("install ok installed"):
+            return r.stdout.split()[-1]
+    return rpm_version(package, run=run, which=which)
 
 
 def version_key(v):
@@ -1212,7 +1246,7 @@ NATIVE = {
     "claude": ({"apt-get"}, (*X86, *ARM)), "vscode": ({"apt-get"}, (*X86, *ARM)), "virtualbox": ({"apt-get"}, X86),
     "dart": ({"apt-get"}, (*X86, *ARM)), "discord": ({"apt-get"}, X86), "etcher": ({"apt-get", "dnf", "zypper"}, X86),
     "brave": ({"apt-get", "dnf", "yum", "zypper", "pacman"}, None), "filee": (None, (*X86, *ARM)),
-    "codex": (None, (*X86, *ARM)), "flutter": (None, X86), "flutterlinux": ({"apt-get", "dnf", "pacman", "zypper"}, None), "github": ({"apt-get"}, None), "package": (None, None)}
+    "codex": (None, (*X86, *ARM)), "flutter": (None, X86), "flutterlinux": ({"apt-get", "dnf", "pacman", "zypper"}, None), "github": ({"apt-get", "dnf", "zypper"}, None), "package": (None, None)}
 
 
 def os_release(path="/etc/os-release"):
@@ -1247,7 +1281,11 @@ def native_route(program, pm, arch):
     if kind == "package":
         return bool(package_name(program["id"], pm))
     if kind == "github":
-        cpus = tuple(c for k, group in (("x86", X86), ("arm", ARM)) if k in program["asset"] for c in group)
+        how = github_pm_kind(program, pm)
+        if not how:
+            return False
+        pms = None
+        cpus = tuple(c for k, group in (("x86", X86), ("arm", ARM)) if how[1] + k in program["asset"] for c in group)
     return (pms is None or pm in pms) and (cpus is None or arch in cpus)
 
 
@@ -1262,6 +1300,8 @@ def route(program, pm, arch):
     if program.get("aur") and pm == "pacman" and arch in X86:
         return "aur", ""
     pms, cpus = NATIVE[program["kind"]]
+    if program["kind"] == "github":
+        return "none", "cpu" if github_pm_kind(program, pm) else "pm"
     return "none", "cpu" if program["kind"] != "package" and (pms is None or pm in pms) else "pm"
 
 

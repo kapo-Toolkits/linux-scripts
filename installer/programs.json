@@ -162,8 +162,8 @@
       "aur": "electerm-bin",
       "name": {"en": "Electerm", "ka": "Electerm"},
       "info": {
-        "en": "SSH / SFTP / telnet / serial client; .deb from GitHub, SHA-256 checked (~100 MB)",
-        "ka": "SSH / SFTP / telnet / serial კლიენტი; .deb GitHub-იდან, SHA-256 მოწმდება (~100 MB)"
+        "en": "SSH / SFTP / telnet / serial client; .deb / .rpm from GitHub, SHA-256 checked (~100 MB)",
+        "ka": "SSH / SFTP / telnet / serial კლიენტი; .deb / .rpm GitHub-იდან, SHA-256 მოწმდება (~100 MB)"
       },
       "display": "Electerm",
       "repo": "electerm/electerm",
@@ -171,7 +171,9 @@
       "cmd": "electerm",
       "asset": {
         "x86": "electerm-{v}-linux-amd64.deb",
-        "arm": "electerm-{v}-linux-arm64.deb"
+        "arm": "electerm-{v}-linux-arm64.deb",
+        "rpm_x86": "electerm-{v}-linux-x86_64.rpm",
+        "rpm_arm": "electerm-{v}-linux-aarch64.rpm"
       },
       "data": ["~/.config/electerm"]
     },
@@ -326,6 +328,98 @@
    "info": {
     "en": "extract .rar archives (command line: unrar x file.rar); from your distribution's repositories (Debian: the free unrar-free)",
     "ka": "RAR არქივების გახსნა (ბრძანება: unrar x file.rar); თქვენი დისტრიბუციის რეპოზიტორიიდან (Debian-ზე — თავისუფალი unrar-free)"
+   },
+   "data": []
+  },
+  {
+   "id": "git",
+   "group": "tools",
+   "kind": "package",
+   "display": "git",
+   "cmd": "git",
+   "cli": true,
+   "name": {
+    "en": "git",
+    "ka": "git"
+   },
+   "info": {
+    "en": "version control (command line: git); from your distribution's repositories",
+    "ka": "ვერსიების კონტროლი (ბრძანება: git); თქვენი დისტრიბუციის რეპოზიტორიიდან"
+   },
+   "data": [
+    "~/.gitconfig"
+   ]
+  },
+  {
+   "id": "curl",
+   "group": "tools",
+   "kind": "package",
+   "display": "curl",
+   "cmd": "curl",
+   "cli": true,
+   "name": {
+    "en": "curl",
+    "ka": "curl"
+   },
+   "info": {
+    "en": "download and test URLs from the terminal (command line: curl); from your distribution's repositories",
+    "ka": "ფაილების ჩამოტვირთვა და URL-ების შემოწმება ტერმინალიდან (ბრძანება: curl); თქვენი დისტრიბუციის რეპოზიტორიიდან"
+   },
+   "data": []
+  },
+  {
+   "id": "vim",
+   "group": "tools",
+   "kind": "package",
+   "display": "vim",
+   "cmd": "vim",
+   "cli": true,
+   "name": {
+    "en": "vim",
+    "ka": "vim"
+   },
+   "info": {
+    "en": "terminal text editor (command line: vim); from your distribution's repositories",
+    "ka": "ტექსტური რედაქტორი ტერმინალისთვის (ბრძანება: vim); თქვენი დისტრიბუციის რეპოზიტორიიდან"
+   },
+   "data": [
+    "~/.vimrc",
+    "~/.vim"
+   ]
+  },
+  {
+   "id": "htop",
+   "group": "tools",
+   "kind": "package",
+   "display": "htop",
+   "cmd": "htop",
+   "cli": true,
+   "name": {
+    "en": "htop",
+    "ka": "htop"
+   },
+   "info": {
+    "en": "interactive process and memory monitor (command line: htop); from your distribution's repositories",
+    "ka": "პროცესებისა და მეხსიერების ინტერაქტიური მონიტორი (ბრძანება: htop); თქვენი დისტრიბუციის რეპოზიტორიიდან"
+   },
+   "data": [
+    "~/.config/htop"
+   ]
+  },
+  {
+   "id": "net-tools",
+   "group": "tools",
+   "kind": "package",
+   "display": "net-tools",
+   "cmd": "ifconfig",
+   "cli": true,
+   "name": {
+    "en": "net-tools",
+    "ka": "net-tools"
+   },
+   "info": {
+    "en": "classic network tools ifconfig, netstat, route (command line); from your distribution's repositories",
+    "ka": "კლასიკური ქსელის ხელსაწყოები ifconfig, netstat, route (ბრძანება); თქვენი დისტრიბუციის რეპოზიტორიიდან"
    },
    "data": []
   },
