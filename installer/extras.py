@@ -1103,6 +1103,10 @@ def load_gis(path=None):
                 raise ValueError(f"gis.json: {i}: category must be one of {sorted(data['categories'])}")
             if not p.get("name") or not str(p.get("url", "")).startswith("https://"):
                 raise ValueError(f"gis.json: {i}: needs a name and an https url")
+            fp = p.get("flatpak")
+            if fp is not None and not (isinstance(fp, dict) and re.fullmatch(r"[A-Za-z0-9_.-]+", str(fp.get("id", "")))
+                                       and re.fullmatch(r"[A-Za-z0-9_.-]+", str(fp.get("branch", "stable")))):
+                raise ValueError(f"gis.json: {i}: 'flatpak' needs an id (and optionally a branch)")
             for pm, names in p.get("packages", {}).items():
                 if pm not in GIS_PMS or not names or not all(isinstance(n, str) and n and " " not in n for n in names):
                     raise ValueError(f"gis.json: {i}: bad packages for '{pm}'")
@@ -1120,20 +1124,64 @@ def gis_packages(item, pm):
     return item.get("packages", {}).get(pm) or None
 
 
-def gis_steps(item, pm, remove=False):
-    """[{'root': True, 'sh': ...}] installing / removing the packages, [] when there is nothing to install here."""
+def gis_flatpak(item):
+    """('org.qgis.qgis', 'lts') for an entry that comes from Flathub, else None."""
+    fp = item.get("flatpak")
+    return (fp["id"], fp.get("branch", "stable")) if fp else None
+
+
+def gis_available(item, pm):
+    """True when this entry can be ticked here: a distribution package, or Flathub (flatpak present or installable)."""
+    return bool(gis_packages(item, pm) or (gis_flatpak(item) and (shutil.which("flatpak") or pm in _INSTALL)))
+
+
+def gis_label(item, pm):
+    """What gets installed, for the confirmation list."""
+    names = gis_packages(item, pm)
+    if names:
+        return " ".join(names)
+    fp = gis_flatpak(item)
+    return f"flathub: {fp[0]}//{fp[1]}" if fp else ""
+
+
+def gis_steps(item, pm, remove=False, have_flatpak=None):
+    """[{'root': ..., 'sh': ...}] installing / removing the packages (or the Flathub app, for you only), [] when there is
+    nothing to install here."""
     names = gis_packages(item, pm)
     fmt = (_REMOVE if remove else _INSTALL).get(pm)
-    if not names or not fmt:
+    if names and fmt:
+        return [{"root": True, "sh": "set -u\n" + fmt.format(p=" ".join(names)) + "\n"}]
+    fp = gis_flatpak(item)
+    if not fp:
         return []
-    return [{"root": True, "sh": "set -u\n" + fmt.format(p=" ".join(names)) + "\n"}]
+    q = shlex.quote
+    ref = f"{fp[0]}//{fp[1]}"
+    if remove:
+        return [{"root": False, "sh": f"set -u\nflatpak uninstall -y --user {q(ref)}\n"}]
+    have = bool(shutil.which("flatpak")) if have_flatpak is None else have_flatpak
+    steps = []
+    if not have:
+        cmd = _INSTALL.get(pm)
+        if not cmd:
+            return []
+        steps.append({"root": True, "sh": "set -eu\n" + cmd.format(p="flatpak") + "\n"})
+    steps.append({"root": False, "sh": f"set -eu\nflatpak remote-add --user --if-not-exists flathub {q(FLATHUB_REPO)}\n"
+                                       f"flatpak install -y --user flathub {q(ref)}\n"})
+    return steps
 
 
 def gis_installed(item, pm, run=subprocess.run, which=shutil.which):
-    """True when every package of this entry is installed (dpkg / rpm / pacman), False otherwise or when unknown."""
+    """True when every package of this entry is installed (dpkg / rpm / pacman) - or its Flathub app is - False otherwise or
+    when unknown."""
     names = gis_packages(item, pm)
     if not names:
-        return False
+        fp = gis_flatpak(item)
+        if not fp or not which("flatpak"):
+            return False
+        try:
+            return run(["flatpak", "info", "--user", f"{fp[0]}//{fp[1]}"], capture_output=True, text=True, timeout=30).returncode == 0
+        except Exception:  # noqa: BLE001
+            return False
     for n in names:
         if pm == "apt-get" and which("dpkg-query"):
             cmd, ok = ["dpkg-query", "-W", "-f=${Status}", n], lambda r: r.stdout.startswith("install ok installed")
@@ -1150,7 +1198,6 @@ def gis_installed(item, pm, run=subprocess.run, which=shutil.which):
         if r.returncode != 0 or not ok(r):
             return False
     return True
-
 
 
 # ---- OpenGeos (https://github.com/opengeos): a catalogue shown as cards, links only ----

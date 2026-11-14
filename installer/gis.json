@@ -2,6 +2,80 @@
  "_comment": "GIS catalogue shown by the installer's GIS window. Entries with 'packages' (per package manager, names checked in real containers) can be installed from the distribution's repositories; 'tool' opens a tool of this toolkit; the rest are links to the project page.",
  "sections": [
   {
+   "id": "toolbox",
+   "title": {
+    "en": "GIS toolbox",
+    "ka": "GIS ხელსაწყოები"
+   },
+   "programs": [
+    {
+     "id": "qgis-distro",
+     "category": "Desktop Applications",
+     "name": "QGIS (your distribution's version)",
+     "url": "https://qgis.org/resources/installation-guide/#linux",
+     "packages": {
+      "apt-get": [
+       "qgis"
+      ],
+      "dnf": [
+       "qgis"
+      ],
+      "pacman": [
+       "qgis"
+      ],
+      "zypper": [
+       "qgis"
+      ]
+     }
+    },
+    {
+     "id": "qgis-flathub-stable",
+     "category": "Desktop Applications",
+     "name": "QGIS - latest stable (Flathub, for you only)",
+     "url": "https://flathub.org/apps/org.qgis.qgis",
+     "flatpak": {
+      "id": "org.qgis.qgis",
+      "branch": "stable"
+     }
+    },
+    {
+     "id": "qgis-flathub-lts",
+     "category": "Desktop Applications",
+     "name": "QGIS - long-term release LTR (Flathub, for you only)",
+     "url": "https://flathub.org/apps/org.qgis.qgis",
+     "flatpak": {
+      "id": "org.qgis.qgis",
+      "branch": "lts"
+     }
+    },
+    {
+     "id": "saga",
+     "category": "Desktop Applications",
+     "name": "SAGA GIS",
+     "url": "https://saga-gis.sourceforge.io/",
+     "packages": {
+      "apt-get": [
+       "saga"
+      ]
+     }
+    },
+    {
+     "id": "spatialite",
+     "category": "Spatial Databases",
+     "name": "SpatiaLite tools",
+     "url": "https://www.gaia-gis.it/fossil/spatialite-tools",
+     "packages": {
+      "apt-get": [
+       "spatialite-bin"
+      ],
+      "dnf": [
+       "spatialite-tools"
+      ]
+     }
+    }
+   ]
+  },
+  {
    "id": "osgeo",
    "title": {
     "en": "OSGeo Projects",

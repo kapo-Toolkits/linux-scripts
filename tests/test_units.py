@@ -1937,23 +1937,25 @@ class GisCatalogue(unittest.TestCase):
 
     def test_the_two_lists_are_all_there(self):
         data = self.ex.load_gis()
-        self.assertEqual([s["id"] for s in data["sections"]], ["osgeo", "community"])
+        self.assertEqual([s["id"] for s in data["sections"]], ["toolbox", "osgeo", "community"])
         names = {p["id"]: p["name"] for p in self.ex.gis_programs(data).values()}
-        osgeo = {p["name"] for p in data["sections"][0]["programs"]}
-        community = {p["name"] for p in data["sections"][1]["programs"]}
+        osgeo = {p["name"] for p in data["sections"][1]["programs"]}
+        community = {p["name"] for p in data["sections"][2]["programs"]}
         for n in ("GeoNode", "Marble", "gvSIG Desktop", "QGIS Desktop", "TorchGeo", "PROJ", "GDAL/OGR", "GEOS", "GRASS", "GeoNetwork",
                   "pycsw", "OSGeoLive", "PostGIS", "pgRouting", "pygeoapi", "MapServer", "OpenLayers", "PyWPS", "GeoServer"):
             self.assertIn(n, osgeo)
         for n in ("OSGeo4W", "pygeometa", "SFCGAL", "OWSLib", "QField", "EOEPCA+", "MobilityDB", "rasdaman", "GeoGirafe", "istSOS"):
             self.assertIn(n, community)
         self.assertFalse(osgeo & community)
-        self.assertEqual(len(names), len(osgeo) + len(community))                    # ids are unique over both lists
+        self.assertEqual(len(names), len(osgeo) + len(community) + len(data["sections"][0]["programs"]))    # ids are unique over all lists
 
     def test_every_entry_has_a_project_page_and_categories_have_georgian_names(self):
         data = self.ex.load_gis()
-        for p in self.ex.gis_programs(data).values():
-            self.assertTrue(p["url"].startswith("https://www.osgeo.org/projects/"), p["id"])
-            self.assertTrue(data["categories"][p["category"]])
+        for sec in data["sections"]:
+            for p in sec["programs"]:
+                if sec["id"] != "toolbox":
+                    self.assertTrue(p["url"].startswith("https://www.osgeo.org/projects/"), p["id"])
+                self.assertTrue(data["categories"][p["category"]])
 
     def test_install_and_remove_steps(self):
         g = self.ex.gis_programs()
@@ -1965,8 +1967,26 @@ class GisCatalogue(unittest.TestCase):
         for pm in ("apt-get", "dnf", "pacman", "zypper"):
             for item in g.values():
                 for st in self.ex.gis_steps(item, pm):
-                    self.assertTrue(st["root"])
                     self.assertEqual(subprocess.run(["sh", "-n", "-c", st["sh"]], capture_output=True).returncode, 0)
+
+    def test_toolbox_qgis_saga_gdal_and_flathub(self):
+        g = self.ex.gis_programs()
+        self.assertEqual([x["id"] for x in self.ex.load_gis()["sections"][0]["programs"]][:3], ["qgis-distro", "qgis-flathub-stable", "qgis-flathub-lts"])
+        self.assertEqual(self.ex.gis_steps(g["qgis-distro"], "dnf")[0]["sh"], "set -u\ndnf install -y qgis\n")
+        self.assertEqual(self.ex.gis_steps(g["saga"], "dnf"), [])                      # only where the package exists
+        self.assertEqual(self.ex.gis_label(g["saga"], "apt-get"), "saga")
+        steps = self.ex.gis_steps(g["qgis-flathub-lts"], "dnf", have_flatpak=False)     # flatpak itself first (root), then the app for the user
+        self.assertEqual([x["root"] for x in steps], [True, False])
+        self.assertIn("flatpak install -y --user flathub org.qgis.qgis//lts", steps[1]["sh"])
+        self.assertIn("org.qgis.qgis//stable", self.ex.gis_steps(g["qgis-flathub-stable"], "pacman", have_flatpak=True)[0]["sh"])
+        self.assertEqual(self.ex.gis_steps(g["qgis-flathub-lts"], "apt-get", remove=True),
+                         [{"root": False, "sh": "set -u\nflatpak uninstall -y --user org.qgis.qgis//lts\n"}])
+        self.assertEqual(self.ex.gis_label(g["qgis-flathub-lts"], "dnf"), "flathub: org.qgis.qgis//lts")
+        got = []
+        run = lambda cmd, **k: got.append(cmd) or types.SimpleNamespace(returncode=0, stdout="")      # noqa: E731
+        self.assertTrue(self.ex.gis_installed(g["qgis-flathub-lts"], "dnf", run=run, which=lambda c: "/x"))
+        self.assertEqual(got[0], ["flatpak", "info", "--user", "org.qgis.qgis//lts"])
+        self.assertFalse(self.ex.gis_installed(g["qgis-flathub-lts"], "dnf", run=run, which=lambda c: None))
 
     def test_installed_needs_every_package(self):
         g = self.ex.gis_programs()

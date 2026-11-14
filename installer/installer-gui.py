@@ -123,7 +123,7 @@ STR = {
  "log_none": "Nothing was logged today yet.\n{p}", "log_copied": "Copied the last {n} lines to the clipboard. Paste them into a bug report.\nFile: {p}",
  "gis_btn": "GIS", "gis_title": "GIS programs", "gis_open_tool": "Open", "gis_nopkg": "no package for this system",
  "gis_intro": "OSGeo projects and community projects. Ticked entries are installed from your distribution's repositories (administrator password); ↗ opens the project's page.",
- "gis_install": "Install selected", "gis_uninstall": "Uninstall selected", "gis_tool_missing": "Could not start {tool}.",
+ "gis_clear": "Clear", "gis_install": "Install selected", "gis_uninstall": "Uninstall selected", "gis_tool_missing": "Could not start {tool}.",
  "gis_broken": "The GIS list could not be read:\n{e}",
  "gis_ask_install": "Install with {pm}?\n\n{list}\n\n(administrator password)",
  "gis_ask_uninstall": "Remove with {pm}?\n\n{list}",
@@ -215,7 +215,7 @@ STR = {
  "log_none": "დღეს ჯერ არაფერი ჩაწერილა.\n{p}", "log_copied": "ბოლო {n} ხაზი დაკოპირდა ბუფერში. ჩასვით შეცდომის შეტყობინებაში.\nფაილი: {p}",
  "gis_btn": "GIS", "gis_title": "GIS პროგრამები", "gis_open_tool": "გახსნა", "gis_nopkg": "ამ სისტემისთვის პაკეტი არ არის",
  "gis_intro": "OSGeo-ს პროექტები და Community პროექტები. მონიშნული დაყენდება თქვენი დისტრიბუციის რეპოზიტორიიდან (ადმინისტრატორის პაროლი); ↗ პროექტის გვერდს ხსნის.",
- "gis_install": "მონიშნულის დაყენება", "gis_uninstall": "მონიშნულის წაშლა", "gis_tool_missing": "{tool}-ის გაშვება ვერ მოხერხდა.",
+ "gis_clear": "გასუფთავება", "gis_install": "მონიშნულის დაყენება", "gis_uninstall": "მონიშნულის წაშლა", "gis_tool_missing": "{tool}-ის გაშვება ვერ მოხერხდა.",
  "gis_broken": "GIS სიის წაკითხვა ვერ მოხერხდა:\n{e}",
  "gis_ask_install": "დავაყენო {pm}-ით?\n\n{list}\n\n(ადმინისტრატორის პაროლი)",
  "gis_ask_uninstall": "წავშალო {pm}-ით?\n\n{list}",
@@ -1398,10 +1398,30 @@ class App(tk.Tk):
         win.geometry("760x560")
         win.transient(self)
         ttk.Label(win, text=t("gis_intro"), wraplength=720, justify="left", foreground="#555555").pack(anchor="w", padx=12, pady=(10, 4))
+        sbar = ttk.Frame(win)
+        sbar.pack(fill="x", padx=12)
+        ttk.Label(sbar, text=t("search")).pack(side="left")
+        v_find = tk.StringVar()
+        ttk.Entry(sbar, textvariable=v_find, width=34).pack(side="left", padx=6)
+        ttk.Button(sbar, text=t("gis_clear"), command=lambda: v_find.set("")).pack(side="left")
         nb = ttk.Notebook(win)
         nb.pack(fill="both", expand=True, padx=10, pady=4)
         self.gis_vars = {}
         installed = {}
+        shown = []                                         # (text to search, [widgets of the row], header widget) per entry
+
+        def refilter(*_):
+            needle = v_find.get().strip().lower()
+            seen_header = set()
+            for text, widgets, header in shown:
+                hit = not needle or needle in text
+                for w in widgets:
+                    w.grid() if hit else w.grid_remove()
+                if hit:
+                    seen_header.add(header)
+            for _text, _w, header in shown:
+                header.grid() if header in seen_header else header.grid_remove()
+        v_find.trace_add("write", refilter)
 
         def open_url(url):
             try:
@@ -1435,28 +1455,37 @@ class App(tk.Tk):
                 cv.bind(seq, lambda e, c=cv, d=d: c.yview_scroll(d if d is not None else (-1 if e.delta > 0 else 1), "units"))
                 inner.bind(seq, lambda e, c=cv, d=d: c.yview_scroll(d if d is not None else (-1 if e.delta > 0 else 1), "units"))
             inner.columnconfigure(0, weight=1)
-            row, cat = 0, None
+            row, cat, header = 0, None, None
             for item in sec["programs"]:
                 if item["category"] != cat:
                     cat = item["category"]
-                    ttk.Label(inner, text=data["categories"][cat] if LANG == "ka" else cat, font=("", 10, "bold"),
-                              foreground="#444444").grid(row=row, column=0, columnspan=3, sticky="w", padx=8, pady=(10, 2))
+                    header = ttk.Label(inner, text=data["categories"][cat] if LANG == "ka" else cat, font=("", 10, "bold"),
+                                       foreground="#444444")
+                    header.grid(row=row, column=0, columnspan=3, sticky="w", padx=8, pady=(10, 2))
                     row += 1
-                names = extras.gis_packages(item, pm)
-                if names:
+                widgets = []
+                if extras.gis_available(item, pm):
                     var = tk.BooleanVar(value=False)
                     self.gis_vars[item["id"]] = var
                     have = installed[item["id"]] = extras.gis_installed(item, pm)
-                    ttk.Checkbutton(inner, text=item["name"], variable=var).grid(row=row, column=0, sticky="w", padx=(18, 4))
-                    ttk.Label(inner, text=t("yes") if have else t("none"), font=("", 8),
-                              foreground="#1a7f37" if have else "#888888").grid(row=row, column=1, padx=6)
+                    widgets.append(ttk.Checkbutton(inner, text=item["name"], variable=var))
+                    widgets[-1].grid(row=row, column=0, sticky="w", padx=(18, 4))
+                    widgets.append(ttk.Label(inner, text=t("yes") if have else t("none"), font=("", 8),
+                                             foreground="#1a7f37" if have else "#888888"))
+                    widgets[-1].grid(row=row, column=1, padx=6)
                 elif item.get("tool"):
-                    ttk.Label(inner, text=item["name"]).grid(row=row, column=0, sticky="w", padx=(22, 4))
-                    ttk.Button(inner, text=t("gis_open_tool"), command=lambda tl=item["tool"]: open_tool(tl)).grid(row=row, column=1, padx=6)
+                    widgets.append(ttk.Label(inner, text=item["name"]))
+                    widgets[-1].grid(row=row, column=0, sticky="w", padx=(22, 4))
+                    widgets.append(ttk.Button(inner, text=t("gis_open_tool"), command=lambda tl=item["tool"]: open_tool(tl)))
+                    widgets[-1].grid(row=row, column=1, padx=6)
                 else:
-                    ttk.Label(inner, text=item["name"] + ("  · " + t("gis_nopkg") if item.get("packages") else ""),
-                              foreground="#555555").grid(row=row, column=0, sticky="w", padx=(22, 4))
-                ttk.Button(inner, text="↗", width=3, command=lambda u=item["url"]: open_url(u)).grid(row=row, column=2, padx=(0, 8))
+                    widgets.append(ttk.Label(inner, text=item["name"] + ("  · " + t("gis_nopkg") if item.get("packages") else ""),
+                                             foreground="#555555"))
+                    widgets[-1].grid(row=row, column=0, sticky="w", padx=(22, 4))
+                widgets.append(ttk.Button(inner, text="↗", width=3, command=lambda u=item["url"]: open_url(u)))
+                widgets[-1].grid(row=row, column=2, padx=(0, 8))
+                shown.append(((item["name"] + " " + item["id"] + " " + item["category"] + " "
+                               + data["categories"].get(item["category"], "")).lower(), widgets, header))
                 row += 1
         bar = ttk.Frame(win)
         bar.pack(fill="x", padx=12, pady=8)
@@ -1476,7 +1505,7 @@ class App(tk.Tk):
         steps, listing = [], []
         for item in chosen:
             steps += extras.gis_steps(item, pm, remove=(action == "uninstall"))
-            listing.append(f"• {item['name']}  ({' '.join(extras.gis_packages(item, pm))})")
+            listing.append(f"• {item['name']}  ({extras.gis_label(item, pm)})")
         if not messagebox.askyesno(t("title"), t("gis_ask_install" if action == "install" else "gis_ask_uninstall", list="\n".join(listing), pm=pm), parent=win):
             return
         jobs = self.steps_to_jobs(steps)
