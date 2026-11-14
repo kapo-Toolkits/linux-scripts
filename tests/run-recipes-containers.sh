@@ -9,7 +9,7 @@ root="$(cd "$(dirname "$0")/.." && pwd)"
 PREP='
 if   command -v apt-get >/dev/null; then apt-get update -qq >/dev/null 2>&1; apt-get install -y -qq python3 ca-certificates >/dev/null 2>&1
 elif command -v dnf     >/dev/null; then dnf install -y -q python3 >/dev/null 2>&1
-elif command -v pacman  >/dev/null; then pacman -Sy --noconfirm python >/dev/null 2>&1
+elif command -v pacman  >/dev/null; then pacman -Syu --noconfirm python >/dev/null 2>&1
 elif command -v zypper  >/dev/null; then zypper -q --non-interactive refresh >/dev/null 2>&1; zypper -q --non-interactive install python3 >/dev/null 2>&1
 elif command -v urpmi   >/dev/null; then urpmi.update -a >/dev/null 2>&1; urpmi --auto python3 >/dev/null 2>&1
 fi
