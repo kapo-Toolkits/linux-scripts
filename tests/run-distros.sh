@@ -8,7 +8,7 @@ probe='
 . /etc/os-release; echo "### $PRETTY_NAME"
 if   command -v apt-get >/dev/null; then apt-get update -qq >/dev/null 2>&1; apt-get install -y -qq python3 >/dev/null 2>&1
 elif command -v dnf     >/dev/null; then dnf install -y -q python3 >/dev/null 2>&1
-elif command -v pacman  >/dev/null; then pacman -Sy --noconfirm python >/dev/null 2>&1
+elif command -v pacman  >/dev/null; then pacman -Syu --noconfirm python >/dev/null 2>&1
 elif command -v zypper  >/dev/null; then zypper -q --non-interactive refresh >/dev/null 2>&1; zypper -q --non-interactive install python3 >/dev/null 2>&1
 elif command -v apk     >/dev/null; then apk add -q python3 bash >/dev/null 2>&1
 fi
