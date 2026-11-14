@@ -355,10 +355,24 @@ class Window(unittest.TestCase):
                         out += find(c, cls)
                     return out
                 tabs = find(top, "TNotebook")[0]
-                self.assertEqual([tabs.tab(i, "text") for i in range(tabs.index("end"))], ["OSGeo Projects", "Community projects"])
+                self.assertEqual([tabs.tab(i, "text") for i in range(tabs.index("end"))], ["GIS toolbox", "OSGeo Projects", "Community projects"])
                 texts = [w.cget("text") for w in find(top, "TCheckbutton")]
                 self.assertIn("Marble", texts)
                 self.assertIn("GDAL/OGR", texts)
+                self.assertIn("QGIS - long-term release LTR (Flathub, for you only)", texts)          # the toolbox's Flathub entry
+                self.assertIn("SAGA GIS", texts)
+                entry = find(top, "TEntry")[0]                                  # the search box filters every tab
+                shown = lambda: [w.cget("text") for w in find(top, "TCheckbutton") if w.winfo_manager()]   # noqa: E731
+                entry.insert(0, "saga")
+                self.pump(app, 0.3)
+                self.assertEqual(shown(), ["SAGA GIS"])
+                entry.delete(0, "end")
+                entry.insert(0, "lts")
+                self.pump(app, 0.3)
+                self.assertEqual(shown(), ["QGIS - long-term release LTR (Flathub, for you only)"])
+                entry.delete(0, "end")
+                self.pump(app, 0.3)
+                self.assertIn("Marble", shown())
                 self.assertNotIn("GeoServer", texts)                           # link-only: no checkbox
                 self.assertIn("Desktop Applications", [w.cget("text") for w in find(top, "TLabel")])
                 app.gis_vars["marble"].set(True)
