@@ -839,6 +839,25 @@ class Updater(unittest.TestCase):
             self.assertEqual(self.up.check(copy)["mode"], "git")
             self.assertFalse(self.up.adopt(copy, url=origin)[0])                      # not twice
 
+    def test_adopt_saves_your_changed_files_first_and_leaves_no_half_checkout_on_failure(self):
+        with tempfile.TemporaryDirectory() as d:
+            origin, mine, other = self.world(d)
+            copy = os.path.join(d, "copy")
+            os.makedirs(copy)
+            with open(os.path.join(copy, "install.sh"), "w") as f:
+                f.write("#!/bin/sh\necho MY OWN EDIT\n")                           # differs from GitHub's: would be overwritten
+            bak = os.path.join(d, "bak")
+            ok, msg = self.up.adopt(copy, url=origin, backup_dir=bak)
+            self.assertTrue(ok, msg)
+            self.assertIn("MY OWN EDIT", open(os.path.join(bak, "install.sh")).read())
+            self.assertIn("1 file(s) of yours", msg)
+            other_copy = os.path.join(d, "copy2")
+            os.makedirs(other_copy)
+            open(os.path.join(other_copy, "install.sh"), "w").write("x")
+            ok, msg = self.up.adopt(other_copy, url=os.path.join(d, "nowhere"), backup_dir=os.path.join(d, "bak2"))
+            self.assertFalse(ok)
+            self.assertFalse(os.path.exists(os.path.join(other_copy, ".git")))        # a failed adoption leaves the folder as it was
+
     def test_adopt_refuses_the_wrong_folder_and_nested_repositories(self):
         with tempfile.TemporaryDirectory() as d:
             empty = os.path.join(d, "empty")
@@ -975,6 +994,121 @@ class UpdaterWithoutGit(unittest.TestCase):
             self.assertFalse(ok)
             ok, msg = self.u.update_archive(d, self.SHA2)                # no install.sh there
             self.assertFalse(ok)
+
+    # ---- the update must never write outside the folder, never leave it half-updated, never trust the archive ----
+    def raw_snapshot(self, members, comment=None):
+        """members: [(name, kind, data_or_target)] kind in file|symlink|hardlink|dir."""
+        import io
+        import tarfile
+        buf = io.BytesIO()
+        with tarfile.open(fileobj=buf, mode="w:gz", format=tarfile.PAX_FORMAT, pax_headers={"comment": comment} if comment else None) as tar:
+            for name, kind, data in members:
+                ti = tarfile.TarInfo(name)
+                if kind == "file":
+                    ti.size = len(data)
+                    tar.addfile(ti, io.BytesIO(data))
+                elif kind == "dir":
+                    ti.type = tarfile.DIRTYPE
+                    tar.addfile(ti)
+                else:
+                    ti.type = tarfile.SYMTYPE if kind == "symlink" else tarfile.LNKTYPE
+                    ti.linkname = data
+                    tar.addfile(ti)
+        return io.BytesIO(buf.getvalue())
+
+    def update(self, root, snap, **kw):
+        return self.u.update_archive(root, self.SHA2, opener=lambda req, timeout=0: snap, backup_dir=os.path.join(os.path.dirname(root), "bak"), **kw)
+
+    def test_a_symbolic_link_is_never_written_through(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = self.folder(d)
+            outside = os.path.join(d, "outside")
+            os.makedirs(outside)
+            victim = os.path.join(outside, "victim.txt")
+            with open(victim, "w") as f:
+                f.write("PRECIOUS")
+            os.symlink(victim, os.path.join(root, "README.md"))                      # a file link inside the folder
+            os.symlink(outside, os.path.join(root, "common"))                        # a folder link inside the folder
+            snap = self.raw_snapshot([("t/install.sh", "file", b"new\n"), ("t/README.md", "file", b"HOSTILE"),
+                                      ("t/common/x.py", "file", b"planted"), ("t/ok.txt", "file", b"fine")])
+            ok, msg = self.update(root, snap)
+            self.assertTrue(ok, msg)
+            self.assertEqual(open(victim).read(), "PRECIOUS")
+            self.assertFalse(os.path.exists(os.path.join(outside, "x.py")))
+            self.assertTrue(os.path.islink(os.path.join(root, "README.md")))        # the user's links are exactly as they were
+            self.assertTrue(os.path.islink(os.path.join(root, "common")))
+            self.assertEqual(open(os.path.join(root, "ok.txt")).read(), "fine")      # everything else still updated
+            self.assertIn("2 file(s) kept because they are symbolic links", msg)
+            ok, files = self.u.preview_archive(root, self.SHA2, opener=lambda req, timeout=0: self.raw_snapshot(
+                [("t/install.sh", "file", b"newer\n"), ("t/README.md", "file", b"x")]))
+            self.assertEqual(files, [("changed", "install.sh")])                     # the preview does not promise the linked file
+
+    def test_the_root_may_itself_be_reached_through_a_link(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = self.folder(d)
+            link = os.path.join(d, "alias")
+            os.symlink(root, link)
+            ok, msg = self.update(link, self.raw_snapshot([("t/install.sh", "file", b"new\n")]))
+            self.assertTrue(ok, msg)
+            self.assertEqual(open(os.path.join(root, "install.sh")).read(), "new\n")
+
+    def test_unsafe_archive_entries_are_skipped_and_a_wrong_commit_or_size_is_refused(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = self.folder(d)
+            evil = self.raw_snapshot([("t/install.sh", "file", b"new\n"), ("t/link", "symlink", "/etc/passwd"),
+                                      ("t/hard", "hardlink", "t/install.sh"), ("/abs.txt", "file", b"x"),
+                                      ("t/../../up.txt", "file", b"x"), ("other/file.txt", "file", b"x")])
+            ok, msg = self.update(root, evil)
+            self.assertTrue(ok, msg)
+            self.assertEqual(sorted(os.listdir(root)), [".installed-sha", "install.sh", "mine.txt"])
+            self.assertFalse(os.path.exists(os.path.join(d, "up.txt")) or os.path.exists("/abs.txt"))
+        with tempfile.TemporaryDirectory() as d:
+            root = self.folder(d)
+            ok, msg = self.update(root, self.raw_snapshot([("t/install.sh", "file", b"new\n")], comment="c" * 40))
+            self.assertFalse(ok)
+            self.assertIn("different commit", msg)
+            self.assertEqual(open(os.path.join(root, "install.sh")).read(), "old\n")
+            ok, msg = self.update(root, self.raw_snapshot([("t/install.sh", "file", b"new\n")], comment=self.SHA2))
+            self.assertTrue(ok, msg)                                                  # the right commit id is accepted
+        with tempfile.TemporaryDirectory() as d:
+            root = self.folder(d)
+            with mock.patch.object(self.u, "MAX_DOWNLOAD", 100):
+                ok, msg = self.update(root, self.raw_snapshot([("t/install.sh", "file", b"n" * 5000)]))
+            self.assertFalse(ok)
+            self.assertIn("larger than the toolkit", msg)
+
+    def test_an_interrupted_update_puts_everything_back(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = self.folder(d)
+            with open(os.path.join(root, "second.txt"), "w") as f:
+                f.write("second old\n")
+            snap = self.raw_snapshot([("t/install.sh", "file", b"new\n"), ("t/second.txt", "file", b"second new\n"),
+                                      ("t/sub/deep/added.py", "file", b"added\n"), ("t/zzz.txt", "file", b"last\n")])
+            real, calls = os.replace, []
+
+            def flaky(a, b):                                            # the disk fails at the 4th rename; later ones (the rollback) work
+                calls.append(b)
+                if len(calls) == 4:
+                    raise OSError(28, "No space left on device")
+                return real(a, b)
+            with mock.patch.object(self.u.os, "replace", flaky):
+                ok, msg = self.update(root, snap)
+            self.assertFalse(ok)
+            self.assertIn("No space left", msg)
+            self.assertIn("put back as it was", msg)
+            self.assertEqual(open(os.path.join(root, "install.sh")).read(), "old\n")
+            self.assertEqual(open(os.path.join(root, "second.txt")).read(), "second old\n")
+            self.assertEqual(sorted(os.listdir(root)), ["install.sh", "mine.txt", "second.txt"])      # no new file, folder or leftover
+            self.assertFalse(os.path.exists(os.path.join(root, ".installed-sha")))                   # not recorded as updated
+
+    def test_a_changed_executable_bit_alone_counts_as_a_change(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = self.folder(d)
+            with open(os.path.join(root, "run.sh"), "w") as f:
+                f.write("#!/bin/sh\n")
+            os.chmod(os.path.join(root, "install.sh"), 0o755)
+            ok, files = self.u.preview_archive(root, self.SHA2, opener=lambda req, timeout=0: self.snapshot(d, {"t/install.sh": b"old\n", "t/run.sh": b"#!/bin/sh\n"}))
+            self.assertEqual(files, [("changed", "run.sh")])                          # same text, but the snapshot's is executable
 
     def test_preview_lists_what_would_change_and_touches_nothing(self):
         with tempfile.TemporaryDirectory() as d:
@@ -1824,6 +1958,62 @@ class GetScript(unittest.TestCase):
             self.assertNotEqual(r.returncode, 0)
             self.assertIn("not a toolkit folder", r.stderr)
             self.assertEqual(os.listdir(other), ["important.txt"])
+
+    def toolkit_tar(self, d, extra):
+        """A tarball with the two files get.sh looks for, plus `extra` [(name, kind, target)] built with tarfile."""
+        import io
+        import tarfile
+        snap = os.path.join(d, "evil.tar.gz")
+        with tarfile.open(snap, "w:gz") as tar:
+            for name in ("top/install.sh", "top/installer/start.sh"):
+                ti = tarfile.TarInfo(name)
+                ti.size = 4
+                tar.addfile(ti, io.BytesIO(b"echo"))
+            for name, kind, data in extra:
+                ti = tarfile.TarInfo(name)
+                if kind == "file":
+                    ti.size = len(data)
+                    tar.addfile(ti, io.BytesIO(data))
+                else:
+                    ti.type = tarfile.SYMTYPE if kind == "symlink" else tarfile.LNKTYPE
+                    ti.linkname = data
+                    tar.addfile(ti)
+        return snap
+
+    def test_an_archive_with_links_or_escaping_names_installs_nothing(self):
+        for extra, word in (([("top/link", "symlink", "/etc/passwd")], "links"), ([("top/hard", "hardlink", "top/install.sh")], "links"),
+                            ([("top/../../up.txt", "file", b"x")], "unsafe"), ([("/abs.txt", "file", b"x")], "unsafe")):
+            with tempfile.TemporaryDirectory() as d:
+                r = self.run_get(d, "--no-start", snap=self.toolkit_tar(d, extra))
+                self.assertFalse(os.path.exists(os.path.join(d, "up.txt")) or os.path.exists(os.path.join(d, "home", "up.txt"))
+                                 or os.path.exists("/abs.txt"), extra)                                   # nothing escaped, whatever tar does
+                if word == "links" or r.returncode != 0:         # links are always refused; busybox tar itself sanitises '..' and '/'
+                    self.assertNotEqual(r.returncode, 0, extra)
+                    self.assertIn(word, r.stderr)
+                    self.assertFalse(os.path.exists(os.path.join(d, "home", "linux-scripts")), extra)   # not even a folder was made
+
+    def test_a_symbolic_link_in_the_folder_is_kept_not_followed(self):
+        with tempfile.TemporaryDirectory() as d:
+            snap = self.snapshot(d)
+            self.assertEqual(self.run_get(d, "--no-start", snap=snap).returncode, 0)
+            dest = os.path.join(d, "home", "linux-scripts")
+            outside = os.path.join(d, "outside")
+            os.makedirs(outside)
+            victim = os.path.join(outside, "victim.txt")
+            with open(victim, "w") as f:
+                f.write("PRECIOUS")
+            os.remove(os.path.join(dest, "LICENSE"))
+            os.symlink(victim, os.path.join(dest, "LICENSE"))                      # a file link
+            shutil.rmtree(os.path.join(dest, "common"))
+            os.symlink(outside, os.path.join(dest, "common"))                      # a folder link
+            r = self.run_get(d, "--no-start", snap=snap)
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            self.assertEqual(open(victim).read(), "PRECIOUS")
+            self.assertEqual(os.listdir(outside), ["victim.txt"])                  # nothing written through the folder link
+            self.assertTrue(os.path.islink(os.path.join(dest, "LICENSE")))
+            self.assertTrue(os.path.islink(os.path.join(dest, "common")))
+            self.assertIn("kept (symbolic link here): LICENSE", r.stdout)
+            self.assertTrue(os.path.isfile(os.path.join(dest, "install.sh")))     # the rest was still updated
 
     def test_a_wrong_download_is_refused(self):
         with tempfile.TemporaryDirectory() as d:
