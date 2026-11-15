@@ -75,8 +75,9 @@ blocked() {
 # Copy every file of the snapshot over DEST: each one is written next to its place and renamed into it (an atomic step), and a
 # symbolic link of yours is kept exactly as it is instead of being followed to wherever it points.
 copy_in() {
-    ( cd "$TMP/x" && find . -type f ) | while IFS= read -r f; do
-        rel=${f#./}
+    # the file list comes from the archive itself (find is not installed everywhere); folders end with '/'
+    sed 's#^\./##; s#^[^/]*/##' "$TMP/names" | grep -v '/$' | grep -v '^$' | while IFS= read -r rel; do
+        [ -f "$TMP/x/$rel" ] || continue
         if blocked "$rel"; then say "kept (symbolic link here): $rel"; continue; fi
         mkdir -p "$DEST/$(dirname "$rel")"
         cp -p "$TMP/x/$rel" "$DEST/$rel.new-$$" && mv -f "$DEST/$rel.new-$$" "$DEST/$rel"
