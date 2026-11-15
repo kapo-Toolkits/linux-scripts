@@ -31,7 +31,7 @@ sh installer/start.sh      # the installer window: tick programs, click Install
 ## Install / uninstall
 
 ```bash
-./install.sh all                 # or: usb-eject wifi-hotspot printer-setup qgis-installer bluetooth-setup shortcuts
+./install.sh all                 # or: usb-eject wifi-hotspot printer-setup qgis-installer shortcuts
 ./install.sh --uninstall all
 ./install.sh --prefix ~/.local all   # no sudo; menu entries land in ~/.local/share/applications
 ```
@@ -47,7 +47,7 @@ tests/run-qgis-containers.sh           # needs docker; real apt + qgis.org in th
 ```
 
 CI (GitHub Actions) runs both on every push and weekly.
-| [bluetooth-setup](bluetooth-setup/) | GUI (EN/KA): which Bluetooth dongle works and what it supports (Classic/LE/SSP), scan, pair, connect, audio output |
+| [bluetooth-setup](https://github.com/kapo-Toolkits/bluetooth-setup) | Moved to its own repository (EN/KA GUI: which Bluetooth dongle works, scan, pair, connect) |
 | [printhub](printhub/) | Print front-end (Qt): PDF, images and Office files with preview and full print settings; EN/KA; `./install.sh printhub` |
 | [shortcuts](shortcuts/) | Simple GUI (EN/KA): tick toolkit programs and put their launchers on the Desktop (or remove them) |
 | [installer](installer/) | Window around `install.sh` (EN/KA): tick programs, choose “for me / for everyone”, click Install; `--make-launcher` makes a double-click icon in this folder |

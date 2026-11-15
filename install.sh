@@ -16,7 +16,6 @@ declare -A FILES=(
   [wifi-hotspot]="wifi-hotspot/hotspot.sh|hotspot wifi-hotspot/hotspot-gui.py|hotspot-gui"
   [printer-setup]="printer-setup/printer-setup-gui.py|printer-setup"
   [qgis-installer]="qgis-installer/qgis-installer-gui.py|qgis-installer qgis-installer/qgis-installer-cli.py|qgis-installer-cli"
-  [bluetooth-setup]="bluetooth-setup/bluetooth-setup-gui.py|bluetooth-setup"
   [shortcuts]="shortcuts/shortcuts-gui.py|toolkit-shortcuts"
   [printhub]="printhub/printhub-launcher.sh|printhub"   # not part of "all": the app + PySide6 are installed too
 )
@@ -25,7 +24,6 @@ declare -A GUISCRIPT=(
   [wifi-hotspot]=wifi-hotspot/hotspot-gui.py
   [printer-setup]=printer-setup/printer-setup-gui.py
   [qgis-installer]=qgis-installer/qgis-installer-gui.py
-  [bluetooth-setup]=bluetooth-setup/bluetooth-setup-gui.py
   [shortcuts]=shortcuts/shortcuts-gui.py
   [printhub]=printhub/run.py
 )
@@ -34,11 +32,10 @@ declare -A DESKTOP=(
   [wifi-hotspot]=wifi-hotspot/hotspot-gui.desktop
   [printer-setup]=printer-setup/printer-setup.desktop
   [qgis-installer]=qgis-installer/qgis-installer.desktop
-  [bluetooth-setup]=bluetooth-setup/bluetooth-setup.desktop
   [shortcuts]=shortcuts/shortcuts.desktop
   [printhub]=printhub/packaging/linux/printhub.desktop
 )
-ALL=(usb-eject wifi-hotspot printer-setup qgis-installer bluetooth-setup shortcuts)
+ALL=(usb-eject wifi-hotspot printer-setup qgis-installer shortcuts)
 
 usage() {
   cat <<U
@@ -182,6 +179,11 @@ if [ "$ACTION" = uninstall ]; then
   case " ${TOOLS[*]} " in *" qgis-installer "*) $SUDO rm -rf "$PREFIX/lib/linux-scripts/qgis_installer";; esac
   guis=0; for g in usb-eject-gui hotspot-gui printer-setup qgis-installer qgis-installer-cli bluetooth-setup toolkit-shortcuts; do [ -e "$PREFIX/bin/$g" ] && guis=1; done
   [ "$guis" = 0 ] && $SUDO rm -rf "$PREFIX/lib/linux-scripts" && echo "removed shared helper"
+fi
+# bluetooth-setup moved to its own repository; a copy installed by an earlier version is not touched
+if [ "$ACTION" = uninstall ] && [ -e "$PREFIX/bin/bluetooth-setup" ]; then
+  echo "note: $PREFIX/bin/bluetooth-setup was installed by an older version and is left in place; the tool now lives at"
+  echo "      https://github.com/kapo-Toolkits/bluetooth-setup  (remove the old copy with: $SUDO rm -f $PREFIX/bin/bluetooth-setup $PREFIX/share/applications/bluetooth-setup.desktop)"
 fi
 command -v update-desktop-database >/dev/null && $SUDO update-desktop-database -q "$PREFIX/share/applications" 2>/dev/null || true
 echo "Done."
