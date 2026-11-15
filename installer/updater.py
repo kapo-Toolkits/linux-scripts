@@ -149,6 +149,10 @@ def check_archive(root, info=None, branch=BRANCH, fetch=_get_json):
     return res
 
 
+MAX_DOWNLOAD = 64 * 1024 * 1024      # the real snapshot is ~2 MB; anything this large is not the toolkit
+MAX_FILES = 5000
+
+
 def _safe_members(tar):
     """Regular files and folders only, nothing outside the archive's own top folder, no links, no '..'."""
     out = []
@@ -161,35 +165,83 @@ def _safe_members(tar):
 
 
 def _download_snapshot(sha, tmp, opener=urllib.request.urlopen):
-    """Download GitHub's snapshot of `sha` into the folder `tmp` and return the path of its top folder (checked, links skipped)."""
+    """Download GitHub's snapshot of `sha` into the folder `tmp` and return the path of its top folder (checked, links skipped).
+    The download is capped, the commit id GitHub writes into the archive must be the one asked for, and the files are
+    unpacked with Python's 'data' filter on top of our own checks."""
     tgz = os.path.join(tmp, "snapshot.tar.gz")
     req = urllib.request.Request(ARCHIVE + sha, headers={"User-Agent": "linux-scripts-installer"})
+    size = 0
     with opener(req, timeout=60) as r, open(tgz, "wb") as f:
-        shutil.copyfileobj(r, f)
+        while True:
+            chunk = r.read(1 << 16)
+            if not chunk:
+                break
+            size += len(chunk)
+            if size > MAX_DOWNLOAD:
+                raise ValueError("the download is far larger than the toolkit - refused")
+            f.write(chunk)
     with tarfile.open(tgz) as tar:
         members = _safe_members(tar)
+        said = tar.pax_headers.get("comment", "")          # `git archive` records the commit id here
+        if said and said != sha:
+            raise ValueError("the snapshot is for a different commit than the one asked for")
         top = members[0].name.split("/")[0] if members else ""
         if not top or not any(m.name == f"{top}/install.sh" for m in members):
             raise ValueError("the downloaded snapshot does not look like the linux-scripts repository")
-        tar.extractall(tmp, members=members)
+        members = [m for m in members if m.name.split("/")[0] == top]
+        if len(members) > MAX_FILES:
+            raise ValueError("the snapshot has an unreasonable number of files - refused")
+        if hasattr(tarfile, "data_filter"):
+            tar.extractall(tmp, members=members, filter="data")
+        else:
+            tar.extractall(tmp, members=members)  # noqa: S202 - members are regular files/folders inside tmp (checked above)
     return os.path.join(tmp, top)
 
 
-def _differences(src, root):
-    """[(kind, relative path, absolute source)] for files in the snapshot that are new here ('new') or differ ('changed')."""
-    out = []
+def _blocked(root, rel):
+    """True when `rel` inside `root` is, or lies behind, a symbolic link (or other non-regular thing): those are never written
+    through - the user's own links stay exactly as they are."""
+    cur = root
+    parts = rel.split(os.sep)
+    for i, part in enumerate(parts):
+        cur = os.path.join(cur, part)
+        if os.path.islink(cur):
+            return True
+        if not os.path.lexists(cur):
+            return False
+        if i < len(parts) - 1 and not os.path.isdir(cur):
+            return True
+    return not os.path.isfile(cur)
+
+
+def _plan(src, root):
+    """-> ([(kind, rel, source file)], [rel kept]) for the files of the snapshot: 'new' here, or 'changed' (content or executable bit).
+    The second list holds files that were left alone because they are (or lie behind) a symbolic link here."""
+    out, kept = [], []
     for dirpath, _dirs, files in os.walk(src):
-        rel = os.path.relpath(dirpath, src)
+        rel_dir = os.path.relpath(dirpath, src)
         for name in sorted(files):
-            a, b = os.path.join(dirpath, name), os.path.normpath(os.path.join(root, rel, name))
-            r = os.path.normpath(os.path.join(rel, name))
-            if not os.path.isfile(b):
+            a = os.path.join(dirpath, name)
+            r = os.path.normpath(os.path.join(rel_dir, name))
+            if os.path.islink(a):
+                continue
+            if _blocked(root, r):
+                kept.append(r)
+                continue
+            b = os.path.join(root, r)
+            if not os.path.lexists(b):
                 out.append(("new", r, a))
                 continue
             with open(a, "rb") as fa, open(b, "rb") as fb:
-                if fa.read() != fb.read():
-                    out.append(("changed", r, a))
-    return sorted(out, key=lambda x: (x[0] != "changed", x[1]))
+                same = fa.read() == fb.read()
+            if not same or bool(os.stat(a).st_mode & 0o111) != bool(os.stat(b).st_mode & 0o111):
+                out.append(("changed", r, a))
+    return sorted(out, key=lambda x: (x[0] != "changed", x[1])), sorted(kept)
+
+
+def _differences(src, root):
+    """[(kind, relative path, absolute source)] - see _plan (links the user made are not part of it)."""
+    return _plan(src, root)[0]
 
 
 def _valid_sha(sha):
@@ -204,16 +256,54 @@ def preview_archive(root, sha=None, fetch=_get_json, opener=urllib.request.urlop
         if not _valid_sha(sha):
             return False, "GitHub returned an unexpected commit id"
         with tempfile.TemporaryDirectory() as tmp:
-            return True, [(k, r) for k, r, _a in _differences(_download_snapshot(sha, tmp, opener), root)]
+            return True, [(k, r) for k, r, _a in _differences(_download_snapshot(sha, tmp, opener), os.path.realpath(root))]
     except Exception as e:  # noqa: BLE001
         return False, str(e)
 
 
+def _atomic_write(path, data):
+    tmp = f"{path}.part-{os.getpid()}"
+    try:
+        with open(tmp, "wb") as f:
+            f.write(data)
+        os.replace(tmp, path)
+    finally:
+        if os.path.lexists(tmp):
+            os.remove(tmp)
+
+
+def _rollback(journal):
+    """Undo a half-done update, newest step first: put every replaced file back, remove every file and folder that was new."""
+    problems = []
+    for dest, backup, made_dirs in reversed(journal):
+        try:
+            if backup:
+                shutil.copy2(backup, dest + ".restore")
+                os.replace(dest + ".restore", dest)
+            elif os.path.lexists(dest):
+                os.remove(dest)
+            for d in reversed(made_dirs):
+                try:
+                    os.rmdir(d)
+                except OSError:
+                    pass
+        except OSError as e:
+            problems.append(f"{dest}: {e}")
+    return problems
+
+
 def update_archive(root, sha=None, fetch=_get_json, opener=urllib.request.urlopen, backup_dir=None):
-    """Download GitHub's snapshot of `sha` (default: newest main) and copy it over `root`. -> (ok, message).
-    Files that differ are copied to a backup folder first; files that are not in the snapshot are left alone."""
+    """Download GitHub's snapshot of `sha` (default: newest main) and bring `root` to it. -> (ok, message).
+    Safe by construction:
+      - the snapshot is unpacked into a scratch folder first, nothing in `root` is touched until it is complete and checked;
+      - a symbolic link here (a file, or a folder on the way) is never written through: that file is kept as it is;
+      - every file that is replaced is copied to a backup folder first, each replacement is one atomic rename;
+      - if any step fails the files already replaced are put back and the new ones removed (nothing is left half-updated);
+      - files that are not in the snapshot are left alone."""
+    root = os.path.realpath(root)
     if not os.path.isfile(os.path.join(root, "install.sh")):
         return False, "this does not look like the linux-scripts folder (no install.sh)"
+    journal, backup, diffs, kept = [], None, [], []
     try:
         sha = sha or fetch(f"{API}/commits/{BRANCH}")["sha"]
         if not _valid_sha(sha):
@@ -221,20 +311,39 @@ def update_archive(root, sha=None, fetch=_get_json, opener=urllib.request.urlope
         backup = backup_dir or os.path.join(os.path.expanduser("~/.cache/linux-scripts/update-backup"), time.strftime("%Y%m%d-%H%M%S"))
         with tempfile.TemporaryDirectory() as tmp:
             src = _download_snapshot(sha, tmp, opener)
-            diffs = _differences(src, root)
+            diffs, kept = _plan(src, root)
             for kind, rel, a in diffs:
-                b = os.path.normpath(os.path.join(root, rel))
+                dest = os.path.join(root, rel)
+                made = []
+                d = os.path.dirname(dest)
+                missing = []
+                while not os.path.isdir(d) and d != root:
+                    missing.append(d)
+                    d = os.path.dirname(d)
+                for d in reversed(missing):
+                    os.mkdir(d)
+                    made.append(d)
+                saved = None
                 if kind == "changed":
-                    os.makedirs(os.path.dirname(os.path.join(backup, rel)), exist_ok=True)
-                    shutil.copy2(b, os.path.join(backup, rel))
-                os.makedirs(os.path.dirname(b), exist_ok=True)
-                shutil.copy2(a, b)                           # keeps the executable bit
-        with open(os.path.join(root, MARKER), "w") as f:
-            f.write(sha + "\n")
+                    saved = os.path.join(backup, rel)
+                    os.makedirs(os.path.dirname(saved), exist_ok=True)
+                    shutil.copy2(dest, saved, follow_symlinks=False)
+                journal.append((dest, saved, made))
+                staged = f"{dest}.new-{os.getpid()}"
+                shutil.copy2(a, staged)                          # keeps the executable bit
+                os.replace(staged, dest)
+            _atomic_write(os.path.join(root, MARKER), (sha + "\n").encode())
     except Exception as e:  # noqa: BLE001
-        return False, str(e)
-    kept = os.path.isdir(backup)
-    return True, f"updated to {sha[:7]} ({len(diffs)} file(s) replaced or added" + (f", the old ones are in {backup}" if kept else "") + ")"
+        problems = _rollback(journal)
+        for dest, _b, _m in journal:                             # a staged copy that never got renamed
+            for stray in (f"{dest}.new-{os.getpid()}", dest + ".restore"):
+                if os.path.lexists(stray):
+                    os.remove(stray)
+        tail = "; everything was put back as it was" if not problems else "; could NOT restore: " + ", ".join(problems)
+        return False, f"{e}{tail}" if journal else str(e)
+    note = f", the old ones are in {backup}" if backup and os.path.isdir(backup) else ""
+    keep = f"; {len(kept)} file(s) kept because they are symbolic links here" if kept else ""
+    return True, f"updated to {sha[:7]} ({len(diffs)} file(s) replaced or added{note}){keep}"
 
 
 def apply(root, res):
@@ -264,8 +373,37 @@ def update(root, remote="origin", branch=BRANCH, run=subprocess.run):
     return rc == 0, out
 
 
-def adopt(root, url=REPO_URL, branch=BRANCH, run=subprocess.run):
-    """Turn a plain copy into a checkout of GitHub's `branch`; tracked files are replaced, untracked ones stay. -> (ok, message)"""
+def _backup_before_adopt(root, branch, run, backup_dir):
+    """Copy the regular files that `git checkout -f` is about to overwrite with different content to a backup folder.
+    -> (number of files saved, backup folder).  Links are skipped (git never writes through them)."""
+    rc, out = _git(root, "ls-tree", "-r", f"origin/{branch}", run=run, raw=True)
+    if rc != 0:
+        return 0, backup_dir
+    entries = []
+    for ln in out.splitlines():
+        meta, _tab, path = ln.partition("\t")
+        parts = meta.split()
+        if len(parts) == 3 and parts[1] == "blob" and path and not os.path.islink(os.path.join(root, path)) \
+                and os.path.isfile(os.path.join(root, path)):
+            entries.append((parts[2], path))
+    saved = 0
+    for i in range(0, len(entries), 100):
+        chunk = entries[i:i + 100]
+        rc, hashes = _git(root, "hash-object", "--", *[p for _s, p in chunk], run=run)
+        if rc != 0 or len(hashes.splitlines()) != len(chunk):
+            raise OSError("could not compare your files with GitHub's, so nothing was changed: " + hashes[:200])
+        for (blob, path), have in zip(chunk, hashes.splitlines()):
+            if have.strip() != blob:
+                dest = os.path.join(backup_dir, path)
+                os.makedirs(os.path.dirname(dest), exist_ok=True)
+                shutil.copy2(os.path.join(root, path), dest, follow_symlinks=False)
+                saved += 1
+    return saved, backup_dir
+
+
+def adopt(root, url=REPO_URL, branch=BRANCH, run=subprocess.run, backup_dir=None):
+    """Turn a plain copy into a checkout of GitHub's `branch`; tracked files are replaced, untracked ones stay.
+    Files of yours that differ from GitHub's are copied to a backup folder first. -> (ok, message)"""
     if not os.path.isfile(os.path.join(root, "install.sh")):
         return False, "this does not look like the linux-scripts folder (no install.sh)"
     info = local_info(root, run)
@@ -273,12 +411,25 @@ def adopt(root, url=REPO_URL, branch=BRANCH, run=subprocess.run):
         return False, "already a git checkout"
     if info.get("nested_in"):
         return False, f"this folder lies inside another git repository ({info['nested_in']})"
-    for args in (("init", "-q"), ("remote", "add", "origin", url), ("fetch", "--quiet", "origin", branch),
-                 ("checkout", "-q", "-f", "-B", branch, f"origin/{branch}")):
+    def undo_init():                                   # there was no .git before: a failed adoption must not leave a half one
+        shutil.rmtree(os.path.join(root, ".git"), ignore_errors=True)
+
+    for args in (("init", "-q"), ("remote", "add", "origin", url), ("fetch", "--quiet", "origin", branch)):
         rc, out = _git(root, *args, run=run, timeout=180)
         if rc != 0:
+            undo_init()
             return False, f"git {args[0]} failed: {out}"
-    return True, "connected to GitHub"
+    backup_dir = backup_dir or os.path.join(os.path.expanduser("~/.cache/linux-scripts/update-backup"), "adopt-" + time.strftime("%Y%m%d-%H%M%S"))
+    try:
+        saved, where = _backup_before_adopt(root, branch, run, backup_dir)
+    except OSError as e:
+        undo_init()
+        return False, str(e)
+    rc, out = _git(root, "checkout", "-q", "-f", "-B", branch, f"origin/{branch}", run=run, timeout=180)
+    if rc != 0:
+        undo_init()
+        return False, f"git checkout failed: {out}"
+    return True, "connected to GitHub" + (f"; {saved} file(s) of yours that differed were saved in {where}" if saved else "")
 
 
 def main(argv):

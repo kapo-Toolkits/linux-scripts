@@ -14,7 +14,7 @@ elif command -v apk     >/dev/null; then apk add -q python3 bash >/dev/null 2>&1
 fi
 python3 --version
 cp -r /repo /work && cd /work
-python3 tests/test_units.py 2>&1 | tail -1 | grep -q "^OK" && echo "PASS unit tests" || { echo "FAIL unit tests"; exit 1; }
+python3 tests/test_units.py 2>&1 | tail -1 | grep -q "^OK" && echo "PASS unit tests" || { echo "FAIL unit tests"; python3 tests/test_units.py 2>&1 | grep -E "^(FAIL|ERROR)|Error|Ran" | head -20; exit 1; }
 python3 tests/test_qgis_distros.py 2>&1 | tail -1 | grep -q "^OK" && echo "PASS qgis distribution tests" || { echo "FAIL qgis distribution tests"; python3 tests/test_qgis_distros.py 2>&1 | tail -15; exit 1; }
 python3 tests/test_qgis_installer.py 2>&1 | tail -1 | grep -q "^OK" && echo "PASS qgis-installer tests" || { echo "FAIL qgis-installer tests"; python3 tests/test_qgis_installer.py 2>&1 | tail -15; exit 1; }
 bash ./install.sh --prefix /tmp/pfx all >/dev/null 2>&1 || { echo "FAIL install.sh"; exit 1; }
