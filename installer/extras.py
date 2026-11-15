@@ -30,7 +30,7 @@ X86 = ("amd64", "x86_64")
 
 # ---- the list of "other programs" lives in programs.json next to this file ----
 PROGRAMS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "programs.json")
-KINDS = {"claude", "vscode", "virtualbox", "filee", "codex", "flutter", "flutterlinux", "dart", "discord", "brave", "etcher", "github", "package"}      # the recipe that installs it
+KINDS = {"claude", "vscode", "virtualbox", "filee", "ventoy", "codex", "flutter", "flutterlinux", "dart", "discord", "brave", "etcher", "github", "package"}      # the recipe that installs it
 NEEDED = {"github": ("display", "repo", "package", "cmd", "asset"), "package": ("display", "cmd")}
 
 
@@ -357,7 +357,7 @@ def version_key(v):
     return tuple(int(x) for x in v.split(".") if x.isdigit())
 
 
-def outdated(installed=installed_version, github=None, etcher=None, codex=None, codex_have=None):
+def outdated(installed=installed_version, github=None, etcher=None, codex=None, codex_have=None, ventoy=None, ventoy_have=None):
     """Programs installed from a publisher's GitHub release whose newest release is newer than what is installed.
     -> ([{'id', 'name', 'installed', 'latest'}], [ids that could not be looked up]).  Nothing is downloaded or installed."""
     github = github or github_release
@@ -384,6 +384,14 @@ def outdated(installed=installed_version, github=None, etcher=None, codex=None, 
                 found.append({"id": "codex", "name": "Codex", "installed": have, "latest": latest})
         except Exception:  # noqa: BLE001
             failed.append("codex")
+    have = (ventoy_have or ventoy_version)()                     # Ventoy: the version file inside its own folder
+    if have:
+        try:
+            latest = (ventoy or ventoy_release)()["version"]
+            if version_key(latest) > version_key(have):
+                found.append({"id": "ventoy", "name": "Ventoy", "installed": have, "latest": latest})
+        except Exception:  # noqa: BLE001
+            failed.append("ventoy")
     return found, failed
 
 
@@ -642,6 +650,129 @@ def filee_installed(data_home=None):
     """True when Filee's own install marker is in place."""
     data = data_home or os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share")
     return os.path.isfile(os.path.join(data, "filee", "application", ".filee-package"))
+
+
+# ---- Ventoy (https://github.com/ventoy/Ventoy, GPL-3.0): makes a USB stick bootable with many ISO files ----
+# The project ships one Linux tarball (x86_64, aarch64 ...) with its own GUI. It is unpacked for the user into
+# ~/.local/share/ventoy (no administrator password); the program asks for it itself (pkexec) when it writes to a stick.
+# A marker file records that THIS installer put it there, so removal and upgrade never touch anything else.
+VENTOY_REPO = "ventoy/Ventoy"
+VENTOY_API = f"https://api.github.com/repos/{VENTOY_REPO}/releases/latest"
+VENTOY_PAGE = "https://www.ventoy.net/en/download.html"
+VENTOY_MARKER = ".linux-scripts-ventoy"
+VENTOY_NOTES = ("Start it from the applications menu (Ventoy) or with the command: ventoy. Installing Ventoy on a stick ERASES the whole stick "
+                "(its own window warns you and asks for the administrator password); after that you just copy ISO files onto the stick. "
+                "It needs GTK 3 or Qt 5 (present on most desktops).")
+
+
+def ventoy_release(fetch=fetch_json):
+    """-> {'tag', 'version', 'assets'} for Ventoy's latest GitHub release."""
+    data = fetch(VENTOY_API)
+    assets = {}
+    for a in data.get("assets", []):
+        digest = a.get("digest") or ""
+        assets[a["name"]] = {"url": a["browser_download_url"], "size": int(a.get("size", 0)),
+                             "sha256": digest.split(":", 1)[1] if digest.startswith("sha256:") else ""}
+    tag = data["tag_name"]
+    return {"tag": tag, "version": tag.lstrip("v"), "assets": assets}
+
+
+def ventoy_asset(release, arch):
+    """The Linux tarball with a published SHA-256 (one file for all CPUs; its GUI exists for x86_64 and aarch64), or None."""
+    if arch not in (*X86, *ARM):
+        return None
+    name = f"ventoy-{release['version']}-linux.tar.gz"
+    a = release["assets"].get(name)
+    return dict(a, name=name) if a and a["sha256"] else None
+
+
+def ventoy_dir(data_home=None):
+    return os.path.join(data_home or os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share"), "ventoy")
+
+
+def ventoy_steps(release, arch, cache_dir=None):
+    """-> (steps, info); both steps run as the user. 1: download + SHA-256 gate. 2: unpack, check it is Ventoy, replace the old
+    copy, write the marker, the `ventoy` command and the menu launcher; the download and the unpacked copy are always removed."""
+    asset = ventoy_asset(release, arch)
+    if not asset:
+        return [], {"manual": VENTOY_PAGE, "version": release["version"]}
+    d = os.path.expanduser(cache_dir or CACHE)
+    q = shlex.quote
+    tar, work = os.path.join(d, asset["name"]), os.path.join(d, "ventoy-unpacked")
+    install = f"""set -eu
+trap 'rm -rf {q(work)} {q(tar)}' EXIT
+rm -rf {q(work)}
+mkdir -p {q(work)}
+tar -xzf {q(tar)} -C {q(work)}
+PKG=$(ls -d {q(work)}/*/ | head -n 1)
+[ -f "${{PKG}}Ventoy2Disk.sh" ] && [ -f "${{PKG}}ventoy/version" ] && [ -d "${{PKG}}tool" ] || {{ echo "the download does not look like Ventoy - nothing was installed" >&2; exit 1; }}
+DATA="${{XDG_DATA_HOME:-$HOME/.local/share}}"
+APP="$DATA/ventoy"
+mkdir -p "$DATA"
+if [ -e "$APP" ] && [ ! -f "$APP/{VENTOY_MARKER}" ]; then echo "$APP exists and was not installed by this installer - left alone" >&2; exit 1; fi
+rm -rf "$APP.new"
+mv "${{PKG%/}}" "$APP.new"
+printf 'ventoy\\n' > "$APP.new/{VENTOY_MARKER}"
+rm -rf "$APP"
+mv "$APP.new" "$APP"
+mkdir -p "$HOME/.local/bin" "$DATA/applications"
+BIN="$HOME/.local/bin/ventoy"
+if [ -e "$BIN" ] && ! grep -q '^# linux-scripts ventoy launcher$' "$BIN" 2>/dev/null; then echo "$BIN exists and is not ours - left alone" >&2; else
+cat > "$BIN" <<EOF
+#!/bin/sh
+# linux-scripts ventoy launcher
+cd "$APP" || exit 1
+exec ./VentoyGUI.\\$(uname -m) "\\$@"
+EOF
+chmod 755 "$BIN"
+fi
+cat > "$DATA/applications/ventoy.desktop" <<EOF
+[Desktop Entry]
+Type=Application
+Name=Ventoy
+Comment=Make a USB stick bootable with many ISO files
+Exec=$HOME/.local/bin/ventoy
+Icon=$APP/WebUI/static/img/VentoyLogo.png
+Terminal=false
+Categories=System;Utility;
+X-Linux-Scripts-Managed=true
+EOF
+echo "Ventoy installed: $APP"
+"""
+    steps = [{"root": False, "sh": download_script(asset, cache_dir)}, {"root": False, "sh": install}]
+    return steps, {"version": release["version"], "file": asset["name"], "mb": round(asset["size"] / 1048576), "url": asset["url"],
+                   "sha256": asset["sha256"], "source": "github.com/" + VENTOY_REPO, "notes": VENTOY_NOTES}
+
+
+def ventoy_remove_steps():
+    """Remove the application folder, the command and the launcher - each only when it carries this installer's marker."""
+    sh = f"""set -u
+DATA="${{XDG_DATA_HOME:-$HOME/.local/share}}"
+APP="$DATA/ventoy"
+if [ -f "$APP/{VENTOY_MARKER}" ]; then rm -rf -- "$APP"; else echo "Ventoy was not installed by this installer - folder left alone" >&2; fi
+BIN="$HOME/.local/bin/ventoy"
+[ -f "$BIN" ] && grep -q '^# linux-scripts ventoy launcher$' "$BIN" && rm -- "$BIN"
+DESK="$DATA/applications/ventoy.desktop"
+[ -f "$DESK" ] && grep -q '^X-Linux-Scripts-Managed=true$' "$DESK" && rm -- "$DESK"
+echo "Ventoy was removed."
+exit 0
+"""
+    return [{"root": False, "sh": sh}]
+
+
+def ventoy_installed(data_home=None):
+    return os.path.isfile(os.path.join(ventoy_dir(data_home), VENTOY_MARKER))
+
+
+def ventoy_version(data_home=None):
+    """The installed version from its own ventoy/version file, or None."""
+    if not ventoy_installed(data_home):
+        return None
+    try:
+        with open(os.path.join(ventoy_dir(data_home), "ventoy", "version"), encoding="utf-8") as f:
+            return f.read().strip() or None
+    except OSError:
+        return None
 
 
 # ---- Codex CLI (https://github.com/openai/codex, Apache-2.0): OpenAI's coding agent for the terminal ----
@@ -1292,7 +1423,7 @@ ARM = ("arm64", "aarch64")
 NATIVE = {
     "claude": ({"apt-get"}, (*X86, *ARM)), "vscode": ({"apt-get"}, (*X86, *ARM)), "virtualbox": ({"apt-get"}, X86),
     "dart": ({"apt-get"}, (*X86, *ARM)), "discord": ({"apt-get"}, X86), "etcher": ({"apt-get", "dnf", "zypper"}, X86),
-    "brave": ({"apt-get", "dnf", "yum", "zypper", "pacman"}, None), "filee": (None, (*X86, *ARM)),
+    "brave": ({"apt-get", "dnf", "yum", "zypper", "pacman"}, None), "filee": (None, (*X86, *ARM)), "ventoy": (None, (*X86, *ARM)),
     "codex": (None, (*X86, *ARM)), "flutter": (None, X86), "flutterlinux": ({"apt-get", "dnf", "pacman", "zypper"}, None), "github": ({"apt-get", "dnf", "zypper"}, None), "package": (None, None)}
 
 
