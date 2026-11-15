@@ -257,6 +257,23 @@
    "shortcut": "balena-etcher"
   },
   {
+   "id": "ventoy",
+   "group": "disk",
+   "kind": "ventoy",
+   "name": {
+    "en": "Ventoy",
+    "ka": "Ventoy"
+   },
+   "info": {
+    "en": "make a USB stick bootable with many ISO files (just copy the ISOs); from the project's GitHub release, SHA-256 checked (~20 MB)",
+    "ka": "USB ფლეშკის ჩამტვირთავად გადაქცევა მრავალი ISO ფაილისთვის (ISO-ებს უბრალოდ აკოპირებთ); პროექტის GitHub-იდან, SHA-256 მოწმდება (~20 MB)"
+   },
+   "data": [
+    "~/.config/ventoy",
+    "~/.cache/ventoy"
+   ]
+  },
+  {
    "id": "brasero",
    "group": "disk",
    "kind": "package",

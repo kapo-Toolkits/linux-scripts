@@ -2168,6 +2168,92 @@ class VirtualBox(unittest.TestCase):
         self.assertIn("~/VirtualBox VMs", entry["data"])                      # offered (default no) at uninstall, never silent
 
 
+class Ventoy(unittest.TestCase):
+    ex = Installer.m.extras
+    TAG = {"tag_name": "v9.9.9", "assets": [
+        {"name": "ventoy-9.9.9-linux.tar.gz", "browser_download_url": "https://github.com/x/ventoy-9.9.9-linux.tar.gz", "size": 20 << 20, "digest": "sha256:" + "ab" * 32},
+        {"name": "ventoy-9.9.9-windows.zip", "browser_download_url": "https://github.com/x/w.zip", "size": 1, "digest": "sha256:" + "ef" * 32}]}
+
+    def release(self):
+        return self.ex.ventoy_release(fetch=lambda url: self.TAG)
+
+    def test_asset_needs_a_digest_and_a_cpu_with_a_gui(self):
+        rel = self.release()
+        self.assertEqual(self.ex.ventoy_asset(rel, "x86_64")["sha256"], "ab" * 32)
+        self.assertEqual(self.ex.ventoy_asset(rel, "aarch64")["name"], "ventoy-9.9.9-linux.tar.gz")
+        self.assertIsNone(self.ex.ventoy_asset(rel, "armv7l"))
+        for a in rel["assets"].values():
+            a["sha256"] = ""
+        self.assertIsNone(self.ex.ventoy_asset(rel, "x86_64"))
+
+    def test_no_password_and_the_gate_comes_first(self):
+        steps, info = self.ex.ventoy_steps(self.release(), "x86_64")
+        self.assertEqual([x["root"] for x in steps], [False, False])
+        self.assertLess(steps[0]["sh"].index("sha256sum -c"), steps[0]["sh"].index("mv "))
+        for st in steps:
+            self.assertEqual(subprocess.run(["sh", "-n", "-c", st["sh"]], capture_output=True).returncode, 0)
+        self.assertEqual((info["sha256"], info["source"]), ("ab" * 32, "github.com/ventoy/Ventoy"))
+        self.assertEqual(self.ex.ventoy_steps(self.release(), "i386")[0], [])
+
+    def run_install(self, d, with_files=True, foreign=False):
+        top = os.path.join(d, "src", "ventoy-9.9.9")
+        os.makedirs(os.path.join(top, "ventoy"))
+        os.makedirs(os.path.join(top, "tool"))
+        os.makedirs(os.path.join(top, "WebUI", "static", "img"))
+        if with_files:
+            open(os.path.join(top, "Ventoy2Disk.sh"), "w").write("x")
+            open(os.path.join(top, "ventoy", "version"), "w").write("9.9.9\n")
+        cache = os.path.join(d, "cache")
+        os.makedirs(cache)
+        subprocess.run(["tar", "-czf", os.path.join(cache, "ventoy-9.9.9-linux.tar.gz"), "-C", os.path.join(d, "src"), "ventoy-9.9.9"], check=True)
+        data, home = os.path.join(d, "data"), os.path.join(d, "home")
+        if foreign:
+            os.makedirs(os.path.join(data, "ventoy"))
+            open(os.path.join(data, "ventoy", "mine"), "w").write("x")
+        steps, _ = self.ex.ventoy_steps(self.release(), "x86_64", cache_dir=cache)
+        env = dict(os.environ, XDG_DATA_HOME=data, HOME=home)
+        return subprocess.run(["sh", "-c", steps[1]["sh"]], capture_output=True, text=True, env=env), data, home, cache
+
+    def test_install_detect_upgrade_and_remove(self):
+        with tempfile.TemporaryDirectory() as d:
+            r, data, home, cache = self.run_install(d)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertTrue(self.ex.ventoy_installed(data))
+            self.assertEqual(self.ex.ventoy_version(data), "9.9.9")
+            self.assertTrue(os.access(os.path.join(home, ".local", "bin", "ventoy"), os.X_OK))
+            self.assertIn("exec ./VentoyGUI.$(uname -m)", open(os.path.join(home, ".local", "bin", "ventoy")).read())
+            desk = open(os.path.join(data, "applications", "ventoy.desktop")).read()
+            self.assertIn("Exec=" + os.path.join(home, ".local", "bin", "ventoy"), desk)
+            self.assertEqual(os.listdir(cache), [])                                  # the download is gone
+            self.assertEqual(self.ex.outdated(installed=lambda p: None, github=lambda i: None, codex_have=lambda: None,
+                                              ventoy_have=lambda: "9.9.9", ventoy=lambda: {"version": "9.9.9"}), ([], []))
+            self.assertEqual(self.ex.outdated(installed=lambda p: None, codex_have=lambda: None,
+                                              ventoy_have=lambda: "1.1.18", ventoy=lambda: {"version": "9.9.9"})[0],
+                             [{"id": "ventoy", "name": "Ventoy", "installed": "1.1.18", "latest": "9.9.9"}])
+            r = subprocess.run(["sh", "-c", self.ex.ventoy_remove_steps()[0]["sh"]], capture_output=True, text=True,
+                               env=dict(os.environ, XDG_DATA_HOME=data, HOME=home))
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertFalse(self.ex.ventoy_installed(data))
+            self.assertFalse(os.path.exists(os.path.join(data, "ventoy")))
+            self.assertFalse(os.path.exists(os.path.join(home, ".local", "bin", "ventoy")))
+            self.assertFalse(os.path.exists(os.path.join(data, "applications", "ventoy.desktop")))
+
+    def test_something_else_is_refused_and_a_foreign_folder_is_left_alone(self):
+        with tempfile.TemporaryDirectory() as d:
+            r, data, home, cache = self.run_install(d, with_files=False)
+            self.assertNotEqual(r.returncode, 0)
+            self.assertIn("does not look like Ventoy", r.stderr)
+            self.assertFalse(os.path.exists(os.path.join(data, "ventoy")))
+        with tempfile.TemporaryDirectory() as d:
+            r, data, home, cache = self.run_install(d, foreign=True)
+            self.assertNotEqual(r.returncode, 0)
+            self.assertTrue(os.path.exists(os.path.join(data, "ventoy", "mine")))      # not ours: untouched
+            rm = subprocess.run(["sh", "-c", self.ex.ventoy_remove_steps()[0]["sh"]], capture_output=True, text=True,
+                                env=dict(os.environ, XDG_DATA_HOME=data, HOME=home))
+            self.assertEqual(rm.returncode, 0)
+            self.assertTrue(os.path.exists(os.path.join(data, "ventoy", "mine")))
+
+
 class Filee(unittest.TestCase):
     ex = Installer.m.extras
     TAG = {"tag_name": "v9.9.9", "assets": [
@@ -2969,7 +3055,7 @@ class PackagePrograms(unittest.TestCase):
                 self.assertEqual(subprocess.run(["sh", "-n", "-c", steps[0]["sh"]], capture_output=True).returncode, 0)
                 self.assertEqual(self.ex.package_name(app, pm), app)
         self.assertEqual(set(self.ex.PACKAGE_APPS), {"brasero", "xfburn", "k3b", "unrar", "git", "curl", "vim", "htop", "net-tools"})
-        self.assertEqual({x["id"] for x in Installer.m.EXTRAS}, set(self.ex.PACKAGE_APPS) | {"etcher", "brave", "claude", "vscode", "virtualbox", "filee", "codex", "flutter", "flutter-linux", "dart", "discord"} | set(self.ex.GITHUB_APPS))   # window and logic agree
+        self.assertEqual({x["id"] for x in Installer.m.EXTRAS}, set(self.ex.PACKAGE_APPS) | {"etcher", "brave", "claude", "vscode", "virtualbox", "filee", "ventoy", "codex", "flutter", "flutter-linux", "dart", "discord"} | set(self.ex.GITHUB_APPS))   # window and logic agree
         self.assertEqual({x["id"] for x in Shortcuts.m.TOOLS} >= {i for i in self.ex.PACKAGE_APPS if not PackagePrograms.cli(i)}, True)       # and shortcuts know them
         self.assertIn("apt-get purge -y brasero", self.ex.package_steps("brasero", "apt-get", remove=True)[0]["sh"])
         self.assertIn("pacman -R --noconfirm brasero", self.ex.package_steps("brasero", "pacman", remove=True)[0]["sh"])
