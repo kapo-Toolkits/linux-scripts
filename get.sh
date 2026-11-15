@@ -45,6 +45,10 @@ else
     fetch "https://codeload.github.com/$REPO/tar.gz/$SHA" > "$TMP/snap.tar.gz" || die "download failed"
 fi
 
+# The snapshot must hold plain files and folders only: no links, no absolute paths, nothing that climbs out with '..'.
+tar -tzf "$TMP/snap.tar.gz" > "$TMP/names" 2>/dev/null || die "the download is not a valid archive"
+if grep -Eq '^/|(^|/)\.\.(/|$)' "$TMP/names"; then die "the download contains unsafe file names - nothing was installed"; fi
+if tar -tvzf "$TMP/snap.tar.gz" 2>/dev/null | grep -q '^[lh]'; then die "the download contains links - nothing was installed"; fi
 mkdir "$TMP/x"
 tar -xzf "$TMP/snap.tar.gz" -C "$TMP/x" --strip-components=1 || die "the download is not a valid archive"
 [ -f "$TMP/x/install.sh" ] && [ -f "$TMP/x/installer/start.sh" ] || die "the download does not look like the linux-scripts toolkit"
@@ -56,7 +60,32 @@ if [ -e "$DEST" ] && [ -n "$(ls -A "$DEST" 2>/dev/null)" ]; then
     say "Existing copy saved to $BAK"
 fi
 mkdir -p "$DEST"
-cp -a "$TMP/x/." "$DEST/"
+
+# True when REL inside DEST is, or lies behind, a symbolic link (or is a folder where a file belongs): never written through.
+blocked() {
+    cur="$DEST"; oldifs=$IFS; IFS=/; set -f
+    for part in $1; do
+        cur="$cur/$part"
+        if [ -L "$cur" ]; then IFS=$oldifs; set +f; return 0; fi
+        [ -e "$cur" ] || break
+    done
+    IFS=$oldifs; set +f
+    [ -d "$DEST/$1" ]
+}
+# Copy every file of the snapshot over DEST: each one is written next to its place and renamed into it (an atomic step), and a
+# symbolic link of yours is kept exactly as it is instead of being followed to wherever it points.
+copy_in() {
+    ( cd "$TMP/x" && find . -type f ) | while IFS= read -r f; do
+        rel=${f#./}
+        if blocked "$rel"; then say "kept (symbolic link here): $rel"; continue; fi
+        mkdir -p "$DEST/$(dirname "$rel")"
+        cp -p "$TMP/x/$rel" "$DEST/$rel.new-$$" && mv -f "$DEST/$rel.new-$$" "$DEST/$rel"
+    done
+}
+if ! copy_in; then
+    [ -n "${BAK:-}" ] && die "copying stopped half-way. Your previous copy is untouched in $BAK (restore it: rm -rf '$DEST' && mv '$BAK' '$DEST')"
+    die "copying stopped half-way"
+fi
 printf '%s\n' "$SHA" > "$DEST/.installed-sha"
 say "Toolkit is in $DEST"
 
