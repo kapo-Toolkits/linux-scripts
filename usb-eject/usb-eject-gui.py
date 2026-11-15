@@ -6,8 +6,6 @@ Arch: tk) და udisks2 (udisksctl) — თითქმის ყველა �
 """
 import json
 import os
-import shutil
-import subprocess
 import sys
 import threading
 

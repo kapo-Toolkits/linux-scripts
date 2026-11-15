@@ -10,7 +10,7 @@ import sys
 import tempfile
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "qgis-installer"))
-from qgis_installer import cli, pluginscan, requirements, system  # noqa: E402
+from qgis_installer import cli, pluginscan, system  # noqa: E402
 
 fails = []
 

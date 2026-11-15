@@ -1,0 +1,12 @@
+# Lint for the whole repository (CI: lint-and-unit). Kept small on purpose: real errors and the dangerous calls only.
+target-version = "py38"
+extend-exclude = ["printhub/packaging"]
+
+[lint]
+select = [
+  "E9",   # syntax errors
+  "F",    # pyflakes: unused imports/variables, undefined names
+  "S102", # exec()
+  "S307", # eval()
+  "S602", "S604", "S605",   # shell=True / os.system
+]
