@@ -48,7 +48,7 @@ fi
 # The snapshot must hold plain files and folders only: no links, no absolute paths, nothing that climbs out with '..'.
 tar -tzf "$TMP/snap.tar.gz" > "$TMP/names" 2>/dev/null || die "the download is not a valid archive"
 if grep -Eq '^/|(^|/)\.\.(/|$)' "$TMP/names"; then die "the download contains unsafe file names - nothing was installed"; fi
-if tar -tvzf "$TMP/snap.tar.gz" 2>/dev/null | grep -q '^[lh]'; then die "the download contains links - nothing was installed"; fi
+if tar -tvzf "$TMP/snap.tar.gz" 2>/dev/null | grep -Eq '^[lh]| -> | link to '; then die "the download contains links - nothing was installed"; fi
 mkdir "$TMP/x"
 tar -xzf "$TMP/snap.tar.gz" -C "$TMP/x" --strip-components=1 || die "the download is not a valid archive"
 [ -f "$TMP/x/install.sh" ] && [ -f "$TMP/x/installer/start.sh" ] || die "the download does not look like the linux-scripts toolkit"
