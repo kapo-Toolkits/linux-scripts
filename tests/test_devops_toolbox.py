@@ -244,8 +244,9 @@ class Execution(unittest.TestCase):
         self.assertEqual(fake.changes(), [[UFW, "allow", "19999/tcp"]])
         self.assertEqual(fake.calls[-1][0], [UFW, "show", "added"])            # the displayed state is re-read after the change
         h = tb.history_entries()
-        self.assertEqual((h[0]["op"], h[0]["status"], h[0]["exit_code"]), ("ufw.status", "ok", 0))
-        self.assertEqual((h[1]["op"], h[1]["params"]), ("ufw.rule.add", {"port": 19999, "proto": "tcp", "action": "allow"}))
+        self.assertEqual((h[1]["op"], h[1]["status"], h[1]["exit_code"]), ("ufw.status", "ok", 0))
+        self.assertEqual((h[0]["op"], h[0]["params"]), ("ufw.rule.add", {"port": 19999, "proto": "tcp", "action": "allow"}))
+        self.assertEqual(len(h), 2)                                                   # the automatic refresh after the change is not an entry
 
     def test_every_call_is_an_argument_list_without_a_shell(self):
         tb, fake = toolbox(euid=1000, which=lambda c: "/usr/bin/pkexec")

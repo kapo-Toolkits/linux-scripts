@@ -129,11 +129,11 @@ class Toolbox:
         return bool(entry) and entry[0] == op_id and entry[1] == plan_params and entry[2] > self._clock()
 
     # ---- running ----
-    def run_readonly(self, op_id, lang="en"):
+    def run_readonly(self, op_id, lang="en", record=True):
         op = registry.get(op_id)
         if op is None or op.risk != "info":
             return self._result(lang, False, "err_unknown_operation", {}, None, [], "", status="refused", op_id=str(op_id)[:40])
-        return self._run_plan(op, {}, lang)
+        return self._run_plan(op, {}, lang, record=record)
 
     def execute(self, op_id, params, token, confirmed, lang="en"):
         lang = i18n.norm_lang(lang)
@@ -150,7 +150,7 @@ class Toolbox:
             return self._result(lang, False, "err_bad_token", {}, None, [], "", status="refused", op_id=op.id, params=plan.params)
         return self._run_plan(op, params, lang, plan)
 
-    def _run_plan(self, op, params, lang, plan=None):
+    def _run_plan(self, op, params, lang, plan=None, record=True):
         lang = i18n.norm_lang(lang)
         if plan is None:
             op, plan, err = self._plan(op.id, params)
@@ -173,7 +173,7 @@ class Toolbox:
         output = "\n".join(x for r in results for x in ((r.stdout or "").strip(), (r.stderr or "").strip()) if x and "initcaps" not in x)
         out = self._result(lang, ok, key, kw, results[-1].returncode if results else None,
                            [self._command_dict(plan, a)["display"] for a in plan.commands], output, status="ok" if ok else "failed",
-                           op_id=op.id, params=plan.params, summary=summary)
+                           op_id=op.id, params=plan.params, summary=summary, record=record)
         if ok and op.risk != "info":
             out["refresh"] = self._refresh(lang)                       # the displayed state follows the real one
         if data is not None:
@@ -182,12 +182,13 @@ class Toolbox:
 
     def _refresh(self, lang):
         self._rules = None
-        res = self.run_readonly("ufw.status", lang)
+        res = self.run_readonly("ufw.status", lang, record=False)        # not an action of the user: not in the history
         return {"ok": res["ok"], "rules": res.get("data", {}).get("rules", []), "other": res.get("data", {}).get("other", [])}
 
-    def _result(self, lang, ok, key, kw, exit_code, commands, output, status, op_id, params=None, summary=""):
+    def _result(self, lang, ok, key, kw, exit_code, commands, output, status, op_id, params=None, summary="", record=True):
         message = i18n.t(lang, key, **kw)
-        self.history.add(op_id, status, exit_code, summary or message, params)
+        if record:
+            self.history.add(op_id, status, exit_code, summary or message, params)
         return {"ok": ok, "status": status, "key": key, "message": message, "exit_code": exit_code, "commands": commands,
                 "output": output[:OUTPUT_MAX]}
 
