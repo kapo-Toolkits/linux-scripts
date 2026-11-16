@@ -1308,7 +1308,7 @@ class App(tk.Tk):
         win.geometry("940x640")
         win.minsize(640, 420)
         win.transient(self)
-        CARD_BG, CARD_BORDER, CARD_FG, NAME_FG, DESC_FG, SEC_FG = "#ffffff", "#cfd6dd", "#222222", "#1a5fb4", "#555555", "#26323f"
+        CARD_BG, CARD_BORDER, _, NAME_FG, DESC_FG, SEC_FG = "#ffffff", "#cfd6dd", "#222222", "#1a5fb4", "#555555", "#26323f"
 
         def open_url(url):
             try:

@@ -9,14 +9,34 @@ on:
     - cron: "17 5 * * 1"   # weekly: catches upstream changes (QGIS repo layout, signing-key expiry 2027-08-08)
 
 jobs:
+  python-versions:
+    # the README promises Python 3.8+: the offline suites run on the oldest and the newest interpreters we claim
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.8", "3.9", "3.10", "3.11", "3.12", "3.13"]
+    container: python:${{ matrix.python }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 tests/test_units.py
+      - run: python3 tests/test_qgis_installer.py
+      - run: python3 tests/test_devops_toolbox.py
+      - run: python3 tests/test_devops_web.py
+
   lint-and-unit:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: shellcheck
-        run: shellcheck -S warning install.sh get.sh tests/retry-on-network.sh wifi-hotspot/hotspot-uplink.sh usb-eject/usb-eject.sh wifi-hotspot/hotspot.sh tests/run-qgis-containers.sh
-      - name: syntax of generated/embedded shell is covered by unit tests; compile all python
-        run: python3 -m compileall -q common devops-toolbox usb-eject wifi-hotspot printer-setup qgis-installer tests
+      - name: shellcheck (every shell script of the repository)
+        run: git ls-files '*.sh' | xargs shellcheck -S warning
+      - name: ruff (syntax errors, unused imports/variables, undefined names, eval/exec/shell=True)
+        run: |
+          python3 -m venv "$RUNNER_TEMP/ruff"
+          "$RUNNER_TEMP/ruff/bin/pip" install --quiet ruff==0.14.0
+          "$RUNNER_TEMP/ruff/bin/ruff" check .
+      - name: compile all python (syntax of every tool)
+        run: python3 -m compileall -q common devops-toolbox installer shortcuts usb-eject wifi-hotspot printer-setup qgis-installer printhub tests
       - name: unit tests (offline)
         run: python3 tests/test_units.py
       - name: DevOps Toolbox backend and local web app (offline, fake ufw)

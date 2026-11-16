@@ -11,7 +11,7 @@ os.environ.setdefault("PRINTHUB_SETTINGS", "PrintHubTestPhoto")
 os.environ.setdefault("PRINTHUB_STANDALONE", "1")
 
 from PySide6.QtCore import QSettings
-from PySide6.QtGui import QColor, QImage, QPageSize
+from PySide6.QtGui import QColor, QImage
 from PySide6.QtWidgets import QApplication
 
 from printhub.mainwindow import MainWindow

@@ -2043,7 +2043,8 @@ class DoctorRun(unittest.TestCase):
         self.assertEqual(res["skipped"], [])
 
     def test_what_could_not_be_looked_at_is_said_not_passed_over(self):
-        res = self.run_all(table=[(["dpkg", "--audit"], (1, ""))], python_gdal=None)                     # no gdalinfo, dpkg unusable, no repo file
+        res = self.run_all(table=[(["dpkg", "--audit"], (1, ""))], python_gdal=None,
+                           read=lambda path: None)                                         # no gdalinfo, dpkg unusable, no repo file (not the real /etc/apt)
         self.assertEqual(res["skipped"], ["gdal", "repo", "dpkg"])
         self.assertNotIn("gdal", res["ran"])
 
@@ -2175,6 +2176,18 @@ class PluginScan(unittest.TestCase):
                                 "try:\n    import shapely\nexcept ValueError:\n    pass\n"})
         self.assertEqual(sc["required"], {"numpy", "yaml", "shapely"})              # a class body runs at import; ValueError is no import guard
         self.assertEqual(sc["optional"], {"pandas", "lxml", "PIL", "jinja2", "sqlalchemy"})
+
+    def test_the_standard_library_is_known_without_sys_stdlib_module_names(self):
+        """Python 3.8 / 3.9 have no sys.stdlib_module_names; the on-disk fallback must still tell `os` from `numpy`."""
+        from qgis_installer import pluginscan
+        names = pluginscan._stdlib_from_disk()
+        for n in ("os", "json", "typing", "re", "sqlite3", "tkinter", "xml", "urllib", "collections", "sys"):
+            self.assertIn(n, names, n)
+        for n in ("numpy", "requests", "pandas", "openpyxl"):
+            self.assertNotIn(n, names, n)
+        real = getattr(sys, "stdlib_module_names", None)
+        if real is not None:
+            self.assertTrue({"os", "json"} <= pluginscan.stdlib_names())
 
     def test_type_checking_imports_never_run(self):
         sc = self.scan({"a.py": "from typing import TYPE_CHECKING\nimport typing\nif TYPE_CHECKING:\n    import numpy\n"

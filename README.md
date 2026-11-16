@@ -36,6 +36,12 @@ sh installer/start.sh      # the installer window: tick programs, click Install
 ./install.sh --prefix ~/.local all   # no sudo; menu entries land in ~/.local/share/applications
 ```
 
+`./install.sh --dry-run ...` only prints what would be done (nothing is written, removed or run with sudo). `install.sh` never
+overwrites or removes a file it did not put there: a command with the same name from another program makes the install stop
+**before** anything is written (`--force` overrides, `--prefix` installs elsewhere), and `--uninstall` leaves such files in
+place. What was installed is recorded (path and SHA-256) in `PREFIX/share/linux-scripts/install-manifest`; installs from
+before this record existed are recognised by the toolkit's own names inside the file.
+
 The GUIs share `common/lscommon.py` (tkinter auto-install, runner, remembered language in
 `~/.config/linux-scripts/lang`); `install.sh` puts it in `PREFIX/lib/linux-scripts`.
 
