@@ -1,0 +1,21 @@
+name: Idea · იდეა
+description: A problem this toolkit could solve
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: "The toolkit is for specific problems that desktop settings do not solve well — see CONTRIBUTING.md (What belongs here). · აღწერეთ პრობლემა, არა მზა ხელსაწყო."
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem do you have? · რა პრობლემა გაქვთ?
+      description: What do you do today, what is slow, risky or repetitive about it?
+    validations: {required: true}
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would help? · რა დაგეხმარებოდათ?
+  - type: input
+    id: system
+    attributes:
+      label: Distributions it must work on · რომელ დისტრიბუციებზე
