@@ -1897,6 +1897,101 @@ class ProgramsRegistry(unittest.TestCase):
             self.assertIn(needle, str(cm.exception))
 
 
+class InstallShSafety(unittest.TestCase):
+    """install.sh: previews change nothing, files of other programs are never overwritten or removed, the record of what was installed."""
+    SH = os.path.join(ROOT, "install.sh")
+
+    def sh(self, prefix, *args):
+        env = dict(os.environ, PATH=os.environ["PATH"])
+        return subprocess.run(["bash", self.SH, "--prefix", prefix, *args], capture_output=True, text=True, env=env, timeout=120)
+
+    @staticmethod
+    def files(prefix):
+        return sorted(os.path.relpath(os.path.join(dp, f), prefix) for dp, _d, fs in os.walk(prefix) for f in fs
+                      if f != "mimeinfo.cache")           # update-desktop-database writes this one where it exists
+
+    def test_dry_run_prints_and_changes_nothing(self):
+        with tempfile.TemporaryDirectory() as d:
+            r = self.sh(d, "--dry-run", "usb-eject", "wifi-hotspot")
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertIn("[dry-run] install -D -m 755", r.stdout)
+            self.assertIn("Preview only", r.stdout)
+            self.assertNotIn("\ninstalled ", r.stdout)
+            self.assertEqual(self.files(d), [])
+            self.assertEqual(self.sh(d, "usb-eject").returncode, 0)
+            before = self.files(d)
+            r = self.sh(d, "--dry-run", "--uninstall", "usb-eject")
+            self.assertIn("[dry-run] rm -f", r.stdout)
+            self.assertIn("Preview only", r.stdout)
+            self.assertEqual(self.files(d), before)                          # still all there
+
+    def test_the_manifest_records_what_was_installed_and_uninstall_empties_it(self):
+        with tempfile.TemporaryDirectory() as d:
+            self.assertEqual(self.sh(d, "all").returncode, 0)
+            with open(os.path.join(d, "share", "linux-scripts", "install-manifest")) as f:
+                rec = dict(line.rstrip("\n").split("\t") for line in f)
+            self.assertIn(os.path.join(d, "bin", "hotspot"), rec)
+            self.assertEqual(len(rec[os.path.join(d, "bin", "hotspot")]), 64)         # a SHA-256
+            self.assertEqual(self.sh(d, "--uninstall", "all").returncode, 0)
+            self.assertEqual(self.files(d), [])                                       # nothing left, not even the record
+
+    def test_a_command_of_another_program_is_not_overwritten_and_nothing_is_installed(self):
+        with tempfile.TemporaryDirectory() as d:
+            os.makedirs(os.path.join(d, "bin"))
+            other = os.path.join(d, "bin", "hotspot")
+            with open(other, "w") as f:
+                f.write("#!/bin/sh\necho somebody else's hotspot\n")
+            r = self.sh(d, "wifi-hotspot", "usb-eject")
+            self.assertEqual(r.returncode, 1)
+            self.assertIn("refusing to overwrite", r.stdout)
+            self.assertIn("Nothing was installed", r.stdout)
+            self.assertEqual(self.files(d), ["bin/hotspot"])                          # not even usb-eject was installed
+            self.assertEqual(self.sh(d, "--force", "wifi-hotspot").returncode, 0)     # but the user may insist
+            self.assertIn("Wi-Fi Hotspot", open(other).read())
+
+    def test_uninstall_keeps_a_file_that_replaced_ours_and_files_it_never_installed(self):
+        with tempfile.TemporaryDirectory() as d:
+            self.assertEqual(self.sh(d, "wifi-hotspot").returncode, 0)
+            hot = os.path.join(d, "bin", "hotspot")
+            os.remove(hot)
+            with open(hot, "w") as f:
+                f.write("#!/bin/sh\necho another program took this name\n")
+            with open(os.path.join(d, "bin", "mine"), "w") as f:
+                f.write("x")
+            r = self.sh(d, "--uninstall", "wifi-hotspot")
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertIn("kept", r.stdout)
+            self.assertTrue(os.path.exists(hot))
+            self.assertTrue(os.path.exists(os.path.join(d, "bin", "mine")))
+            self.assertFalse(os.path.exists(os.path.join(d, "bin", "hotspot-gui")))      # ours: gone
+            self.assertEqual(self.sh(d, "--force", "--uninstall", "wifi-hotspot").returncode, 0)
+            self.assertFalse(os.path.exists(hot))
+
+    def test_upgrading_over_an_older_install_without_a_manifest_still_works(self):
+        with tempfile.TemporaryDirectory() as d:
+            self.assertEqual(self.sh(d, "usb-eject").returncode, 0)
+            os.remove(os.path.join(d, "share", "linux-scripts", "install-manifest"))       # as an installation of an older version
+            gui = os.path.join(d, "bin", "usb-eject-gui")
+            with open(gui, "a") as f:
+                f.write("# an older version, still importing lscommon\n")
+            self.assertEqual(self.sh(d, "usb-eject").returncode, 0)
+            self.assertEqual(self.sh(d, "--uninstall", "usb-eject").returncode, 0)
+            self.assertEqual(self.files(d), [])
+
+    def test_a_prefix_with_sed_special_characters_gives_a_correct_menu_entry(self):
+        with tempfile.TemporaryDirectory() as d:
+            prefix = os.path.join(d, "a#b&c\\d")
+            self.assertEqual(self.sh(prefix, "usb-eject").returncode, 0)
+            with open(os.path.join(prefix, "share", "applications", "usb-eject-gui.desktop")) as f:
+                self.assertIn("Exec=" + os.path.join(prefix, "bin") + "/usb-eject-gui", f.read().splitlines())
+
+    def test_bad_arguments_are_said_plainly(self):
+        r = subprocess.run(["bash", self.SH, "--prefix"], capture_output=True, text=True)
+        self.assertEqual((r.returncode, "needs a directory" in r.stdout), (1, True))
+        r = subprocess.run(["bash", self.SH, "nope"], capture_output=True, text=True)
+        self.assertIn("Unknown tool", r.stdout)
+
+
 class GetScript(unittest.TestCase):
     """get.sh: the one-file bootstrap. GitHub is replaced by a local snapshot (LS_SNAPSHOT), everything else is real."""
 
