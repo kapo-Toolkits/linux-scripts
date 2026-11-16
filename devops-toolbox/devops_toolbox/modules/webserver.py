@@ -1,6 +1,5 @@
 """Web server and certificates (MyDevOps tasks 8, 9, 16 and 17): nginx configuration test, the sites that are enabled, enabling and
 disabling a site, the server_name lines, and TLS certificates (show a certificate, create a self-signed one)."""
-import os
 
 from . import _dsl
 from ._dsl import P, grep, op

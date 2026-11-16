@@ -1,7 +1,7 @@
 """Network (MyDevOps tasks 2, 3 and 22): addresses, routes, DNS, ping, listening ports and connections, port reachability, an HTTP check,
 who uses a port, and applying a netplan configuration."""
 from . import _dsl
-from ._dsl import P, grep, op
+from ._dsl import P, op
 from .. import i18n, validation
 
 C = "net"          # the category is created in ufw.py (it is registered first so the sidebar order is Network, Firewall, ...)

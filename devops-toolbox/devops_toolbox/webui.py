@@ -50,6 +50,14 @@ dialog h3{margin-top:0}
 dialog pre{max-height:180px}
 .dlgbtns{display:flex;gap:8px;justify-content:flex-end;margin-top:12px}
 .hidden{display:none}
+.opsgrid{display:grid;grid-template-columns:260px 1fr;gap:14px}
+#oplist{display:flex;flex-direction:column;gap:2px;max-height:430px;overflow:auto;border:1px solid var(--border);border-radius:8px;padding:4px;background:var(--field)}
+#oplist button{text-align:left;background:transparent;border:0;border-radius:6px;padding:6px 8px}
+#oplist button.on{background:var(--select)}
+#opform h3{margin:0 0 4px;font-size:17px}
+.fld{display:flex;flex-direction:column;gap:3px;font-size:13px;color:var(--muted);margin:6px 0}
+.fld input[type=text],.fld select{min-width:260px;max-width:100%}
+@media (max-width:900px){.opsgrid{grid-template-columns:1fr}}
 @media (max-width:760px){.layout{grid-template-columns:1fr}aside{display:flex;gap:8px;align-items:center}}
 </style>
 </head>
@@ -78,6 +86,12 @@ dialog pre{max-height:180px}
       <div class="row"><button id="preview" type="button"></button><button id="execute" class="accent" type="button" disabled></button></div>
       <pre id="pv"></pre>
     </section>
+    <section class="card" id="ops">
+      <div class="opsgrid"><div id="oplist"></div><div id="opform">
+        <h3 id="op-name"></h3><p class="muted" id="op-desc"></p><div id="op-params"></div>
+        <div class="row"><button id="op-preview" type="button"></button><button id="op-run" class="accent" type="button"></button></div>
+        <pre id="op-pv"></pre></div></div>
+    </section>
     <section class="card">
       <div class="tabs"><button id="tab-res" class="on" type="button"></button><button id="tab-hist" type="button"></button></div>
       <pre id="res"></pre>
@@ -93,7 +107,7 @@ dialog pre{max-height:180px}
 const TEXT = __TEXT_JSON__;
 const KEY = new URLSearchParams(location.search).get("key") || "";
 const $ = (id) => document.getElementById(id);
-let lang = "en", theme = "light", state = null, pending = null, selected = null, busy = false, current = "res";
+let lang = "en", theme = "light", state = null, pending = null, selected = null, busy = false, current = "res", cat = null, opId = null, opPending = null, opValues = {};
 try { lang = localStorage.getItem("dt_lang") || "en"; theme = localStorage.getItem("dt_theme") || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"); } catch (e) {}
 if (!TEXT[lang]) lang = "en";
 const t = (key, vars) => { let s = (TEXT[lang] && TEXT[lang][key]) || TEXT.en[key] || key; for (const k in (vars || {})) s = s.split("{" + k + "}").join(String(vars[k])); return s; };
@@ -128,7 +142,14 @@ function texts() {
 function render() {
   texts();
   const cats = $("cats"); cats.textContent = "";
-  if (state) for (const c of state.catalog.categories) { const b = el("button", c.name, "cat on"); b.type = "button"; cats.appendChild(b); }
+  if (state && !cat) cat = state.catalog.categories[0].id;
+  if (state) for (const c of state.catalog.categories) {
+    const b = el("button", c.name, "cat" + (c.id === cat ? " on" : "")); b.type = "button";
+    b.addEventListener("click", () => { cat = c.id; opId = null; opPending = null; render(); if (c.id === "firewall" && state.info.ufw.installed && !state.info.ufw.rules_loaded) refreshRules(); });
+    cats.appendChild(b);
+  }
+  $("fw").classList.toggle("hidden", cat !== "firewall");
+  renderOps();
   const u = state && state.info.ufw;
   const st = $("fw-state");
   if (!u) { st.textContent = ""; }
@@ -159,6 +180,97 @@ function renderHistory() {
   const list = (state && state.history) || [];
   if (!list.length) { const tr = document.createElement("tr"); for (let i = 0; i < 4; i++) tr.appendChild(el("td", "")); tr.appendChild(el("td", t("hist_empty"))); body.appendChild(tr); }
   for (const e of list) { const tr = document.createElement("tr"); for (const v of [e.time || "", e.op || "", e.status || "", e.exit_code === null || e.exit_code === undefined ? "" : String(e.exit_code), e.summary || ""]) tr.appendChild(el("td", v)); body.appendChild(tr); }
+}
+
+const CORE_UFW = ["ufw.status", "ufw.rule.add", "ufw.rule.delete"];
+function catOps() {
+  if (!state) return [];
+  const c = state.catalog.categories.find((x) => x.id === cat);
+  return c ? c.operations.filter((o) => cat !== "firewall" || !CORE_UFW.includes(o.id)) : [];
+}
+
+function renderOps() {
+  const list = $("oplist"); list.textContent = "";
+  const ops = catOps();
+  if (!ops.length) { $("ops").classList.add("hidden"); return; }
+  $("ops").classList.remove("hidden");
+  if (!opId || !ops.find((o) => o.id === opId)) { opId = ops[0].id; opValues = {}; opPending = null; buildForm(); }
+  for (const o of ops) {
+    const b = el("button", (o.risk === "high" ? "⚠ " : o.risk === "low" || o.risk === "medium" ? "✎ " : "   ") + o.name, o.id === opId ? "on" : ""); b.type = "button";
+    b.addEventListener("click", () => { opId = o.id; opValues = {}; opPending = null; buildForm(); render(); });
+    list.appendChild(b);
+  }
+  const op = ops.find((o) => o.id === opId);
+  $("op-preview").textContent = t("btn_preview"); $("op-run").textContent = t(op.risk === "info" ? "btn_run" : "btn_execute");
+  $("op-run").disabled = busy || (op.risk !== "info" && !opPending); $("op-preview").disabled = busy;
+}
+
+async function buildForm() {
+  const op = catOps().find((o) => o.id === opId); if (!op) return;
+  $("op-name").textContent = op.name; $("op-desc").textContent = op.description; put($("op-pv"), []);
+  const box = $("op-params"); box.textContent = "";
+  if (!op.params.length) box.appendChild(el("p", t("no_input"), "muted"));
+  for (const p of op.params) {
+    const wrap = el("label", "", "fld"); wrap.appendChild(el("span", t(p.label)));
+    let input;
+    if (p.kind === "bool") { input = document.createElement("input"); input.type = "checkbox"; }
+    else if (p.kind === "choice") {
+      input = document.createElement("select");
+      const values = p.dynamic ? (await api("/api/choices", { op: op.id, param: p.name })).choices : p.choices;
+      for (const v of values.length ? values : [""]) { const o = el("option", v || t("choice_none")); o.value = v; input.appendChild(o); }
+      if (p.default && values.includes(p.default)) input.value = p.default;
+    } else { input = document.createElement("input"); input.type = "text"; input.autocomplete = "off"; input.value = p.default || ""; }
+    input.dataset.name = p.name; input.dataset.kind = p.kind;
+    input.addEventListener("input", () => { opPending = null; $("op-run").disabled = busy || op.risk !== "info"; });
+    input.addEventListener("change", () => { opPending = null; $("op-run").disabled = busy || op.risk !== "info"; });
+    wrap.appendChild(input); box.appendChild(wrap);
+  }
+}
+
+function formParams() {
+  const out = {};
+  for (const e of $("op-params").querySelectorAll("[data-name]")) {
+    if (e.dataset.kind === "bool") out[e.dataset.name] = e.checked;
+    else if (e.value.trim()) out[e.dataset.name] = e.dataset.kind === "text" ? e.value : e.value.trim();
+  }
+  return out;
+}
+
+async function opPreview() {
+  const op = catOps().find((o) => o.id === opId); if (!op || busy) return;
+  const params = formParams();
+  const p = await api("/api/preview", { op: op.id, params });
+  const parts = [];
+  if (p.errors && p.errors.length) for (const e of p.errors) parts.push(["✖ " + e.message + "\n", "bad"]);
+  else {
+    parts.push([t("pv_title") + ": " + p.name + "\n", "cmd"]);
+    for (const c of p.commands) { parts.push(["$ " + c.display + "\n", "cmd"]); parts.push(["  " + t("pv_exact") + ": " + c.exact + "\n", ""]); }
+    if (!p.commands.length && !p.blocked) parts.push([t("pv_nothing") + "\n", ""]);
+    parts.push([t("pv_risk") + ": " + p.level_text + "\n", p.risk === "high" ? "bad" : ""]);
+    parts.push([t("pv_root") + ": " + t(p.needs_root ? "pv_root_yes" : "pv_root_no") + "\n", ""]);
+    if (p.blocked) parts.push(["✖ " + p.blocked + "\n", "bad"]);
+    for (const w of p.warnings) parts.push(["⚠ " + w + "\n", "warn"]);
+    for (const x of p.explain) parts.push(["• " + x + "\n", ""]);
+  }
+  put($("op-pv"), parts);
+  opPending = p.token ? { op: op.id, params, token: p.token, commands: p.commands.map((c) => c.display), deleting: p.risk === "high" } : null;
+  render();
+}
+
+async function opRun() {
+  const op = catOps().find((o) => o.id === opId); if (!op || busy) return;
+  if (op.risk === "info") {
+    await work(async () => { const r = await api("/api/run", { op: op.id, params: formParams() }); state.info = r.info; state.history = r.history; showResult(r.result); });
+    return;
+  }
+  if (!opPending) return;
+  const job = opPending;
+  if (!(await confirmDialog(job.deleting, job.commands))) return;
+  opPending = null;
+  await work(async () => {
+    const r = await api("/api/execute", { op: job.op, params: job.params, token: job.token, confirmed: true });
+    state.info = r.info; state.history = r.history; showResult(r.result);
+  });
 }
 
 function showTab(which) { current = which; $("res").classList.toggle("hidden", which !== "res"); $("hist").classList.toggle("hidden", which !== "hist"); $("tab-res").classList.toggle("on", which === "res"); $("tab-hist").classList.toggle("on", which === "hist"); }
@@ -238,6 +350,8 @@ async function deleteSelected() {
   if (pending) await execute();
 }
 
+$("op-preview").addEventListener("click", opPreview);
+$("op-run").addEventListener("click", opRun);
 $("preview").addEventListener("click", () => { const [op, params] = formOp(); doPreview(op, params); });
 $("execute").addEventListener("click", execute);
 $("del").addEventListener("click", deleteSelected);
@@ -245,10 +359,10 @@ $("refresh").addEventListener("click", refreshRules);
 $("clear").addEventListener("click", async () => { const r = await api("/api/history/clear", {}); state.history = r.history; render(); });
 $("tab-res").addEventListener("click", () => showTab("res")); $("tab-hist").addEventListener("click", () => showTab("hist"));
 for (const id of ["port", "proto", "action", "comment"]) { $(id).addEventListener("input", () => { pending = null; render(); }); }
-$("lang").addEventListener("change", async () => { lang = $("lang").value; try { localStorage.setItem("dt_lang", lang); } catch (e) {} await load(); put($("pv"), []); });
+$("lang").addEventListener("change", async () => { lang = $("lang").value; try { localStorage.setItem("dt_lang", lang); } catch (e) {} await load(); put($("pv"), []); opPending = null; buildForm(); });
 $("theme").addEventListener("click", () => { theme = theme === "light" ? "dark" : "light"; try { localStorage.setItem("dt_theme", theme); } catch (e) {} render(); });
 render(); showTab("res"); put($("res"), [[t("status_ready"), "cmd"]]);
-load().then(refreshRules);
+load().then(() => { render(); buildForm(); });
 </script>
 </body>
 </html>

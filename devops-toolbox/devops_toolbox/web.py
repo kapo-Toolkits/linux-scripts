@@ -139,6 +139,13 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/status":
                 res = tb.run_readonly("ufw.status", lang)
                 return self._json(200, {"result": res, "info": tb.info(lang), "history": tb.history_entries()})
+            if path == "/api/run":                               # an operation that only reads, with its inputs (no confirmation needed for these)
+                params = body.get("params") if isinstance(body.get("params"), dict) else {}
+                res = tb.run_readonly(body.get("op") if isinstance(body.get("op"), str) else "", lang, params=params)
+                return self._json(200, {"result": res, "info": tb.info(lang), "history": tb.history_entries()})
+            if path == "/api/choices":                           # the values a dynamic choice may take on this computer
+                op, name = body.get("op"), body.get("param")
+                return self._json(200, {"choices": tb.choices(op, name) if isinstance(op, str) and isinstance(name, str) else []})
             if path == "/api/preview":
                 params = body.get("params") if isinstance(body.get("params"), dict) else {}
                 return self._json(200, tb.preview(body.get("op"), params, lang))

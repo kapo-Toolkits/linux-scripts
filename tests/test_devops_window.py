@@ -21,7 +21,7 @@ except Exception as e:  # noqa: BLE001
     SKIP = f"no tkinter / display: {e}"
 
 if not SKIP:
-    from test_devops_commands import FULL, FakeSys, Runner, box
+    from test_devops_commands import Runner, box
     from test_devops_toolbox import FakeUfw, toolbox
     spec = importlib.util.spec_from_file_location("devops_gui", os.path.join(ROOT, "devops-toolbox", "devops-toolbox-gui.py"))
     gui = importlib.util.module_from_spec(spec)
