@@ -6,6 +6,8 @@ set -euo pipefail
 PREFIX=/usr/local
 ACTION=install
 DESKTOP_ICONS=0
+DRY=0
+FORCE=0
 FOLDER_LAUNCHERS=0
 TOOLS=()
 here="$(cd "$(dirname "$0")" && pwd)"
@@ -47,13 +49,17 @@ Tools: ${ALL[*]}
   --folders      also put a double-click launcher inside each tool's folder here
                  (runs straight from this checkout; re-run if you move the folder)
   --uninstall    remove what install put there (add --desktop / --folders to remove those launchers too)
-Uses sudo automatically when DIR is not writable.
+  --dry-run      only print what would be done; nothing is written, removed or run with sudo
+  --force        install over / remove files this toolkit did not put there (by default such files are left alone)
+Uses sudo automatically when DIR is not writable. What was installed is recorded in PREFIX/share/linux-scripts/install-manifest.
 U
 }
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --prefix) PREFIX="$2"; shift 2;;
+    --prefix) [ $# -ge 2 ] && [ -n "$2" ] || { echo "--prefix needs a directory"; exit 1; }; PREFIX="$2"; shift 2;;
+    --dry-run) DRY=1; shift;;
+    --force) FORCE=1; shift;;
     --uninstall) ACTION=uninstall; shift;;
     --desktop) DESKTOP_ICONS=1; shift;;
     --folders) FOLDER_LAUNCHERS=1; shift;;
@@ -70,11 +76,49 @@ DESKDIR="$(xdg-user-dir DESKTOP 2>/dev/null || echo "$HOME/Desktop")"
 SUDO=""
 probe="$PREFIX"; while [ ! -e "$probe" ]; do probe="$(dirname "$probe")"; done
 [ -w "$probe" ] || SUDO="sudo"
+[ "$DRY" = 1 ] && SUDO=""            # a preview never asks for a password
+
+MANIFEST="$PREFIX/share/linux-scripts/install-manifest"
+NEWPATHS=()
+GONEPATHS=()
+
+# Do a command, or just say it in a preview.
+act() { if [ "$DRY" = 1 ]; then echo "[dry-run] $*"; else "$@"; fi; }
+# SHA-256 of a file ("-" for a folder or anything else): what the manifest remembers about each path it lists.
+hash_of() { if [ -f "$1" ]; then sha256sum "$1" 2>/dev/null | cut -d' ' -f1; else echo "-"; fi; }
+# Was this path put there by this toolkit? It is in the manifest AND still holds what was installed (or, if you edited it, still
+# carries the toolkit's own names). A different program that later took the same name is not ours.
+is_ours() {
+  [ -f "$MANIFEST" ] || return 1
+  local want="" p h
+  while IFS=$'\t' read -r p h; do        # plain bash: awk is not installed everywhere
+    if [ "$p" = "$1" ]; then want="$h"; break; fi
+  done < "$MANIFEST"
+  [ -n "$want" ] || return 1
+  [ "$want" = "-" ] || [ "$want" = "$(hash_of "$1")" ] || looks_ours "$1"
+}
+# An installation from before the manifest existed: the file still carries the toolkit's own names.
+looks_ours() { [ -f "$1" ] && grep -Eq 'lscommon|linux-scripts|kapo-Toolkits' "$1" 2>/dev/null; }
+# May we write to / remove DEST (a command or menu entry)? SRC is the toolkit's own file for it ("" for none).
+ours_to_touch() {
+  local dest="$1" src="$2"
+  [ -e "$dest" ] || [ -L "$dest" ] || return 0
+  [ "$FORCE" = 1 ] && return 0
+  is_ours "$dest" && return 0
+  [ -n "$src" ] && [ -f "$dest" ] && [ "$(hash_of "$src")" = "$(hash_of "$dest")" ] && return 0
+  looks_ours "$dest" && return 0
+  case "$dest" in *.desktop) grep -q "^Exec=$PREFIX/bin/" "$dest" 2>/dev/null && return 0;; esac
+  return 1
+}
 
 # PrintHub is an application, not a single script: copy the package, give it PySide6 (system one, else a private
 # venv), install the icon.  The launcher and the menu entry go through the generic loop below.
 printhub_extra() {
   local app="$PREFIX/lib/printhub" icon="$PREFIX/share/icons/hicolor/256x256/apps/io.printhub.PrintHub.png"
+  if [ "$DRY" = 1 ]; then
+    echo "[dry-run] PrintHub: ${ACTION} $app (and its icon)$([ "$ACTION" = install ] && echo "; a private PySide6 environment is created when the system has none (~200 MB)")"
+    return 0
+  fi
   if [ "$ACTION" = install ]; then
     command -v python3 >/dev/null || { echo "python3 is required for PrintHub"; exit 1; }
     $SUDO rm -rf "$app/printhub"; $SUDO mkdir -p "$app"
@@ -101,39 +145,72 @@ printhub_extra() {
     fi
     $SUDO install -D -m 644 "$here/printhub/packaging/assets/printhub.png" "$icon"
     echo "installed PrintHub into $app"
+    NEWPATHS+=("$app" "$icon")
   else
-    $SUDO rm -rf "$app"; $SUDO rm -f "$icon"; echo "removed $app"
+    if [ -d "$app" ] && [ "$FORCE" != 1 ] && ! is_ours "$app" && [ ! -d "$app/printhub" ]; then
+      echo "kept $app (not installed by this toolkit; --force removes it)"
+    else
+      $SUDO rm -rf "$app"; $SUDO rm -f "$icon"; echo "removed $app"; GONEPATHS+=("$app" "$icon")
+    fi
   fi
 }
+
+# Before anything is written: refuse to overwrite a file that is not ours (another program with the same command name).
+if [ "$ACTION" = install ] && [ "$FORCE" != 1 ]; then
+  clash=0
+  for tool in "${TOOLS[@]}"; do
+    for pair in $(echo "${FILES[$tool]}" | tr ' ' '\n' | sed 's/|/,/'); do
+      src="${pair%%,*}"; cmd="${pair##*,}"
+      ours_to_touch "$PREFIX/bin/$cmd" "$here/$src" || { echo "refusing to overwrite $PREFIX/bin/$cmd: it is not from this toolkit"; clash=1; }
+    done
+    dname="$(basename "${DESKTOP[$tool]}")"
+    ours_to_touch "$PREFIX/share/applications/$dname" "" || { echo "refusing to overwrite $PREFIX/share/applications/$dname: it is not from this toolkit"; clash=1; }
+  done
+  if [ "$clash" = 1 ]; then echo "Nothing was installed. Use --force to replace those files anyway, or --prefix to install elsewhere."; exit 1; fi
+fi
 
 for tool in "${TOOLS[@]}"; do
   [ "$tool" = printhub ] && printhub_extra
   for pair in $(echo "${FILES[$tool]}" | tr ' ' '\n' | sed 's/|/,/'); do
     src="${pair%%,*}"; cmd="${pair##*,}"
     if [ "$ACTION" = install ]; then
-      $SUDO install -D -m 755 "$here/$src" "$PREFIX/bin/$cmd"; echo "installed $PREFIX/bin/$cmd"
+      act $SUDO install -D -m 755 "$here/$src" "$PREFIX/bin/$cmd"; [ "$DRY" = 1 ] || echo "installed $PREFIX/bin/$cmd"; NEWPATHS+=("$PREFIX/bin/$cmd")
+    elif ours_to_touch "$PREFIX/bin/$cmd" "$here/$src"; then
+      act $SUDO rm -f "$PREFIX/bin/$cmd"; [ "$DRY" = 1 ] || echo "removed $PREFIX/bin/$cmd"; GONEPATHS+=("$PREFIX/bin/$cmd")
     else
-      $SUDO rm -f "$PREFIX/bin/$cmd"; echo "removed $PREFIX/bin/$cmd"
+      echo "kept $PREFIX/bin/$cmd (not from this toolkit; --force removes it)"
     fi
   done
   d="${DESKTOP[$tool]}"; dname="$(basename "$d")"
   if [ "$ACTION" = install ]; then
     # absolute Exec= so a menu/desktop click works even when PREFIX/bin is not in the session's PATH
-    tmp="$(mktemp)"; sed "s#^Exec=#Exec=$PREFIX/bin/#" "$here/$d" > "$tmp"
-    $SUDO install -D -m 644 "$tmp" "$PREFIX/share/applications/$dname"
+    # (a plain loop, not sed: a prefix containing '#', '&' or '\\' must come out unchanged)
+    tmp="$(mktemp)"
+    while IFS= read -r line || [ -n "$line" ]; do
+      case "$line" in Exec=*) printf 'Exec=%s/bin/%s\n' "$PREFIX" "${line#Exec=}";; *) printf '%s\n' "$line";; esac
+    done < "$here/$d" > "$tmp"
+    act $SUDO install -D -m 644 "$tmp" "$PREFIX/share/applications/$dname"; NEWPATHS+=("$PREFIX/share/applications/$dname")
     if [ "$DESKTOP_ICONS" = 1 ] && [ -d "$DESKDIR" ]; then
-      install -m 755 "$tmp" "$DESKDIR/$dname"
-      command -v gio >/dev/null && gio set "$DESKDIR/$dname" metadata::trusted true 2>/dev/null || true
+      act install -m 755 "$tmp" "$DESKDIR/$dname"
+      if [ "$DRY" = 0 ]; then
+        command -v gio >/dev/null && gio set "$DESKDIR/$dname" metadata::trusted true 2>/dev/null || true
+      fi
       echo "launcher on Desktop: $DESKDIR/$dname"
     fi
     rm -f "$tmp"
   else
-    $SUDO rm -f "$PREFIX/share/applications/$dname"
-    [ "$DESKTOP_ICONS" = 1 ] && rm -f "$DESKDIR/$dname"
+    if ours_to_touch "$PREFIX/share/applications/$dname" ""; then
+      act $SUDO rm -f "$PREFIX/share/applications/$dname"; GONEPATHS+=("$PREFIX/share/applications/$dname")
+    else
+      echo "kept $PREFIX/share/applications/$dname (not from this toolkit; --force removes it)"
+    fi
+    [ "$DESKTOP_ICONS" = 1 ] && act rm -f "$DESKDIR/$dname"
   fi
   # double-click launcher in the tool's own folder (absolute path to this checkout)
   flaunch="$here/$(dirname "$d")/start-${dname%.desktop}.desktop"
-  if [ "$ACTION" = install ] && [ "$FOLDER_LAUNCHERS" = 1 ]; then
+  if [ "$ACTION" = install ] && [ "$FOLDER_LAUNCHERS" = 1 ] && [ "$DRY" = 1 ]; then
+    echo "[dry-run] would write the double-click launcher $flaunch"
+  elif [ "$ACTION" = install ] && [ "$FOLDER_LAUNCHERS" = 1 ]; then
     {
       sed -n '/^\[Desktop Entry\]/,$p' "$here/$d" | grep -v -E '^(Exec|Path)='
       echo "Exec=python3 ${here}/${GUISCRIPT[$tool]}"
@@ -143,27 +220,27 @@ for tool in "${TOOLS[@]}"; do
     command -v gio >/dev/null && gio set "$flaunch" metadata::trusted true 2>/dev/null || true
     echo "double-click launcher: $flaunch"
   elif [ "$ACTION" = uninstall ] && [ "$FOLDER_LAUNCHERS" = 1 ]; then
-    rm -f "$flaunch"
+    act rm -f "$flaunch"
   fi
 done
 
-if [ "$ACTION" = install ] && [ "$(id -u)" != 0 ]; then
+if [ "$ACTION" = install ] && [ "$(id -u)" != 0 ] && [ "$DRY" = 0 ]; then
   # lets toolkit-shortcuts find programs of this checkout that are not installed
   mkdir -p "$HOME/.config/linux-scripts" && printf '%s\n' "$here" > "$HOME/.config/linux-scripts/root"
 fi
 if [ "$ACTION" = install ]; then
   for m in lscommon lsqr lsnet; do
-    $SUDO install -D -m 644 "$here/common/$m.py" "$PREFIX/lib/linux-scripts/$m.py"
+    act $SUDO install -D -m 644 "$here/common/$m.py" "$PREFIX/lib/linux-scripts/$m.py"
   done
   # the hotspot's "which network to share" helper (the window runs it with administrator rights when you choose a network)
   case " ${TOOLS[*]} " in
-    *" wifi-hotspot "*) $SUDO install -D -m 755 "$here/wifi-hotspot/hotspot-uplink.sh" "$PREFIX/lib/linux-scripts/hotspot-uplink.sh";;
+    *" wifi-hotspot "*) act $SUDO install -D -m 755 "$here/wifi-hotspot/hotspot-uplink.sh" "$PREFIX/lib/linux-scripts/hotspot-uplink.sh";;
   esac
   # the qgis_installer package (logic shared by qgis-installer and qgis-installer-cli)
   case " ${TOOLS[*]} " in
     *" qgis-installer "*)
       for f in "$here"/qgis-installer/qgis_installer/*.py; do
-        $SUDO install -D -m 644 "$f" "$PREFIX/lib/linux-scripts/qgis_installer/$(basename "$f")"
+        act $SUDO install -D -m 644 "$f" "$PREFIX/lib/linux-scripts/qgis_installer/$(basename "$f")"
       done;;
   esac
 fi
@@ -172,18 +249,46 @@ if [ "$ACTION" = uninstall ]; then
     *" wifi-hotspot "*)
       # a chosen "network to share" lives in /etc (routing rule + NetworkManager dispatcher): take it away with the tool
       if [ -e /etc/NetworkManager/dispatcher.d/90-linux-scripts-hotspot-uplink ] && [ -f "$PREFIX/lib/linux-scripts/hotspot-uplink.sh" ]; then
-        $SUDO sh "$PREFIX/lib/linux-scripts/hotspot-uplink.sh" install auto || true
+        act $SUDO sh "$PREFIX/lib/linux-scripts/hotspot-uplink.sh" install auto || true
       fi
-      $SUDO rm -f "$PREFIX/lib/linux-scripts/hotspot-uplink.sh";;
+      act $SUDO rm -f "$PREFIX/lib/linux-scripts/hotspot-uplink.sh";;
   esac
-  case " ${TOOLS[*]} " in *" qgis-installer "*) $SUDO rm -rf "$PREFIX/lib/linux-scripts/qgis_installer";; esac
-  guis=0; for g in usb-eject-gui hotspot-gui printer-setup qgis-installer qgis-installer-cli bluetooth-setup toolkit-shortcuts; do [ -e "$PREFIX/bin/$g" ] && guis=1; done
-  [ "$guis" = 0 ] && $SUDO rm -rf "$PREFIX/lib/linux-scripts" && echo "removed shared helper"
+  case " ${TOOLS[*]} " in *" qgis-installer "*) act $SUDO rm -rf "$PREFIX/lib/linux-scripts/qgis_installer";; esac
+  # the shared helper goes only when no command of the toolkit is left (in a preview: none left after the ones listed above)
+  guis=0
+  for g in usb-eject-gui hotspot-gui printer-setup qgis-installer qgis-installer-cli bluetooth-setup toolkit-shortcuts; do
+    gone=0; for x in "${GONEPATHS[@]+"${GONEPATHS[@]}"}"; do [ "$x" = "$PREFIX/bin/$g" ] && gone=1; done
+    [ -e "$PREFIX/bin/$g" ] && [ "$gone" = 0 ] && guis=1
+  done
+  if [ "$guis" = 0 ]; then act $SUDO rm -rf "$PREFIX/lib/linux-scripts"; [ "$DRY" = 1 ] || echo "removed shared helper"; fi
+fi
+
+# the record of what this toolkit put under PREFIX (so an uninstall removes only that, and an install knows what is its own)
+if [ "$DRY" = 0 ]; then
+  if [ "$ACTION" = install ] && [ ${#NEWPATHS[@]} -gt 0 ]; then
+    mf="$(mktemp)"
+    : > "$mf"
+    for x in "${NEWPATHS[@]}"; do printf '%s\t%s\n' "$x" "$(hash_of "$x")" >> "$mf"; done
+    if [ -f "$MANIFEST" ]; then          # keep the older records of paths that were not installed again now
+      while IFS= read -r line; do
+        old="${line%%$'\t'*}"
+        grep -Fq -- "$old"$'\t' "$mf" || printf '%s\n' "$line" >> "$mf"
+      done < "$MANIFEST"
+    fi
+    sort -u "$mf" -o "$mf"
+    $SUDO install -D -m 644 "$mf" "$MANIFEST"; rm -f "$mf"
+  elif [ "$ACTION" = uninstall ] && [ -f "$MANIFEST" ]; then
+    mf="$(mktemp)"
+    cp "$MANIFEST" "$mf"
+    for x in "${GONEPATHS[@]+"${GONEPATHS[@]}"}"; do grep -Fv -- "$x"$'\t' "$mf" > "$mf.n" || true; mv "$mf.n" "$mf"; done
+    if [ -s "$mf" ]; then $SUDO install -D -m 644 "$mf" "$MANIFEST"; else $SUDO rm -f "$MANIFEST"; $SUDO rmdir "$(dirname "$MANIFEST")" 2>/dev/null || true; fi
+    rm -f "$mf"
+  fi
 fi
 # bluetooth-setup moved to its own repository; a copy installed by an earlier version is not touched
 if [ "$ACTION" = uninstall ] && [ -e "$PREFIX/bin/bluetooth-setup" ]; then
   echo "note: $PREFIX/bin/bluetooth-setup was installed by an older version and is left in place; the tool now lives at"
   echo "      https://github.com/kapo-Toolkits/bluetooth-setup  (remove the old copy with: $SUDO rm -f $PREFIX/bin/bluetooth-setup $PREFIX/share/applications/bluetooth-setup.desktop)"
 fi
-command -v update-desktop-database >/dev/null && $SUDO update-desktop-database -q "$PREFIX/share/applications" 2>/dev/null || true
-echo "Done."
+[ "$DRY" = 1 ] || { command -v update-desktop-database >/dev/null && $SUDO update-desktop-database -q "$PREFIX/share/applications" 2>/dev/null || true; }
+[ "$DRY" = 1 ] && echo "Preview only - nothing was changed." || echo "Done."
