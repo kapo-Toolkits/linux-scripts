@@ -479,6 +479,9 @@ class Translations(unittest.TestCase):
                 if f.endswith(".py") and f != "i18n.py":
                     with open(os.path.join(dp, f), encoding="utf-8") as fh:
                         src = fh.read()
+                    if f.endswith("-gui.py"):                    # the window's attribute names look like keys: only its tr("...") calls count
+                        used |= set(re.findall(r'\.tr\("([a-z_]+)"', src))
+                        continue
                     used |= set(re.findall(r'["\']((?:err|ok|warn|explain|blocked|op|p|cat|risk|act|fw|btn|pv|res|hist|status)_[a-z_]+)["\']', src))
         missing = sorted(k for k in used if k not in i18n.TEXT["en"])
         self.assertEqual(missing, [])

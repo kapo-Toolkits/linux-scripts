@@ -215,8 +215,8 @@ class Toolbox:
                            [self._command_dict(plan, a)["display"] for a in plan.commands] if plan.commands else ["(built-in)"],
                            output, status="ok" if ok else "failed",
                            op_id=op.id, params=self._loggable(op, plan.params), summary=summary, record=record)
-        if ok and op.risk != "info":
-            out["refresh"] = self._refresh(lang)                       # the displayed state follows the real one
+        if ok and op.risk != "info" and op.id.startswith("ufw."):
+            out["refresh"] = self._refresh(lang)                       # the firewall list follows the real state (only for firewall changes)
         if data is not None:
             out["data"] = data
         return out

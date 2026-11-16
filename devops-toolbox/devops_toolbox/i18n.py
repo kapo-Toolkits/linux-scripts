@@ -79,6 +79,8 @@ TEXT = {
         # history
         "hist_title": "History", "hist_time": "Time", "hist_operation": "Operation", "hist_status": "Status", "hist_exit": "Exit", "hist_summary": "Summary",
         "hist_empty": "Nothing has been run yet.", "hist_cleared": "History cleared.",
+        "btn_run": "Run", "ops_list": "Operations", "tab_manager": "UFW manager", "tab_more": "More operations", "no_input": "This operation needs no input.",
+        "choice_none": "(nothing available)", "ops_hint": "Pick an operation on the left.", "ask_run_title": "Confirm", "yes": "yes", "no": "no",
         "status_ready": "Ready.", "working": "Working… (a system dialog may ask for the administrator password)",
         "web_started": "Open {url} in your browser. Press Ctrl+C to stop.", "web_token_hint": "Local use only",
     },
@@ -149,6 +151,8 @@ TEXT = {
         "err_ufw_failed": "UFW-მა შეცდომა დააფიქსირა: {detail}",
         "hist_title": "ისტორია", "hist_time": "დრო", "hist_operation": "ოპერაცია", "hist_status": "სტატუსი", "hist_exit": "კოდი", "hist_summary": "მოკლედ",
         "hist_empty": "ჯერ არაფერი გაშვებულა.", "hist_cleared": "ისტორია გასუფთავდა.",
+        "btn_run": "გაშვება", "ops_list": "ოპერაციები", "tab_manager": "UFW მენეჯერი", "tab_more": "სხვა ოპერაციები", "no_input": "ამ ოპერაციას შეყვანა არ სჭირდება.",
+        "choice_none": "(არაფერია ხელმისაწვდომი)", "ops_hint": "აირჩიეთ ოპერაცია მარცხნივ.", "ask_run_title": "დადასტურება", "yes": "დიახ", "no": "არა",
         "status_ready": "მზადაა.", "working": "მუშაობს… (სისტემურმა ფანჯარამ შეიძლება ადმინისტრატორის პაროლი მოგთხოვოთ)",
         "web_started": "გახსენით {url} ბრაუზერში. გასაჩერებლად დააჭირეთ Ctrl+C.", "web_token_hint": "მხოლოდ ლოკალური გამოყენებისთვის",
     },
