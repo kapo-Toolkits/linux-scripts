@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=DevOps Toolbox
+Name[ka]=DevOps ხელსაწყოები
+Comment=Safe, click-based DevOps operations (UFW firewall) · უსაფრთხო DevOps ოპერაციები ერთი დაჭერით
+Exec=devops-toolbox
+Icon=preferences-system-network
+Terminal=false
+Categories=System;Settings;Network;
