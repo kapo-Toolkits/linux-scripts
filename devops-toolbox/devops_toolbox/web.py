@@ -107,7 +107,7 @@ class Handler(BaseHTTPRequestHandler):
             lang = (parse_qs(url.query).get("lang") or ["en"])[0]
             with self.server.lock:
                 tb = self.server.toolbox
-                return self._json(200, {"catalog": tb.catalog(lang), "info": tb.info(lang), "history": tb.history_entries()})
+                return self._json(200, {"catalog": tb.catalog(lang), "info": tb.info(lang), "history": tb.history_entries(), "target": tb.target_info()})
         self._error(404, "err_unknown_operation")
 
     def do_POST(self):
@@ -139,6 +139,15 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/status":
                 res = tb.run_readonly("ufw.status", lang)
                 return self._json(200, {"result": res, "info": tb.info(lang), "history": tb.history_entries()})
+            if path == "/api/target":                            # run on this computer, or on another one over SSH (keys only)
+                res = tb.set_target(body.get("kind"), body.get("host", ""), body.get("port", 22), body.get("user", ""), body.get("identity", ""), lang)
+                return self._json(200, dict(res, info=tb.info(lang), history=tb.history_entries()))
+            if path == "/api/target/test":
+                return self._json(200, tb.target_test(lang))
+            if path == "/api/target/hostkey":                   # show the fingerprints; nothing is trusted by this call
+                return self._json(200, tb.hostkey_scan(body.get("host", ""), body.get("port", 22), lang))
+            if path == "/api/target/trust":                     # needs that scan's token AND confirmed: true
+                return self._json(200, tb.hostkey_trust(body.get("token"), body.get("confirmed"), lang))
             if path == "/api/run":                               # an operation that only reads, with its inputs (no confirmation needed for these)
                 params = body.get("params") if isinstance(body.get("params"), dict) else {}
                 res = tb.run_readonly(body.get("op") if isinstance(body.get("op"), str) else "", lang, params=params)
@@ -191,6 +200,10 @@ class WebApp:
         return self
 
     def stop(self):
+        try:
+            self.server.toolbox.close()                          # ends the shared SSH connection, if one is open
+        except Exception:  # noqa: BLE001 - stopping must always work
+            pass
         self.server.shutdown()
         self.server.server_close()
         if self.thread:

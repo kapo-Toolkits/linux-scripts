@@ -465,7 +465,7 @@ class Behaviour(unittest.TestCase):
         self.assertEqual(self.run_op("mon.timezone.set", {"zone": "Asia/Tbilisi"})[1]["commands"][0]["display"], "sudo timedatectl set-timezone Asia/Tbilisi")
         for bad in ("Mars/Base", "../../etc/passwd", "Asia/Tbilisi; id", "asia", "Asia/"):
             self.assertFalse(self.run_op("mon.timezone.set", {"zone": bad})[1]["ok"], bad)
-        self.assertIn("Test Linux 1", self.run_op("sys.info")[2]["output"])
+        self.assertEqual(self.run_op("sys.info", answers={"uname": "Linux h 6.1 x86_64\n", "cat": "NAME=x\nPRETTY_NAME=\"Test Linux 1\"\n"})[2]["output"].count("\n"), 1)
 
     def test_security_reports(self):
         log = "\n".join(["Failed password for root from 1.2.3.4 port 22 ssh2"] * 3 + ["Failed password for x from 5.6.7.8 port 22", "Accepted publickey for k from 9.9.9.9 port 1"])

@@ -55,6 +55,30 @@ def _read_kv(path, opener=open):
     return out
 
 
+def kv_from_text(text):
+    """KEY=value lines of a small config file (comments and quotes removed)."""
+    out = {}
+    for line in (text or "").splitlines():
+        line = line.strip()
+        if line and not line.startswith("#") and "=" in line:
+            k, _, v = line.partition("=")
+            out[k.strip()] = v.strip().strip('"').strip("'")
+    return out
+
+
+def active_from_text(text):
+    """True / False from the text of /etc/ufw/ufw.conf, None when ENABLED is not in it (or the text is None)."""
+    if text is None:
+        return None
+    kv = kv_from_text(text)
+    return None if "ENABLED" not in kv else kv["ENABLED"].lower() in ("yes", "true", "1")
+
+
+def policy_from_text(text):
+    kv = kv_from_text(text)
+    return {"incoming": kv.get("DEFAULT_INPUT_POLICY", "").lower(), "outgoing": kv.get("DEFAULT_OUTPUT_POLICY", "").lower()}
+
+
 def read_active(path=CONF, opener=open):
     """True / False from ENABLED= in /etc/ufw/ufw.conf (world-readable), None when it cannot be read."""
     kv = _read_kv(path, opener)

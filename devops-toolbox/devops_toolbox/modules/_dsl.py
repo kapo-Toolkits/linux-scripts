@@ -209,6 +209,8 @@ def op(oid, cat, name, desc, argv=None, build=None, native=None, params=(), root
         if not lists:
             return Plan([], p, blocked="blocked_nothing_configured", root=False)
         cmds, missing = resolve(ctx, lists, root)
+        if missing and getattr(ctx.sysx, "last_error", ""):          # the real reason is that the other computer could not be reached
+            return Plan([], p, blocked=ctx.sysx.last_error, blocked_args={"detail": ""}, root=False)
         if missing:
             return Plan([], p, blocked="blocked_tool_missing",
                         blocked_args={"program": missing, "package": PROGRAM_HINTS.get(missing, missing)}, root=False)

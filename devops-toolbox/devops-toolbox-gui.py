@@ -44,6 +44,7 @@ class App(tk.Tk):
         self.pending = None                      # the last successful preview: (op_id, params, token, risk, commands)
         self.cat_id = None                       # the category shown
         self.g_op, self.g_vars, self.g_pending = None, {}, None   # the generic operation panel
+        self.tform = {"kind": "local", "host": "", "port": "22", "user": "", "key": ""}   # the "run on" bar (kept while the window is redrawn)
         self.form = {"port": "", "proto": "tcp", "action": "allow", "comment": ""}
         self.minsize(820, 640)
         self.geometry("1040x800")
@@ -136,6 +137,7 @@ class App(tk.Tk):
         box.bind("<<ComboboxSelected>>", self.on_language)
         self.lang_box = box
         ttk.Label(top, text=self.tr("language") + ":").pack(side="right")
+        self.build_target_bar()
         # body: sidebar | main
         body = ttk.Frame(self)
         body.pack(fill="both", expand=True)
@@ -180,6 +182,112 @@ class App(tk.Tk):
         self.status = ttk.Label(self, text=self.tr("status_ready"), padding=(12, 4))
         self.status.pack(side="bottom", fill="x")
         self.build_panel()
+
+    # ---------------------------------------------------------------- where operations run: this computer or another one over SSH
+    def build_target_bar(self):
+        bar = ttk.Frame(self, style="Side.TFrame", padding=(12, 6))
+        bar.pack(fill="x")
+        f = self.tform
+        self.t_kind = tk.StringVar(value=f["kind"])
+        self.t_host, self.t_port = tk.StringVar(value=f["host"]), tk.StringVar(value=f["port"])
+        self.t_user, self.t_key = tk.StringVar(value=f["user"]), tk.StringVar(value=f["key"] or self.tr("tg_key_default"))
+        ttk.Label(bar, text=self.tr("tg_title") + ":", style="Side.TLabel", font=("", 10, "bold")).grid(row=0, column=0, sticky="w")
+        ttk.Radiobutton(bar, text=self.tr("tg_local"), value="local", variable=self.t_kind, command=self.on_kind).grid(row=0, column=1, padx=(8, 4))
+        ttk.Radiobutton(bar, text=self.tr("tg_remote"), value="remote", variable=self.t_kind, command=self.on_kind).grid(row=0, column=2, padx=4)
+        self.t_widgets = []
+        col = 3
+        for label, var, width in (("tg_host", self.t_host, 18), ("tg_port", self.t_port, 6), ("tg_user", self.t_user, 12)):
+            ttk.Label(bar, text=self.tr(label), style="Side.TLabel").grid(row=0, column=col, padx=(10, 2))
+            e = ttk.Entry(bar, textvariable=var, width=width)
+            e.grid(row=0, column=col + 1)
+            self.t_widgets.append(e)
+            col += 2
+        ttk.Label(bar, text=self.tr("tg_key"), style="Side.TLabel").grid(row=0, column=col, padx=(10, 2))
+        self.t_keybox = ttk.Combobox(bar, textvariable=self.t_key, state="readonly", width=18,
+                                     values=[self.tr("tg_key_default")] + self.tb.target_info()["keys"])
+        self.t_keybox.grid(row=0, column=col + 1)
+        self.t_widgets.append(self.t_keybox)
+        self.btn_hostkey = ttk.Button(bar, text=self.tr("tg_hostkey"), command=self.check_hostkey)
+        self.btn_hostkey.grid(row=0, column=col + 2, padx=(10, 2))
+        self.btn_connect = ttk.Button(bar, text=self.tr("tg_connect"), style="Accent.TButton", command=self.connect)
+        self.btn_connect.grid(row=0, column=col + 3, padx=2)
+        self.btn_use = ttk.Button(bar, text=self.tr("tg_use"), command=self.apply_target)
+        self.btn_use.grid(row=0, column=col + 4, padx=2)
+        info = self.tb.target_info()
+        self.lbl_target = tk.Label(bar, text=self.tr("tg_remote_banner", label=info["label"]) if info["kind"] == "remote" else "",
+                                   bg=self.colors()["bad"], fg="#ffffff", font=("", 10, "bold"), padx=8)
+        if info["kind"] == "remote":
+            self.lbl_target.grid(row=1, column=0, columnspan=col + 5, sticky="we", pady=(6, 0))
+        ttk.Label(bar, text=self.tr("tg_note"), style="Side.TLabel", font=("", 9), wraplength=900, justify="left").grid(
+            row=2, column=0, columnspan=col + 5, sticky="w", pady=(4, 0))
+        self.on_kind(redraw=False)
+
+    def on_kind(self, redraw=True):
+        remote = self.t_kind.get() == "remote"
+        for w in self.t_widgets:
+            w.configure(state=("readonly" if w is self.t_keybox else "normal") if remote else "disabled")
+        self.btn_hostkey.configure(state="normal" if remote else "disabled")
+        self.btn_connect.configure(state="normal" if remote else "disabled")
+        if redraw and not remote and self.tb.target_info()["kind"] == "remote":
+            self.apply_target()                                      # going back to this computer takes effect at once
+
+    def target_values(self):
+        key = self.t_key.get()
+        return {"kind": self.t_kind.get(), "host": self.t_host.get().strip(), "port": self.t_port.get().strip() or "22", "user": self.t_user.get().strip(),
+                "key": "" if key == self.tr("tg_key_default") else key}
+
+    def confirm_text(self, commands):
+        """The commands for a confirmation dialog - and on which computer they will run, when it is another one."""
+        info = self.tb.target_info()
+        text = "\n".join(commands)
+        return text + ("\n\n" + self.tr("tg_running_on") + ": " + info["label"]) if info["kind"] == "remote" else text
+
+    def apply_target(self, quiet=False):
+        """Switch to the chosen computer (nothing connects yet). -> True when it was accepted."""
+        v = self.target_values()
+        self.tform = dict(v)
+        res = self.tb.set_target(v["kind"], v["host"], v["port"], v["user"], v["key"], self.lang)
+        if not res["ok"]:
+            self.set_text(self.result, [("✖ " + e["message"] + "\n", "bad") for e in res["errors"]])
+            self.notebook.select(0)
+            return False
+        self.pending, self.g_pending = None, None
+        self.rebuild()
+        return True
+
+    def connect(self):
+        if self.busy or not self.apply_target():
+            return
+        self.run_in_background(lambda: self.tb.target_test(self.lang), self.on_target_test)
+
+    def on_target_test(self, res):
+        parts = [(("✔ " if res["ok"] else "✖ ") + res["message"] + "\n", "ok" if res["ok"] and res.get("sudo") is not False else "bad" if not res["ok"] else "warn")]
+        self.set_text(self.result, parts)
+        self.notebook.select(0)
+
+    def check_hostkey(self):
+        v = self.target_values()
+        if self.busy:
+            return
+        if not v["host"]:
+            self.set_text(self.result, [("✖ " + self.tr("tg_unknown_host") + "\n", "bad")])
+            return
+        self.run_in_background(lambda: self.tb.hostkey_scan(v["host"], v["port"], self.lang), lambda r: self.on_hostkey(r, v))
+
+    def on_hostkey(self, res, v):
+        if not res["ok"]:
+            self.set_text(self.result, [("✖ " + res["message"] + "\n", "bad")])
+            self.notebook.select(0)
+            return
+        if res.get("trusted"):
+            self.set_text(self.result, [("✔ " + self.tr("tg_trusted_already", host=res["host"]) + "\n", "ok")] + [(p + "\n", None) for p in res["fingerprints"]])
+            self.notebook.select(0)
+            return
+        if messagebox.askyesno(self.tr("tg_trust_title"), self.tr("tg_trust_text", host=res["host"], port=res["port"], prints="\n".join(res["fingerprints"])),
+                               icon="warning", parent=self):
+            done = self.tb.hostkey_trust(res["token"], True, self.lang)
+            self.set_text(self.result, [(("✔ " if done["ok"] else "✖ ") + done["message"] + "\n", "ok" if done["ok"] else "bad")])
+            self.notebook.select(0)
 
     # ---------------------------------------------------------------- categories and the generic operation panel
     def on_category(self, _event=None):
@@ -333,7 +441,7 @@ class App(tk.Tk):
         op_id, params, token, risk, commands = self.g_pending
         deleting = risk == "high"
         if not messagebox.askyesno(self.tr("confirm_delete_title" if deleting else "confirm_title"),
-                                   self.tr("confirm_delete_text" if deleting else "confirm_text", commands="\n".join(commands) or op["name"]),
+                                   self.tr("confirm_delete_text" if deleting else "confirm_text", commands=self.confirm_text(commands) or op["name"]),
                                    icon="warning", parent=self):
             return
         self.g_pending = None
@@ -447,6 +555,8 @@ class App(tk.Tk):
                 parts.append(("✖ " + e["message"] + "\n", "bad"))
         else:
             parts.append((self.tr("pv_title") + ": " + p["name"] + "\n", "head"))
+            if p.get("remote"):
+                parts.append((self.tr("tg_running_on") + ": " + p["target"] + "\n", "warn"))
             for cmd in p["commands"]:
                 parts.append(("$ " + cmd["display"] + "\n", "cmd"))
                 parts.append(("  " + self.tr("pv_exact") + ": " + cmd["exact"] + "\n", None))
@@ -475,7 +585,7 @@ class App(tk.Tk):
         op_id, params, token, risk, commands = self.pending
         deleting = op_id == "ufw.rule.delete"
         if not messagebox.askyesno(self.tr("confirm_delete_title" if deleting else "confirm_title"),
-                                   self.tr("confirm_delete_text" if deleting else "confirm_text", commands="\n".join(commands)),
+                                   self.tr("confirm_delete_text" if deleting else "confirm_text", commands=self.confirm_text(commands)),
                                    icon="warning", parent=self):
             return
         self.pending = None
@@ -494,7 +604,7 @@ class App(tk.Tk):
         params = {"port": rule["port"], "proto": rule["proto"], "action": rule["action"]}
         p = self.show_preview("ufw.rule.delete", params)
         if self.pending and messagebox.askyesno(self.tr("confirm_delete_title"),
-                                                self.tr("confirm_delete_text", commands="\n".join(c["display"] for c in p["commands"])),
+                                                self.tr("confirm_delete_text", commands=self.confirm_text([c["display"] for c in p["commands"]])),
                                                 icon="warning", parent=self):
             op_id, params, token, _risk, _cmds = self.pending
             self.pending = None
@@ -603,16 +713,25 @@ class App(tk.Tk):
     def on_language(self, _event=None):
         chosen = next((k for k, v in LANG_NAMES.items() if v == self.lang_var.get()), self.lang)
         if chosen != self.lang:
+            self.tform = self.target_values() if hasattr(self, "t_kind") else self.tform
             self.form = self.form_values()                       # read the form in the OLD language, before the labels change
             self.lang = chosen
             settings.save_lang(chosen)
             self.rebuild()
 
     def toggle_theme(self):
+        self.tform = self.target_values() if hasattr(self, "t_kind") else self.tform
         self.form = self.form_values()
         self.theme = "dark" if self.theme == "light" else "light"
         settings.save_theme(self.theme)
         self.rebuild()
+
+    def quit_app(self):
+        """Close the connection to another computer (if any), then the window."""
+        try:
+            self.tb.close()
+        finally:
+            self.destroy()
 
     def rebuild(self):
         """Draw everything again in the current language and theme; the form values (self.form) were saved by the caller."""
@@ -621,7 +740,9 @@ class App(tk.Tk):
 
 
 def main():
-    App().mainloop()
+    app = App()
+    app.protocol("WM_DELETE_WINDOW", app.quit_app)
+    app.mainloop()
 
 
 if __name__ == "__main__":
