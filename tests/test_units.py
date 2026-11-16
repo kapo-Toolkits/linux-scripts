@@ -1783,7 +1783,7 @@ class RunControl(unittest.TestCase):
         ctl = {"cancel": True}
         lines = []
         with mock.patch.object(self.m, "ROOT", "/"):
-            rc = self.m.run_command(["sh", "-c", "echo done"], lines.append, dict(ctl, elevated=False))
+            self.m.run_command(["sh", "-c", "echo done"], lines.append, dict(ctl, elevated=False))
         self.assertEqual(lines, ["done\n"])
         # a command named pkexec / sudo sets ctl["elevated"], so the cancel flag never terminates it
         fake = os.path.join(tempfile.mkdtemp(), "sudo")

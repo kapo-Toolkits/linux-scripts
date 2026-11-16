@@ -28,8 +28,37 @@ MODULE_TO_COMPONENT = {"osgeo": "gdal-python", "numpy": "numpy", "pandas": "pand
                        "PIL": "pillow", "jinja2": "jinja2", "sqlalchemy": "sqlalchemy"}
 
 
+# split out of the interpreter package on some distributions (Debian: python3-tk, python3-venv, python3-distutils ...)
+_OFTEN_SPLIT = {"tkinter", "idlelib", "turtle", "turtledemo", "distutils", "lib2to3", "ensurepip", "venv", "sqlite3"}
+
+
+def _stdlib_from_disk():
+    """Python 3.8 / 3.9 have no sys.stdlib_module_names: read the standard library's own folder instead (without this every
+    `import os` of a plugin would be reported as a third-party package to install)."""
+    import sysconfig
+    names = set(sys.builtin_module_names) | _OFTEN_SPLIT
+    for key in ("stdlib", "platstdlib"):
+        base = sysconfig.get_paths().get(key)
+        try:
+            entries = os.listdir(base) if base else []
+        except OSError:
+            entries = []
+        for entry in entries:
+            full = os.path.join(base, entry)
+            if entry in ("site-packages", "dist-packages"):
+                continue
+            if entry.endswith(".py"):
+                names.add(entry[:-3])
+            elif entry == "lib-dynload" and os.path.isdir(full):
+                names.update(f.split(".")[0] for f in os.listdir(full))
+            elif os.path.isfile(os.path.join(full, "__init__.py")):
+                names.add(entry)
+    return names
+
+
 def stdlib_names():
-    return set(getattr(sys, "stdlib_module_names", ())) | {"__future__"}
+    known = getattr(sys, "stdlib_module_names", None)           # Python 3.10+
+    return set(known if known is not None else _stdlib_from_disk()) | {"__future__"}
 
 
 def _local_names(root):

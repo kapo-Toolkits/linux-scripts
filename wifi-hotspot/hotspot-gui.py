@@ -5,7 +5,6 @@ Same logic as hotspot.sh: 2.4 GHz, ipv4 shared, psk-flags 0, pmf 1.
 Requires: python3-tk, NetworkManager (nmcli), iw.  Run `hotspot.sh check` first on a fresh install.
 """
 import os
-import subprocess
 import sys
 import threading
 

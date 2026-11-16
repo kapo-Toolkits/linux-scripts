@@ -144,7 +144,7 @@ def detect_printers():
         parts = line.split(None, 1)
         if len(parts) != 2 or "://" not in parts[1]:
             continue
-        kind, uri = parts[0], parts[1].strip()
+        uri = parts[1].strip()
         u = urllib.parse.urlparse(uri)
         if u.scheme == "usb":
             make, model = urllib.parse.unquote(u.netloc), urllib.parse.unquote(u.path.lstrip("/"))

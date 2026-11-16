@@ -16,7 +16,7 @@ from printhub.mainwindow import MainWindow
 
 
 def main() -> int:
-    app = QApplication.instance() or QApplication(sys.argv)
+    app = QApplication.instance() or QApplication(sys.argv)  # noqa: F841 - the QApplication must stay alive for the whole test
     QSettings(os.environ.get("PRINTHUB_SETTINGS", "PrintHub"), "PrintHub").clear()  # deterministic defaults
 
     w = MainWindow()

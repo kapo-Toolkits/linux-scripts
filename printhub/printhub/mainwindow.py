@@ -49,7 +49,7 @@ from .convert import (
 )
 from .i18n import I18n, initial_language, share_language
 from .photo import (
-    ACTUAL, CENTER, FILL, FIT, PRESET_LABELS, PRESETS_CM, SIZE, TOP_LEFT,
+    ACTUAL, CENTER, FILL, FIT, PRESETS_CM, SIZE, TOP_LEFT,
     PhotoLeaf, PhotoSettings, photo_to_pdf, quality,
 )
 from .printing import (
