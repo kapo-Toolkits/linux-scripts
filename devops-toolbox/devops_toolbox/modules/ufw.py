@@ -18,7 +18,10 @@ import shlex
 from .. import registry, validation
 from ..registry import Operation, Param, Plan
 
-registry.category(registry.Category("linux", "cat_linux"))
+from . import _dsl
+
+_dsl.category("net", "Network", "ქსელი")
+_dsl.category("firewall", "Firewall (UFW)", "Firewall (UFW)")
 
 UFW_PATHS = ("/usr/sbin/ufw", "/sbin/ufw", "/usr/bin/ufw")      # root-owned places only: root runs this program
 CONF = "/etc/ufw/ufw.conf"
@@ -261,15 +264,47 @@ def finish_delete(ctx, plan, results):
     return _finish_change("ok_rule_deleted", ctx, plan, results)
 
 
-registry.register(Operation("ufw.status", "linux", "op_ufw_status", "op_ufw_status_desc", [], "info", True,
+registry.register(Operation("ufw.status", "firewall", "op_ufw_status", "op_ufw_status_desc", [], "info", True,
                             plan_status, finish_status, timeout=120))
-registry.register(Operation("ufw.rule.add", "linux", "op_ufw_add", "op_ufw_add_desc", [
+registry.register(Operation("ufw.rule.add", "firewall", "op_ufw_add", "op_ufw_add_desc", [
     Param("port", "port", "p_port"),
     Param("proto", "choice", "p_proto", PROTOCOLS, default="tcp"),
     Param("action", "choice", "p_action", ADD_ACTIONS, default="allow"),
     Param("comment", "text", "p_comment", required=False)], "medium", True, plan_add, finish_add, timeout=120))
-registry.register(Operation("ufw.rule.delete", "linux", "op_ufw_delete", "op_ufw_delete_desc", [
+registry.register(Operation("ufw.rule.delete", "firewall", "op_ufw_delete", "op_ufw_delete_desc", [
     Param("port", "port", "p_port"),
     Param("proto", "choice", "p_proto", PROTOCOLS + ("any",), default="tcp"),
     Param("action", "choice", "p_action_filter", ("any", "allow", "deny", "reject", "limit"), required=False, default="any")],
     "high", True, plan_delete, finish_delete, timeout=120))
+
+
+# ---- more of the firewall tab of the MyDevOps notes (tasks 7, 8, 17): verbose / numbered status, application profiles, default policy ----
+from ._dsl import P as _P  # noqa: E402
+from ._dsl import op as _op  # noqa: E402
+from .. import i18n as _i18n  # noqa: E402
+
+_PROFILES = ("ssh", "http", "https", "OpenSSH", "Nginx HTTP", "Nginx HTTPS", "Nginx Full")
+_POLICIES = ("deny incoming", "allow outgoing")
+_i18n.add("warn_default_deny_no_ssh", "No rule allows SSH (port 22) yet: once the firewall is active, 'deny incoming' would cut off SSH access.",
+          "SSH-ს (პორტი 22) არც ერთი წესი არ უშვებს: როცა firewall ჩაირთვება, 'deny incoming' SSH წვდომას გაწყვეტს.")
+
+_op("ufw.status.verbose", "firewall", ("UFW status (verbose)", "UFW-ის სტატუსი (დეტალურად)"), ("State, default policies and the active rules (ufw status verbose); needs administrator rights.", "მდგომარეობა, ნაგულისხმევი პოლიტიკა და მოქმედი წესები (ufw status verbose); საჭიროა ადმინისტრატორის უფლება."),
+    argv=["@ufw", "status", "verbose"], root=True)
+_op("ufw.status.numbered", "firewall", ("UFW status (numbered)", "UFW-ის სტატუსი (დანომრილი)"), ("The active rules with their numbers (ufw status numbered). The tool deletes by rule text, never by number.", "მოქმედი წესები ნომრებით (ufw status numbered). ხელსაწყო წესს წაშლის ტექსტით და არა ნომრით."),
+    argv=["@ufw", "status", "numbered"], root=True)
+_op("ufw.app.allow", "firewall", ("UFW: allow an application profile", "UFW: აპლიკაციის პროფილის დაშვება"), ("Allows a known service by name (ssh, http, https, Nginx ...): ufw allow 'Nginx Full'.", "უშვებს ცნობილ სერვისს სახელით (ssh, http, https, Nginx ...): ufw allow 'Nginx Full'."),
+    argv=["@ufw", "allow", "{profile}"], params=[_P("profile", choices=_PROFILES, default="ssh")], root=True, risk="medium",
+    explain=[("explain_add_now", {}), ("explain_no_reload", {})])
+
+
+def _default_check_risk(ctx, p):
+    if p["policy"] == "deny incoming" and not any(r.port == SSH_PORT and r.action in ("allow", "limit") for r in (ctx.rules or [])):
+        return "high"
+    return None
+
+
+_op("ufw.default", "firewall", ("UFW: default policy", "UFW: ნაგულისხმევი პოლიტიკა"), ("Sets the default for traffic without a rule: deny incoming, allow outgoing (ufw default ...).", "ადგენს ნაგულისხმევს წესის გარეშე ტრაფიკისთვის: შემომავალი აიკრძალოს, გამავალი დაშვდეს (ufw default ...)."),
+    build=lambda ctx, p: [["ufw", "default"] + p["policy"].split()], params=[_P("policy", choices=_POLICIES, default="deny incoming")], root=True,
+    risk="medium", risk_for=_default_check_risk,
+    warn=lambda ctx, p: [("warn_default_deny_no_ssh", {})] if _default_check_risk(ctx, p) == "high" else [],
+    explain=[("explain_no_reload", {})])

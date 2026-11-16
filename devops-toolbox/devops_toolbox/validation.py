@@ -56,3 +56,105 @@ def comment(value):
     if len(text) > COMMENT_MAX or _CONTROL_RE.search(text) or any(c in text for c in "'\"`\\") or text.startswith("-"):
         raise ValidationError("err_comment_invalid", max=COMMENT_MAX)
     return text
+
+
+# ---- more value kinds (used by the generic operations) ----
+_IDENT_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.@-]{0,63}")                 # a service, container, user, database or jail name
+_HOST_LABEL = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?")
+_TEXT_MAX = 100
+
+
+def identifier(value):
+    """A name: letters, digits and _ . @ -, starting with a letter or digit (so it can never look like an option), at most 64."""
+    if not isinstance(value, str) or not _IDENT_RE.fullmatch(value):
+        raise ValidationError("err_identifier_invalid")
+    return value
+
+
+def ip_address(value):
+    """An IPv4 or IPv6 address, normalised."""
+    import ipaddress
+    if not isinstance(value, str) or len(value) > 45 or not value.strip() == value:
+        raise ValidationError("err_ip_invalid")
+    try:
+        return str(ipaddress.ip_address(value))
+    except ValueError:
+        raise ValidationError("err_ip_invalid") from None
+
+
+def host(value):
+    """A host name (labels of letters, digits and '-', dots between them) or an IP address; never starts with '-'."""
+    if not isinstance(value, str) or not value or len(value) > 253 or value.strip() != value:
+        raise ValidationError("err_host_invalid")
+    try:
+        return ip_address(value)
+    except ValidationError:
+        pass
+    if not all(_HOST_LABEL.fullmatch(label) for label in value.rstrip(".").split(".")):
+        raise ValidationError("err_host_invalid")
+    return value
+
+
+def integer(value, lo, hi):
+    """A whole number lo..hi given as int or digit string (bool and floats are refused)."""
+    if isinstance(value, bool) or isinstance(value, float):
+        raise ValidationError("err_int_invalid", min=lo, max=hi)
+    if isinstance(value, str) and re.fullmatch(r"[0-9]{1,9}", value):
+        value = int(value)
+    if not isinstance(value, int) or not lo <= value <= hi:
+        raise ValidationError("err_int_invalid", min=lo, max=hi)
+    return value
+
+
+def ports(value, limit=10):
+    """'22, 80,443' (or a list) -> [22, 80, 443]; each 1-65535, at most `limit`."""
+    items = value if isinstance(value, list) else (value.split(",") if isinstance(value, str) else None)
+    if not items or len(items) > limit:
+        raise ValidationError("err_ports_invalid", limit=limit)
+    return [port(str(x).strip()) for x in items]
+
+
+def boolean(value):
+    if not isinstance(value, bool):
+        raise ValidationError("err_bool_invalid")
+    return value
+
+
+def text(value, maximum=_TEXT_MAX):
+    """Free text for a value such as a git user name: printable, at most `maximum` characters, not starting with '-'."""
+    if not isinstance(value, str):
+        raise ValidationError("err_text_invalid", max=maximum)
+    v = value.strip()
+    if not v or len(v) > maximum or _CONTROL_RE.search(v) or v.startswith("-"):
+        raise ValidationError("err_text_invalid", max=maximum)
+    return v
+
+
+def is_private_or_loopback(addr):
+    """True for localhost, loopback and private-network addresses (where a self-signed certificate may be accepted)."""
+    import ipaddress
+    if addr in ("localhost",):
+        return True
+    try:
+        ip = ipaddress.ip_address(addr)
+    except ValueError:
+        return False
+    return ip.is_loopback or ip.is_private
+
+
+_IMAGE_RE = re.compile(r"[a-z0-9][a-z0-9_.-]*(?:[/:][A-Za-z0-9_.-]+){0,4}")
+_USER_RE = re.compile(r"[a-z_][a-z0-9_-]{0,31}")
+
+
+def image_ref(value):
+    """A container image name such as hello-world, nginx:latest or ghcr.io/org/app:1.2 (no spaces, never starts with '-', no '..')."""
+    if not isinstance(value, str) or not value or len(value) > 200 or ".." in value or not _IMAGE_RE.fullmatch(value):
+        raise ValidationError("err_image_invalid")
+    return value
+
+
+def username(value):
+    """A Linux user name: lower-case letters, digits, '_' and '-', at most 32, not starting with a digit or '-'."""
+    if not isinstance(value, str) or not _USER_RE.fullmatch(value):
+        raise ValidationError("err_username_invalid")
+    return value

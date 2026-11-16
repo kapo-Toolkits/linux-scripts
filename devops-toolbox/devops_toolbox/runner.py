@@ -59,23 +59,24 @@ def _text(x):
     return x.decode("utf-8", "replace") if isinstance(x, bytes) else x
 
 
-def elevate(argv, euid=None, which=None):
-    """-> (argv to run, '') or (None, i18n key): `pkexec` + argv, or argv itself when already root."""
+def elevate(argv, euid=None, which=None, user=None):
+    """-> (argv to run, '') or (None, i18n key): `pkexec` + argv, or argv itself when already root. With `user`, pkexec runs the
+    program as that account (pkexec --user postgres ...), which never needs more than administrator permission."""
     if which is None:
         from shutil import which as _which
         which = _which
     euid = os.geteuid() if euid is None and hasattr(os, "geteuid") else (1 if euid is None else euid)
-    if euid == 0:
+    if euid == 0 and not user:
         return list(argv), ""
     exe = which("pkexec")
     if not exe:
         return None, "err_no_pkexec"
-    return [exe] + list(argv), ""
+    return [exe] + (["--user", user] if user else []) + list(argv), ""
 
 
-def run_root(argv, timeout=120, runner=subprocess.run, euid=None, which=None, now=time.monotonic):
+def run_root(argv, timeout=120, runner=subprocess.run, euid=None, which=None, now=time.monotonic, user=None):
     """Run `argv` with administrator rights. A generous timeout: it includes the time the user needs for the password dialog."""
-    full, err = elevate(argv, euid=euid, which=which)
+    full, err = elevate(argv, euid=euid, which=which, user=user)
     if full is None:
         return RunResult(argv, error=err)
     res = run(full, timeout=timeout, runner=runner, now=now)

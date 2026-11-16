@@ -170,3 +170,11 @@ def t(lang, key, **kw):
         return text.format(**kw) if kw else text
     except (KeyError, IndexError, ValueError):
         return text
+
+
+def add(key, en, ka):
+    """Register a text for both languages at once (used by the operation modules, so an operation can never exist in one language only)."""
+    if key in TEXT["en"] and (TEXT["en"][key] != en or TEXT["ka"][key] != ka):
+        raise ValueError("text key defined twice with different words: " + key)
+    TEXT["en"][key], TEXT["ka"][key] = en, ka
+    return key

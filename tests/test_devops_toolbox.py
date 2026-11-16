@@ -108,8 +108,10 @@ class Planning(unittest.TestCase):
         self.assertEqual(fake.changes(), [])
 
     def test_there_is_no_way_to_disable_or_enable_the_firewall_or_run_anything_else(self):
-        ids = set(registry.OPERATIONS)
-        self.assertEqual(ids, {"ufw.status", "ufw.rule.add", "ufw.rule.delete"})
+        ids = {i for i in registry.OPERATIONS if i.startswith("ufw.")}
+        self.assertEqual(ids, {"ufw.status", "ufw.status.verbose", "ufw.status.numbered", "ufw.rule.add", "ufw.rule.delete", "ufw.app.allow",
+                               "ufw.default"})
+        self.assertFalse([i for i in ids if "disable" in i.split(".") or "enable" in i.split(".") or "reload" in i.split(".")])
         tb, fake = toolbox()
         for bad_action in ("disable", "enable", "reset", "default", "reload", "limit", "delete", "route"):
             self.assertFalse(tb.preview("ufw.rule.add", dict(ADD, action=bad_action))["ok"], bad_action)
@@ -497,8 +499,9 @@ class Translations(unittest.TestCase):
         self.assertEqual(tb.preview("ufw.rule.add", dict(ADD, port="0"), "ka")["errors"][0]["message"], i18n.t("ka", "err_port_range", min=1, max=65535))
         self.assertEqual(i18n.t("xx", "app_title"), "DevOps Toolbox")                         # unknown language: English
         self.assertEqual(i18n.t("ka", "no_such_key"), "no_such_key")
-        self.assertEqual(tb.catalog("ka")["categories"][0]["name"], i18n.TEXT["ka"]["cat_linux"])
-        self.assertEqual(tb.catalog("en")["categories"][0]["operations"][0]["id"], "ufw.status")
+        cats = {c["id"]: c for c in tb.catalog("ka")["categories"]}
+        self.assertEqual(cats["firewall"]["name"], i18n.TEXT["ka"]["cat_firewall"])
+        self.assertEqual(next(c for c in tb.catalog("en")["categories"] if c["id"] == "firewall")["operations"][0]["id"], "ufw.status")
 
 
 class StateReaders(unittest.TestCase):
