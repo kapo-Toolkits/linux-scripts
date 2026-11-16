@@ -79,16 +79,23 @@ def fetch_json(url, timeout=20, opener=urllib.request.urlopen):
         return json.loads(r.read().decode("utf-8"))
 
 
-def etcher_release(fetch=fetch_json):
-    """-> {'tag', 'version', 'assets': {name: {'url', 'size', 'sha256'}}} for the latest published release."""
-    data = fetch(ETCHER_API)
+def parse_release(data, version=None):
+    """GitHub's `releases/latest` JSON -> {'tag', 'version', 'assets': {name: {'url', 'size', 'sha256'}}}.
+    sha256 is the digest GitHub publishes for that exact file ('' when there is none: such a file is never installed).
+    version defaults to the tag without a leading 'v'; pass a function for tags like 'rust-v0.166.0'."""
     assets = {}
     for a in data.get("assets", []):
         digest = a.get("digest") or ""
         assets[a["name"]] = {"url": a["browser_download_url"], "size": int(a.get("size", 0)),
                              "sha256": digest.split(":", 1)[1] if digest.startswith("sha256:") else ""}
     tag = data["tag_name"]
-    return {"tag": tag, "version": tag.lstrip("v"), "assets": assets}
+    return {"tag": tag, "version": version(tag) if version else tag.lstrip("v"), "assets": assets}
+
+
+def etcher_release(fetch=fetch_json):
+    """-> {'tag', 'version', 'assets': {name: {'url', 'size', 'sha256'}}} for the latest published release."""
+    data = fetch(ETCHER_API)
+    return parse_release(data)
 
 
 def etcher_asset(release, pm, arch):
@@ -264,13 +271,7 @@ def claude_installed(which=shutil.which):
 def github_release(app_id, fetch=fetch_json):
     """-> {'tag', 'version', 'assets'} like etcher_release, for the project behind app_id."""
     data = fetch(f"https://api.github.com/repos/{GITHUB_APPS[app_id]['repo']}/releases/latest")
-    assets = {}
-    for a in data.get("assets", []):
-        digest = a.get("digest") or ""
-        assets[a["name"]] = {"url": a["browser_download_url"], "size": int(a.get("size", 0)),
-                             "sha256": digest.split(":", 1)[1] if digest.startswith("sha256:") else ""}
-    tag = data["tag_name"]
-    return {"tag": tag, "version": tag.lstrip("v"), "assets": assets}
+    return parse_release(data)
 
 
 def github_pm_kind(app, pm):
@@ -577,13 +578,7 @@ FILEE_NOTES = ("Hold Ctrl and drag files to open the donut of formats at the cur
 def filee_release(fetch=fetch_json):
     """-> {'tag', 'version', 'assets': {name: {'url', 'size', 'sha256'}}} for Filee's latest GitHub release."""
     data = fetch(FILEE_API)
-    assets = {}
-    for a in data.get("assets", []):
-        digest = a.get("digest") or ""
-        assets[a["name"]] = {"url": a["browser_download_url"], "size": int(a.get("size", 0)),
-                             "sha256": digest.split(":", 1)[1] if digest.startswith("sha256:") else ""}
-    tag = data["tag_name"]
-    return {"tag": tag, "version": tag.lstrip("v"), "assets": assets}
+    return parse_release(data)
 
 
 def filee_asset(release, arch):
@@ -668,13 +663,7 @@ VENTOY_NOTES = ("Start it from the applications menu (Ventoy) or with the comman
 def ventoy_release(fetch=fetch_json):
     """-> {'tag', 'version', 'assets'} for Ventoy's latest GitHub release."""
     data = fetch(VENTOY_API)
-    assets = {}
-    for a in data.get("assets", []):
-        digest = a.get("digest") or ""
-        assets[a["name"]] = {"url": a["browser_download_url"], "size": int(a.get("size", 0)),
-                             "sha256": digest.split(":", 1)[1] if digest.startswith("sha256:") else ""}
-    tag = data["tag_name"]
-    return {"tag": tag, "version": tag.lstrip("v"), "assets": assets}
+    return parse_release(data)
 
 
 def ventoy_asset(release, arch):
@@ -790,13 +779,7 @@ CODEX_NOTES = ("Start it in a terminal (the \"Codex\" shortcut, or the command: 
 def codex_release(fetch=fetch_json):
     """-> {'tag', 'version', 'assets'}; the tag is 'rust-v0.166.0', the version '0.166.0'."""
     data = fetch(CODEX_API)
-    assets = {}
-    for a in data.get("assets", []):
-        digest = a.get("digest") or ""
-        assets[a["name"]] = {"url": a["browser_download_url"], "size": int(a.get("size", 0)),
-                             "sha256": digest.split(":", 1)[1] if digest.startswith("sha256:") else ""}
-    tag = data["tag_name"]
-    return {"tag": tag, "version": re.sub(r"^(rust-)?v", "", tag), "assets": assets}
+    return parse_release(data, version=lambda tag: re.sub(r"^(rust-)?v", "", tag))
 
 
 def codex_asset(release, arch):

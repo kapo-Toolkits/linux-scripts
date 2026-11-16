@@ -2456,6 +2456,42 @@ class Ventoy(unittest.TestCase):
             self.assertTrue(os.path.exists(os.path.join(data, "ventoy", "mine")))
 
 
+class ReleaseParser(unittest.TestCase):
+    """One parser for GitHub's releases/latest JSON, used by balenaEtcher, the .deb programs, Filee, Ventoy and Codex."""
+    ex = Installer.m.extras
+    DATA = {"tag_name": "v1.2.3", "assets": [
+        {"name": "a.deb", "browser_download_url": "https://h/a.deb", "size": 7, "digest": "sha256:" + "ab" * 32},
+        {"name": "b.rpm", "browser_download_url": "https://h/b.rpm", "size": "9", "digest": "sha512:" + "cd" * 64},
+        {"name": "c.zip", "browser_download_url": "https://h/c.zip"},
+        {"name": "d.txt", "browser_download_url": "https://h/d.txt", "size": 1, "digest": None}]}
+
+    def test_assets_digests_and_versions(self):
+        r = self.ex.parse_release(self.DATA)
+        self.assertEqual((r["tag"], r["version"]), ("v1.2.3", "1.2.3"))
+        self.assertEqual(r["assets"]["a.deb"], {"url": "https://h/a.deb", "size": 7, "sha256": "ab" * 32})
+        self.assertEqual(r["assets"]["b.rpm"]["sha256"], "")                       # only sha256 digests are trusted
+        self.assertEqual(r["assets"]["b.rpm"]["size"], 9)
+        self.assertEqual((r["assets"]["c.zip"]["size"], r["assets"]["c.zip"]["sha256"]), (0, ""))
+        self.assertEqual(r["assets"]["d.txt"]["sha256"], "")
+        self.assertEqual(self.ex.parse_release({"tag_name": "2.0", "assets": []})["version"], "2.0")
+        self.assertEqual(self.ex.parse_release({"tag_name": "x"})["assets"], {})
+        with self.assertRaises(KeyError):
+            self.ex.parse_release({"assets": []})                                    # no tag: a lookup error, never a made-up version
+
+    def test_every_program_gets_the_same_answer_from_the_same_data(self):
+        data = dict(self.DATA, tag_name="v9.9.9")
+        want = self.ex.parse_release(data)
+        for name, fn in (("etcher", lambda: self.ex.etcher_release(fetch=lambda u: data)),
+                         ("filee", lambda: self.ex.filee_release(fetch=lambda u: data)),
+                         ("ventoy", lambda: self.ex.ventoy_release(fetch=lambda u: data)),
+                         ("github", lambda: self.ex.github_release("rustdesk", fetch=lambda u: data))):
+            self.assertEqual(fn(), want, name)
+        codex = self.ex.codex_release(fetch=lambda u: dict(data, tag_name="rust-v0.166.0"))
+        self.assertEqual((codex["tag"], codex["version"]), ("rust-v0.166.0", "0.166.0"))
+        self.assertEqual(self.ex.codex_release(fetch=lambda u: dict(data, tag_name="v0.5.0"))["version"], "0.5.0")
+        self.assertEqual(self.ex.codex_release(fetch=lambda u: dict(data, tag_name="0.5.0"))["version"], "0.5.0")
+
+
 class Filee(unittest.TestCase):
     ex = Installer.m.extras
     TAG = {"tag_name": "v9.9.9", "assets": [
