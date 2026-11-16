@@ -150,12 +150,26 @@ class RemoteTarget:
         if res.returncode == 255:
             for needle, key in SSH_ERRORS:
                 if needle in low:
-                    res.error = key
+                    res.error = "err_ssh_hostkey_changed" if key == "err_ssh_hostkey_unknown" and self._has_known_entry() else key
                     return res
             res.error = "err_ssh_failed"
         elif "a password is required" in low or "no tty present" in low or "sudo: a terminal is required" in low:
             res.error = "err_sudo_password"
         return res
+
+    def _has_known_entry(self):
+        """True when ~/.ssh/known_hosts already has a key for this host: then a failed verification means the key CHANGED (not 'unknown').
+        Some ssh versions print only 'Host key verification failed.' in both cases, so the file is asked directly."""
+        keygen = next((os.path.join(d, "ssh-keygen") for d in SSH_DIRS if os.access(os.path.join(d, "ssh-keygen"), os.X_OK)), None)
+        if not keygen:
+            return False
+        name = self.host if self.port == 22 else "[%s]:%d" % (self.host, self.port)
+        try:
+            r = self._run([keygen, "-F", name, "-f", os.path.join(self.local_home, ".ssh", "known_hosts")], capture_output=True, text=True, timeout=10,
+                          shell=False, stdin=subprocess.DEVNULL)
+        except (OSError, subprocess.SubprocessError):
+            return False
+        return r.returncode == 0 and bool((r.stdout or "").strip())
 
     def close(self):
         """End the shared connection and remove its socket folder."""

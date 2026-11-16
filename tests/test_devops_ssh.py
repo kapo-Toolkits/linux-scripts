@@ -24,11 +24,11 @@ SCAN = "10.0.0.5 ssh-ed25519 " + HOST_KEY + "\n"
 class FakeSsh:
     """A fake subprocess.run for BOTH the local tools (ssh-keyscan, ssh-keygen) and `ssh`: for ssh it parses the remote command line."""
 
-    def __init__(self, sysx=None, answers=None, sudo_ok=True, fail=None, scan=SCAN):
+    def __init__(self, sysx=None, answers=None, sudo_ok=True, fail=None, scan=SCAN, known=False):
         self.sys = sysx or FakeSys(**FULL)
         import json
         self.sys.files[HOME + "/.config/linux-scripts/devops-toolbox.json"] = json.dumps(self.sys._config)
-        self.answers, self.sudo_ok, self.fail, self.scan = answers or {}, sudo_ok, fail, scan
+        self.answers, self.sudo_ok, self.fail, self.scan, self.known = answers or {}, sudo_ok, fail, scan, known
         self.local, self.remote = [], []                    # local program calls; parsed remote calls
 
     def __call__(self, argv, **kw):
@@ -119,7 +119,7 @@ class FakeSsh:
         if name == "ssh-keygen" and "-lf" in argv:
             return subprocess.CompletedProcess(argv, 0, "256 SHA256:AbCdEf1234567890 10.0.0.5 (ED25519)\n", "")
         if name == "ssh-keygen" and "-F" in argv:
-            return subprocess.CompletedProcess(argv, 1, "", "")
+            return subprocess.CompletedProcess(argv, 0 if self.known else 1, "# Host 10.0.0.5 found: line 1\n10.0.0.5 ssh-ed25519 AAAA\n" if self.known else "", "")
         return subprocess.CompletedProcess(argv, 0, "", "")
 
 
@@ -371,6 +371,16 @@ class Failures(unittest.TestCase):
         self.assertIn("not trusted yet", res["message"])
         res = tb.run_readonly("usr.list")
         self.assertFalse(res["ok"])
+
+    def test_a_failed_verification_for_a_known_host_means_the_key_changed(self):
+        """Some ssh versions print only 'Host key verification failed.' in both cases: the known_hosts file decides."""
+        tb, _ = toolbox(FakeSsh(fail="hostkey", known=True))
+        remote(tb)
+        res = tb.run_readonly("net.addr")
+        self.assertIn("CHANGED", res["message"])
+        tb2, _ = toolbox(FakeSsh(fail="hostkey", known=False))
+        remote(tb2)
+        self.assertIn("not trusted yet", tb2.run_readonly("net.addr")["message"])
 
     def test_a_missing_sudo_password_is_explained_and_nothing_else_runs(self):
         tb, fake = toolbox(FakeSsh(sudo_ok=False))
