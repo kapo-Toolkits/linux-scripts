@@ -37,7 +37,7 @@ op("disk.inodes", C, ("Free inodes", "თავისუფალი inode-ე�
 op("disk.du", C, ("Biggest folders", "ყველაზე დიდი საქაღალდეები"), ("The 10 biggest folders one level below a folder (du -x --max-depth=1, sorted); needs administrator rights to see all.", "ერთი საქაღალდის ქვეშ 10 ყველაზე დიდი საქაღალდე (du -x --max-depth=1, დალაგებული); ყველაფრის სანახავად საჭიროა ადმინისტრატორის უფლება."),
    argv=["@du", "-xk", "--max-depth=1", "{dir}"], params=[P("dir", "choice", choices=DIRS, default="/var")], root=True, post=_sorted_sizes(1024, 10), timeout=300)
 op("disk.big", C, ("Biggest files", "ყველაზე დიდი ფაილები"), ("The 20 biggest files above a size (find -xdev -type f -size +N, sorted).", "20 ყველაზე დიდი ფაილი მოცემულ ზომაზე მეტი (find -xdev -type f -size +N, დალაგებული)."),
-   build=lambda ctx, p: [["find", p["dir"], "-xdev", "-type", "f", "-size", "+" + p["size"], "-printf", "%s\t%p\n"]],
+   build=lambda ctx, p: [["find", p["dir"], "-xdev", "-type", "f", "-size", "+" + p["size"], "-printf", r"%s\t%p\n"]],
    params=[P("dir", "choice", choices=DIRS, default="/var"), P("size", "choice", choices=("10M", "50M", "100M", "500M", "1G"), default="50M")], root=True,
    post=_sorted_sizes(1, 20), timeout=300)
 op("disk.old.list", C, ("Old log files", "ძველი ჟურნალის ფაილები"), ("Files in /var/log older than N days (find /var/log -type f -mtime +N -print). Only lists; nothing is deleted.", "/var/log-ში N დღეზე ძველი ფაილები (find /var/log -type f -mtime +N -print). მხოლოდ ჩამოთვლის; არაფერი იშლება."),

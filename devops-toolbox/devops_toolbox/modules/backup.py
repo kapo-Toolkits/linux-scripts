@@ -24,17 +24,12 @@ def _files(ctx):
 
 
 def _list(ctx, p):
-    rows = []
-    for name, path in _files(ctx):
-        try:
-            rows.append("%10s  %s" % (_size(path), name))
-        except OSError:
-            continue
+    rows = ["%10s  %s" % (_size(ctx.sysx.file_size(path)), name) for name, path in _files(ctx)]
     return "\n".join(rows) or i18n.t("en", "bk_none")
 
 
-def _size(path):
-    n = float(os.stat(path).st_size)
+def _size(n):
+    n = float(n)
     for u in ("B", "K", "M", "G"):
         if n < 1024 or u == "G":
             return "%d%s" % (n, u) if u == "B" else "%.1f%s" % (n, u)

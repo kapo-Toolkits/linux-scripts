@@ -126,6 +126,12 @@ class Toolbox:
     def _command_dict(plan, argv):
         """display: the command as a person would type it (`sudo ufw allow 19999/tcp`); exact: what really runs."""
         shown = [os.path.basename(argv[0])] + list(argv[1:])
+        if shown[0] == "env":                                          # env VAR=x program ...: show the program by its name too
+            i = 1
+            while i < len(shown) and "=" in shown[i] and not shown[i].startswith("/"):
+                i += 1
+            if i < len(shown):
+                shown[i] = os.path.basename(shown[i])
         if plan.root:
             who = f"-u {plan.as_user} " if plan.as_user else ""
             display = f"sudo {who}" + shlex.join(shown)

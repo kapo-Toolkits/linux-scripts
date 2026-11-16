@@ -174,7 +174,7 @@ class Functionality(WebCase):
     def test_state_catalog_and_translations(self):
         _s, _h, text = self.request("GET", "/api/state?lang=ka", headers={"X-Toolbox-Key": KEY})
         data = json.loads(text)
-        self.assertEqual(data["catalog"]["categories"][0]["name"], i18n.TEXT["ka"]["cat_linux"])
+        self.assertEqual(data["catalog"]["categories"][0]["name"], i18n.TEXT["ka"]["cat_net"])
         self.assertTrue(data["info"]["ufw"]["installed"])
         self.assertEqual(data["history"], [])
         _s, _h, page = self.request("GET", "/?key=" + KEY)

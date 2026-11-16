@@ -49,6 +49,12 @@ class SysAccess:
         except OSError:
             return None
 
+    def file_size(self, path):
+        try:
+            return os.lstat(path).st_size
+        except OSError:
+            return 0
+
     def stat_mode(self, path):
         try:
             return os.stat(path, follow_symlinks=False).st_mode & 0o7777
