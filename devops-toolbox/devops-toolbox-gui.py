@@ -26,6 +26,7 @@ from devops_toolbox.api import Toolbox  # noqa: E402
 
 LANG_NAMES = {"en": "English", "ka": "ქართული"}
 ACTIONS_FORM = ("allow", "deny", "reject", "delete")          # the form's Action list; 'delete' uses the delete operation
+CORE_UFW = ("ufw.status", "ufw.rule.add", "ufw.rule.delete")   # shown by the UFW manager itself; the other firewall operations are listed
 
 
 def t(lang, key, **kw):
@@ -41,6 +42,8 @@ class App(tk.Tk):
         self.q = queue.Queue()
         self.busy = False
         self.pending = None                      # the last successful preview: (op_id, params, token, risk, commands)
+        self.cat_id = None                       # the category shown
+        self.g_op, self.g_vars, self.g_pending = None, {}, None   # the generic operation panel
         self.form = {"port": "", "proto": "tcp", "action": "allow", "comment": ""}
         self.minsize(820, 640)
         self.geometry("1040x800")
@@ -51,7 +54,6 @@ class App(tk.Tk):
             pass
         self.build()
         self.after(120, self._poll)
-        self.load_rules()
 
     # ---------------------------------------------------------------- helpers
     def tr(self, key, **kw):
@@ -145,10 +147,13 @@ class App(tk.Tk):
                                    bg=self.colors()["side"], fg=self.colors()["text"], selectbackground=self.colors()["select"],
                                    selectforeground=self.colors()["text"], font=("", 11))
         self.cat_list.pack(fill="both", expand=True)
-        cats = self.tb.catalog(self.lang)["categories"]
-        for c in cats:
+        self.cats = self.tb.catalog(self.lang)["categories"]
+        for c in self.cats:
             self.cat_list.insert("end", c["name"])
-        self.cat_list.selection_set(0)
+        if self.cat_id not in [c["id"] for c in self.cats]:
+            self.cat_id = self.cats[0]["id"]
+        self.cat_list.selection_set([c["id"] for c in self.cats].index(self.cat_id))
+        self.cat_list.bind("<<ListboxSelect>>", self.on_category)
         main = ttk.Frame(body, padding=(10, 0, 10, 10))
         main.pack(side="left", fill="both", expand=True)
         # bottom: result / history (packed first so a small window never cuts it off)
@@ -170,10 +175,170 @@ class App(tk.Tk):
         self.hist_tree.pack(side="left", fill="both", expand=True)
         ttk.Button(hist, text=self.tr("btn_clear_history"), command=self.clear_history).pack(side="right", anchor="n", padx=6)
         self.refresh_history()
-        self.build_firewall(main)
+        self.panel = ttk.Frame(main)
+        self.panel.pack(fill="both", expand=True)
         self.status = ttk.Label(self, text=self.tr("status_ready"), padding=(12, 4))
         self.status.pack(side="bottom", fill="x")
-        self.refresh_rule_view()
+        self.build_panel()
+
+    # ---------------------------------------------------------------- categories and the generic operation panel
+    def on_category(self, _event=None):
+        sel = self.cat_list.curselection()
+        if sel:
+            self.select_category(self.cats[sel[0]]["id"])
+
+    def select_category(self, cid):
+        if cid == self.cat_id and hasattr(self, "panel") and self.panel.winfo_children():
+            return
+        self.cat_id = cid
+        if hasattr(self, "cat_list"):
+            ids = [c["id"] for c in self.cats]
+            self.cat_list.selection_clear(0, "end")
+            self.cat_list.selection_set(ids.index(cid))
+        self.build_panel()
+
+    def category_ops(self):
+        return next(c["operations"] for c in self.cats if c["id"] == self.cat_id)
+
+    def build_panel(self):
+        """The area to the right of the sidebar for the chosen category."""
+        for w in self.panel.winfo_children():
+            w.destroy()
+        for name in ("rule_tree", "btn_preview", "btn_execute", "btn_refresh", "btn_delete", "lbl_state", "lbl_other"):
+            if hasattr(self, name):
+                delattr(self, name)
+        self.pending = None
+        if self.cat_id == "firewall":
+            nb = ttk.Notebook(self.panel)
+            nb.pack(fill="both", expand=True)
+            manager = ttk.Frame(nb)
+            nb.add(manager, text=self.tr("tab_manager"))
+            self.build_firewall(manager)
+            more = ttk.Frame(nb)
+            nb.add(more, text=self.tr("tab_more"))
+            self.build_generic(more, [o for o in self.category_ops() if o["id"] not in CORE_UFW])
+            self.refresh_rule_view()
+            if self.tb.info(self.lang)["ufw"]["installed"] and not self.tb.info(self.lang)["ufw"]["rules_loaded"]:
+                self.load_rules()                                 # the list is read when the firewall tab is opened, not at start-up
+        else:
+            self.build_generic(self.panel, self.category_ops())
+
+    def build_generic(self, parent, ops):
+        """A list of operations, and for the chosen one a form made from its parameters, Preview and Run / Execute."""
+        card = ttk.Frame(parent, style="Panel.TFrame", padding=10)
+        card.pack(fill="both", expand=True)
+        left = ttk.Frame(card, style="Panel.TFrame")
+        left.pack(side="left", fill="y")
+        ttk.Label(left, text=self.tr("ops_list"), style="Head.TLabel").pack(anchor="w")
+        c = self.colors()
+        lb = tk.Listbox(left, activestyle="none", exportselection=False, relief="flat", highlightthickness=1, highlightbackground=c["border"],
+                        bg=c["field"], fg=c["text"], selectbackground=c["select"], selectforeground=c["text"], width=34, height=16)
+        lb.pack(fill="y", expand=True, pady=(4, 0))
+        self.g_ops = list(ops)
+        for o in self.g_ops:
+            lb.insert("end", ("⚠ " if o["risk"] == "high" else "✎ " if o["risk"] in ("low", "medium") else "   ") + o["name"])
+        lb.bind("<<ListboxSelect>>", self.on_op)
+        self.g_list = lb
+        self.g_right = ttk.Frame(card, style="Panel.TFrame", padding=(12, 0, 0, 0))
+        self.g_right.pack(side="left", fill="both", expand=True)
+        ttk.Label(self.g_right, text=self.tr("ops_hint"), style="Muted.TLabel").pack(anchor="w")
+        self.g_op, self.g_vars, self.g_pending = None, {}, None
+        if self.g_ops:
+            lb.selection_set(0)
+            self.select_op(self.g_ops[0]["id"])
+
+    def on_op(self, _event=None):
+        sel = self.g_list.curselection()
+        if sel:
+            self.select_op(self.g_ops[sel[0]]["id"])
+
+    def select_op(self, op_id):
+        op = next(o for o in self.g_ops if o["id"] == op_id)
+        self.g_op, self.g_pending = op, None
+        for w in self.g_right.winfo_children():
+            w.destroy()
+        ttk.Label(self.g_right, text=op["name"], style="Head.TLabel", font=("", 13, "bold")).pack(anchor="w")
+        ttk.Label(self.g_right, text=op["description"], style="Muted.TLabel", wraplength=560, justify="left").pack(anchor="w", pady=(2, 6))
+        form = ttk.Frame(self.g_right, style="Panel.TFrame")
+        form.pack(fill="x")
+        self.g_vars, self.g_widgets = {}, {}
+        for r, p in enumerate(op["params"]):
+            ttk.Label(form, text=self.tr(p["label"]), style="Panel.TLabel").grid(row=r, column=0, sticky="w", padx=(0, 10), pady=2)
+            if p["kind"] == "bool":
+                var = tk.BooleanVar(value=False)
+                w = ttk.Checkbutton(form, variable=var)
+            elif p["kind"] == "choice":
+                values = list(p["choices"]) if not p["dynamic"] else self.tb.choices(op["id"], p["name"])
+                var = tk.StringVar(value=p["default"] if p["default"] in values else (values[0] if values else ""))
+                w = ttk.Combobox(form, textvariable=var, values=values or [self.tr("choice_none")], state="readonly", width=32)
+            else:
+                var = tk.StringVar(value=str(p["default"] or ""))
+                w = ttk.Entry(form, textvariable=var, width=34)
+            w.grid(row=r, column=1, sticky="w", pady=2)
+            var.trace_add("write", lambda *_: self.g_changed())
+            self.g_vars[p["name"]] = var
+            self.g_widgets[p["name"]] = w
+        if not op["params"]:
+            ttk.Label(form, text=self.tr("no_input"), style="Muted.TLabel").grid(row=0, column=0, sticky="w")
+        bar = ttk.Frame(self.g_right, style="Panel.TFrame")
+        bar.pack(fill="x", pady=(10, 4))
+        self.g_btn_preview = ttk.Button(bar, text=self.tr("btn_preview"), command=self.g_preview)
+        self.g_btn_preview.pack(side="left")
+        info = op["risk"] == "info"
+        self.g_btn_run = ttk.Button(bar, text=self.tr("btn_run" if info else "btn_execute"), style="Accent.TButton", command=self.g_run,
+                                    state="normal" if info else "disabled")
+        self.g_btn_run.pack(side="left", padx=8)
+        self.g_box = self.text_widget(self.g_right, 8)
+        self.g_box.pack(fill="both", expand=True, pady=(4, 0))
+        self.set_text(self.g_box, [])
+
+    def g_params(self):
+        out = {}
+        for p in self.g_op["params"]:
+            v = self.g_vars[p["name"]].get()
+            if p["kind"] == "bool":
+                out[p["name"]] = bool(v)
+            elif isinstance(v, str) and v.strip() and v != self.tr("choice_none"):
+                out[p["name"]] = v.strip() if p["kind"] != "text" else v
+        return out
+
+    def g_changed(self):
+        self.g_pending = None
+        if getattr(self, "g_op", None) and self.g_op["risk"] != "info" and hasattr(self, "g_btn_run"):
+            try:
+                self.g_btn_run.configure(state="disabled")
+            except tk.TclError:
+                pass
+
+    def g_preview(self):
+        if self.busy or not self.g_op:
+            return
+        p = self.tb.preview(self.g_op["id"], self.g_params(), self.lang)
+        self.set_text(self.g_box, self.preview_parts(p))
+        self.g_pending = (self.g_op["id"], self.g_params(), p["token"], p.get("risk"), [c["display"] for c in p["commands"]]) if p["token"] else None
+        if self.g_op["risk"] != "info":
+            self.g_btn_run.configure(state="normal" if self.g_pending else "disabled")
+        return p
+
+    def g_run(self):
+        if self.busy or not self.g_op:
+            return
+        op = self.g_op
+        if op["risk"] == "info":
+            params = self.g_params()
+            self.run_in_background(lambda: self.tb.run_readonly(op["id"], self.lang, params=params), self.on_result)
+            return
+        if not self.g_pending:
+            return
+        op_id, params, token, risk, commands = self.g_pending
+        deleting = risk == "high"
+        if not messagebox.askyesno(self.tr("confirm_delete_title" if deleting else "confirm_title"),
+                                   self.tr("confirm_delete_text" if deleting else "confirm_text", commands="\n".join(commands) or op["name"]),
+                                   icon="warning", parent=self):
+            return
+        self.g_pending = None
+        self.g_btn_run.configure(state="disabled")
+        self.run_in_background(lambda: self.tb.execute(op_id, params, token, True, self.lang), self.on_result)
 
     def build_firewall(self, parent):
         card = ttk.Frame(parent, style="Panel.TFrame", padding=12)
@@ -244,11 +409,15 @@ class App(tk.Tk):
         return "allow"
 
     def form_values(self):
+        if not hasattr(self, "v_port"):                      # the firewall tab is not the one shown: keep what was typed there
+            return self.form
         return {"port": self.v_port.get().strip(), "proto": self.v_proto.get().lower(), "action": self.action_from_label(self.v_action.get()),
                 "comment": self.v_comment.get()}
 
     def form_changed(self):
         """Any edit invalidates the last preview: only what was previewed can be executed."""
+        if not hasattr(self, "btn_execute"):
+            return
         self.pending = None
         if hasattr(self, "btn_execute"):
             self.btn_execute.configure(state="disabled")
@@ -270,8 +439,8 @@ class App(tk.Tk):
         op_id, params = self.operation_for(self.form_values())
         self.show_preview(op_id, params)
 
-    def show_preview(self, op_id, params):
-        p = self.tb.preview(op_id, params, self.lang)
+    def preview_parts(self, p):
+        """What a preview says, as coloured text parts (shared by the UFW manager and the generic panel)."""
         parts = []
         if p["errors"]:
             for e in p["errors"]:
@@ -291,7 +460,11 @@ class App(tk.Tk):
                 parts.append(("⚠ " + line + "\n", "warn"))
             for line in p["explain"]:
                 parts.append(("• " + line + "\n", None))
-        self.set_text(self.preview_box, parts)
+        return parts
+
+    def show_preview(self, op_id, params):
+        p = self.tb.preview(op_id, params, self.lang)
+        self.set_text(self.preview_box, self.preview_parts(p))
         self.pending = (op_id, params, p["token"], p.get("risk"), [c["display"] for c in p["commands"]]) if p["token"] else None
         self.btn_execute.configure(state="normal" if self.pending else "disabled")
         return p
@@ -329,7 +502,7 @@ class App(tk.Tk):
             self.run_in_background(lambda: self.tb.execute(op_id, params, token, True, self.lang), self.on_result)
 
     def load_rules(self):
-        if self.busy:
+        if self.busy or not hasattr(self, "rule_tree"):
             return
         info = self.tb.info(self.lang)["ufw"]
         if not info["installed"]:
@@ -337,11 +510,16 @@ class App(tk.Tk):
             return
         self.run_in_background(lambda: self.tb.run_readonly("ufw.status", self.lang), self.on_result)
 
+    def _buttons(self):
+        """The buttons to switch off while something runs (only the ones that exist in the tab shown)."""
+        names = ("btn_preview", "btn_refresh", "btn_delete", "g_btn_preview")
+        return [getattr(self, n) for n in names if hasattr(self, n) and getattr(self, n).winfo_exists()]
+
     def run_in_background(self, fn, done):
         """The administrator-password dialog can stay open for a long time: never block the window."""
         self.busy = True
         self.status.configure(text=self.tr("working"))
-        for b in (self.btn_preview, self.btn_refresh, self.btn_delete):
+        for b in self._buttons():
             b.configure(state="disabled")
 
         def work():
@@ -356,7 +534,7 @@ class App(tk.Tk):
             while True:
                 done, res = self.q.get_nowait()
                 self.busy = False
-                for b in (self.btn_preview, self.btn_refresh, self.btn_delete):
+                for b in self._buttons():
                     b.configure(state="normal")
                 self.status.configure(text=self.tr("status_ready"))
                 done(res)
@@ -376,11 +554,14 @@ class App(tk.Tk):
             parts.append((self.tr("res_output") + ":\n" + res["output"] + "\n", None))
         self.set_text(self.result, parts)
         self.notebook.select(0)
-        self.refresh_rule_view()
+        if hasattr(self, "rule_tree"):
+            self.refresh_rule_view()
         self.refresh_history()
 
     # ---------------------------------------------------------------- views
     def refresh_rule_view(self):
+        if not hasattr(self, "rule_tree"):
+            return
         info = self.tb.info(self.lang)["ufw"]
         if not info["installed"]:
             self.lbl_state.configure(text=self.tr("fw_not_installed"))

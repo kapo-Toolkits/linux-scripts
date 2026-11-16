@@ -3,6 +3,9 @@
 What changed in this toolkit, newest first. The project has no version numbers: it is used from `main`, and every change arrives as a pull
 request (`#n`) that passed CI. Dates are merge dates. · ცვლილებების ისტორია, ახალი ზემოდან.
 
+## Unreleased
+- **Added** DevOps Toolbox now covers the whole MyDevOps command set: 146 operations in 14 themes (network, firewall, SSH, services, nginx and certificates, Docker and Compose, Git, users, updates, disk and logs, monitoring, security audit, PostgreSQL, backups and cron), a generic operation panel in the window and the web page, your own repositories and Compose projects from a configuration file, and a coverage map that says where every documented command went (or why it stays in the terminal).
+
 ## 2026-11-16 — safer updates, installs and CI; DevOps Toolbox
 - **Added** [`devops-toolbox`](devops-toolbox/): click-based, allowlisted DevOps operations with a window and a loopback-only web page; first module is the UFW firewall manager (preview → confirm → execute, history, EN/KA, light/dark) (#55).
 - **Security** `install.sh` no longer overwrites or removes files that are not its own; records what it installed (path + SHA-256); new `--dry-run` and `--force`; `--prefix` with special characters fixed (#53).

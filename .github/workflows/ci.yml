@@ -22,6 +22,7 @@ jobs:
       - run: python3 tests/test_units.py
       - run: python3 tests/test_qgis_installer.py
       - run: python3 tests/test_devops_toolbox.py
+      - run: python3 tests/test_devops_commands.py
       - run: python3 tests/test_devops_web.py
 
   lint-and-unit:
@@ -42,6 +43,7 @@ jobs:
       - name: DevOps Toolbox backend and local web app (offline, fake ufw)
         run: |
           python3 tests/test_devops_toolbox.py
+          python3 tests/test_devops_commands.py
           python3 tests/test_devops_web.py
       - name: qgis-installer core and command line (offline)
         run: python3 tests/test_qgis_installer.py

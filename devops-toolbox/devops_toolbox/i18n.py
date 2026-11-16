@@ -10,7 +10,6 @@ TEXT = {
         "app_subtitle": "Safe, click-based DevOps operations",
         "language": "Language", "theme": "Theme", "theme_light": "Light", "theme_dark": "Dark",
         "categories": "Categories",
-        "cat_linux": "Linux Administration",
         # operations
         "op_ufw_status": "UFW rules", "op_ufw_status_desc": "Show the firewall's state and every configured rule.",
         "op_ufw_add": "UFW: open or block a port", "op_ufw_add_desc": "Add an allow, deny or reject rule for one port and protocol.",
@@ -80,6 +79,8 @@ TEXT = {
         # history
         "hist_title": "History", "hist_time": "Time", "hist_operation": "Operation", "hist_status": "Status", "hist_exit": "Exit", "hist_summary": "Summary",
         "hist_empty": "Nothing has been run yet.", "hist_cleared": "History cleared.",
+        "btn_run": "Run", "ops_list": "Operations", "tab_manager": "UFW manager", "tab_more": "More operations", "no_input": "This operation needs no input.",
+        "choice_none": "(nothing available)", "ops_hint": "Pick an operation on the left.", "ask_run_title": "Confirm", "yes": "yes", "no": "no",
         "status_ready": "Ready.", "working": "Working… (a system dialog may ask for the administrator password)",
         "web_started": "Open {url} in your browser. Press Ctrl+C to stop.", "web_token_hint": "Local use only",
     },
@@ -88,7 +89,6 @@ TEXT = {
         "app_subtitle": "უსაფრთხო DevOps ოპერაციები ერთი დაჭერით",
         "language": "ენა", "theme": "თემა", "theme_light": "ღია", "theme_dark": "მუქი",
         "categories": "კატეგორიები",
-        "cat_linux": "Linux-ის ადმინისტრირება",
         "op_ufw_status": "UFW-ის წესები", "op_ufw_status_desc": "აჩვენებს firewall-ის მდგომარეობას და ყველა გამართულ წესს.",
         "op_ufw_add": "UFW: პორტის გახსნა ან დაბლოკვა", "op_ufw_add_desc": "ამატებს allow, deny ან reject წესს ერთი პორტისა და პროტოკოლისთვის.",
         "op_ufw_delete": "UFW: წესის წაშლა", "op_ufw_delete_desc": "შლის პორტის არსებულ წესს.",
@@ -151,6 +151,8 @@ TEXT = {
         "err_ufw_failed": "UFW-მა შეცდომა დააფიქსირა: {detail}",
         "hist_title": "ისტორია", "hist_time": "დრო", "hist_operation": "ოპერაცია", "hist_status": "სტატუსი", "hist_exit": "კოდი", "hist_summary": "მოკლედ",
         "hist_empty": "ჯერ არაფერი გაშვებულა.", "hist_cleared": "ისტორია გასუფთავდა.",
+        "btn_run": "გაშვება", "ops_list": "ოპერაციები", "tab_manager": "UFW მენეჯერი", "tab_more": "სხვა ოპერაციები", "no_input": "ამ ოპერაციას შეყვანა არ სჭირდება.",
+        "choice_none": "(არაფერია ხელმისაწვდომი)", "ops_hint": "აირჩიეთ ოპერაცია მარცხნივ.", "ask_run_title": "დადასტურება", "yes": "დიახ", "no": "არა",
         "status_ready": "მზადაა.", "working": "მუშაობს… (სისტემურმა ფანჯარამ შეიძლება ადმინისტრატორის პაროლი მოგთხოვოთ)",
         "web_started": "გახსენით {url} ბრაუზერში. გასაჩერებლად დააჭირეთ Ctrl+C.", "web_token_hint": "მხოლოდ ლოკალური გამოყენებისთვის",
     },
@@ -170,3 +172,11 @@ def t(lang, key, **kw):
         return text.format(**kw) if kw else text
     except (KeyError, IndexError, ValueError):
         return text
+
+
+def add(key, en, ka):
+    """Register a text for both languages at once (used by the operation modules, so an operation can never exist in one language only)."""
+    if key in TEXT["en"] and (TEXT["en"][key] != en or TEXT["ka"][key] != ka):
+        raise ValueError("text key defined twice with different words: " + key)
+    TEXT["en"][key], TEXT["ka"][key] = en, ka
+    return key

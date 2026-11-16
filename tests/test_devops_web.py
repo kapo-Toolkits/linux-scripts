@@ -15,6 +15,7 @@ sys.path.insert(0, os.path.join(ROOT, "devops-toolbox"))
 sys.path.insert(0, os.path.join(ROOT, "tests"))
 os.environ.update(XDG_CONFIG_HOME=tempfile.mkdtemp(), XDG_STATE_HOME=tempfile.mkdtemp())
 
+from test_devops_commands import Runner, box  # noqa: E402
 from test_devops_toolbox import FakeUfw, toolbox  # noqa: E402
 
 from devops_toolbox import i18n, web, webui  # noqa: E402
@@ -174,7 +175,7 @@ class Functionality(WebCase):
     def test_state_catalog_and_translations(self):
         _s, _h, text = self.request("GET", "/api/state?lang=ka", headers={"X-Toolbox-Key": KEY})
         data = json.loads(text)
-        self.assertEqual(data["catalog"]["categories"][0]["name"], i18n.TEXT["ka"]["cat_linux"])
+        self.assertEqual(data["catalog"]["categories"][0]["name"], i18n.TEXT["ka"]["cat_net"])
         self.assertTrue(data["info"]["ufw"]["installed"])
         self.assertEqual(data["history"], [])
         _s, _h, page = self.request("GET", "/?key=" + KEY)
@@ -221,6 +222,63 @@ class Functionality(WebCase):
         r = self.api("/api/execute", {"op": "ufw.rule.delete", "params": params, "token": p["token"], "confirmed": True})
         self.assertTrue(r["result"]["ok"])
         self.assertEqual(self.fake.changes(), [["/usr/sbin/ufw", "--force", "delete", "allow", "19999/tcp"]])
+
+
+class AllCategories(unittest.TestCase):
+    """The generic routes: run a reading operation with inputs, ask for the choices of a dynamic parameter."""
+
+    def setUp(self):
+        self.runner = Runner({"ping": "PING ok\n"})
+        self.app = web.WebApp(port=0, toolbox=box(runner=self.runner), key=KEY).start()
+        self.addCleanup(self.app.stop)
+        self.web = WebCase("run")
+        self.web.port, self.web.origin = self.app.port, "http://127.0.0.1:%d" % self.app.port
+
+    def api(self, path, body):
+        status, _h, text = self.web.post(path, body)
+        self.assertEqual(status, 200, text)
+        return json.loads(text)
+
+    def test_the_catalogue_has_all_the_themes(self):
+        _s, _h, text = self.web.request("GET", "/api/state?lang=en", headers={"X-Toolbox-Key": KEY})
+        cats = json.loads(text)["catalog"]["categories"]
+        self.assertEqual([c["id"] for c in cats], ["net", "firewall", "ssh", "svc", "web", "docker", "git", "users", "pkg", "disk", "mon", "sec", "db", "bk"])
+        self.assertGreaterEqual(sum(len(c["operations"]) for c in cats), 140)
+        net = next(c for c in cats if c["id"] == "net")
+        ping = next(o for o in net["operations"] if o["id"] == "net.ping")
+        self.assertEqual([p["name"] for p in ping["params"]], ["host", "count"])
+        self.assertEqual(ping["risk"], "info")
+
+    def test_run_executes_a_reading_operation_with_its_inputs(self):
+        r = self.api("/api/run", {"op": "net.ping", "params": {"host": "example.com", "count": 2}})
+        self.assertTrue(r["result"]["ok"], r)
+        self.assertEqual(self.runner.calls[-1][0], ["/usr/bin/ping", "-c", "2", "--", "example.com"])
+        self.assertIn("PING ok", r["result"]["output"])
+        bad = self.api("/api/run", {"op": "net.ping", "params": {"host": "x; reboot", "count": 2}})
+        self.assertFalse(bad["result"]["ok"])
+        self.assertEqual(len(self.runner.calls), 1)
+
+    def test_run_refuses_anything_that_changes_the_system(self):
+        for op in ("svc.action", "pkg.upgrade", "disk.old.delete", "ufw.rule.add", "usr.add", "pkg.reboot.now", "nope", "", None, 5):
+            r = self.api("/api/run", {"op": op, "params": {"service": "nginx", "svc_action": "stop", "days": 30}})
+            self.assertFalse(r["result"]["ok"], op)
+        self.assertEqual(self.runner.calls, [])
+
+    def test_choices_only_for_dynamic_parameters(self):
+        self.assertEqual(self.api("/api/choices", {"op": "web.site.enable", "param": "site"})["choices"], ["default", "mgawm"])
+        self.assertEqual(self.api("/api/choices", {"op": "dk.compose.ps", "param": "project"})["choices"], ["docker-app"])
+        for body in ({"op": "net.ping", "param": "host"}, {"op": "nope", "param": "x"}, {"op": 1, "param": 2}, {}, {"op": "web.site.enable", "param": "../x"}):
+            self.assertEqual(self.api("/api/choices", body)["choices"], [], body)
+
+    def test_a_modifying_operation_still_needs_the_token_over_http(self):
+        params = {"service": "nginx", "svc_action": "restart"}
+        r = self.api("/api/execute", {"op": "svc.action", "params": params, "token": "x", "confirmed": True})
+        self.assertFalse(r["result"]["ok"])
+        p = self.api("/api/preview", {"op": "svc.action", "params": params})
+        r = self.api("/api/execute", {"op": "svc.action", "params": params, "token": p["token"], "confirmed": True})
+        self.assertTrue(r["result"]["ok"], r)
+        self.assertEqual(self.runner.calls[-1][0], ["/usr/bin/systemctl", "restart", "nginx"])
+        self.assertNotIn("refresh", r["result"])                                 # no firewall password prompt after a service change
 
 
 class Lifecycle(unittest.TestCase):
