@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """DevOps Toolbox - offline tests. No real firewall is ever touched: every program call goes through a fake runner.
 Run: python3 tests/test_devops_toolbox.py"""
-import json
 import os
 import re
 import subprocess

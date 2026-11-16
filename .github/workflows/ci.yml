@@ -16,9 +16,13 @@ jobs:
       - name: shellcheck
         run: shellcheck -S warning install.sh get.sh tests/retry-on-network.sh wifi-hotspot/hotspot-uplink.sh usb-eject/usb-eject.sh wifi-hotspot/hotspot.sh tests/run-qgis-containers.sh
       - name: syntax of generated/embedded shell is covered by unit tests; compile all python
-        run: python3 -m compileall -q common usb-eject wifi-hotspot printer-setup qgis-installer tests
+        run: python3 -m compileall -q common devops-toolbox usb-eject wifi-hotspot printer-setup qgis-installer tests
       - name: unit tests (offline)
         run: python3 tests/test_units.py
+      - name: DevOps Toolbox backend and local web app (offline, fake ufw)
+        run: |
+          python3 tests/test_devops_toolbox.py
+          python3 tests/test_devops_web.py
       - name: qgis-installer core and command line (offline)
         run: python3 tests/test_qgis_installer.py
       - name: guide drift check, offline (parser and comparison against a saved excerpt)
@@ -30,6 +34,8 @@ jobs:
       - name: "installer window (real Tk under a virtual display, search, groups, settings, progress, cancel, small screens)"
         run: xvfb-run -a python3 tests/test_installer_window.py
 
+      - name: "DevOps Toolbox window (real Tk under a virtual display, fake ufw)"
+        run: xvfb-run -a python3 tests/test_devops_window.py
       - name: "hotspot window (real Tk under a virtual display, adapter and network choice)"
         run: xvfb-run -a python3 tests/test_hotspot_window.py
       - name: qgis-installer distribution paths (Fedora/Atomic, openSUSE, Arch/AUR, containers, Nix)

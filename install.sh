@@ -17,6 +17,7 @@ declare -A FILES=(
   [printer-setup]="printer-setup/printer-setup-gui.py|printer-setup"
   [qgis-installer]="qgis-installer/qgis-installer-gui.py|qgis-installer qgis-installer/qgis-installer-cli.py|qgis-installer-cli"
   [shortcuts]="shortcuts/shortcuts-gui.py|toolkit-shortcuts"
+  [devops-toolbox]="devops-toolbox/devops-toolbox-gui.py|devops-toolbox devops-toolbox/devops-toolbox-web.py|devops-toolbox-web"
   [printhub]="printhub/printhub-launcher.sh|printhub"   # not part of "all": the app + PySide6 are installed too
 )
 declare -A GUISCRIPT=(
@@ -25,6 +26,7 @@ declare -A GUISCRIPT=(
   [printer-setup]=printer-setup/printer-setup-gui.py
   [qgis-installer]=qgis-installer/qgis-installer-gui.py
   [shortcuts]=shortcuts/shortcuts-gui.py
+  [devops-toolbox]=devops-toolbox/devops-toolbox-gui.py
   [printhub]=printhub/run.py
 )
 declare -A DESKTOP=(
@@ -33,9 +35,10 @@ declare -A DESKTOP=(
   [printer-setup]=printer-setup/printer-setup.desktop
   [qgis-installer]=qgis-installer/qgis-installer.desktop
   [shortcuts]=shortcuts/shortcuts.desktop
+  [devops-toolbox]=devops-toolbox/devops-toolbox.desktop
   [printhub]=printhub/packaging/linux/printhub.desktop
 )
-ALL=(usb-eject wifi-hotspot printer-setup qgis-installer shortcuts)
+ALL=(usb-eject wifi-hotspot printer-setup qgis-installer shortcuts devops-toolbox)
 
 usage() {
   cat <<U
@@ -166,6 +169,14 @@ if [ "$ACTION" = install ]; then
         $SUDO install -D -m 644 "$f" "$PREFIX/lib/linux-scripts/qgis_installer/$(basename "$f")"
       done;;
   esac
+  # the devops_toolbox package (backend shared by the window and the web app)
+  case " ${TOOLS[*]} " in
+    *" devops-toolbox "*)
+      for f in "$here"/devops-toolbox/devops_toolbox/*.py "$here"/devops-toolbox/devops_toolbox/modules/*.py; do
+        sub="${f#"$here"/devops-toolbox/}"
+        $SUDO install -D -m 644 "$f" "$PREFIX/lib/linux-scripts/$sub"
+      done;;
+  esac
 fi
 if [ "$ACTION" = uninstall ]; then
   case " ${TOOLS[*]} " in
@@ -177,7 +188,8 @@ if [ "$ACTION" = uninstall ]; then
       $SUDO rm -f "$PREFIX/lib/linux-scripts/hotspot-uplink.sh";;
   esac
   case " ${TOOLS[*]} " in *" qgis-installer "*) $SUDO rm -rf "$PREFIX/lib/linux-scripts/qgis_installer";; esac
-  guis=0; for g in usb-eject-gui hotspot-gui printer-setup qgis-installer qgis-installer-cli bluetooth-setup toolkit-shortcuts; do [ -e "$PREFIX/bin/$g" ] && guis=1; done
+  case " ${TOOLS[*]} " in *" devops-toolbox "*) $SUDO rm -rf "$PREFIX/lib/linux-scripts/devops_toolbox";; esac
+  guis=0; for g in usb-eject-gui hotspot-gui printer-setup qgis-installer qgis-installer-cli bluetooth-setup toolkit-shortcuts devops-toolbox devops-toolbox-web; do [ -e "$PREFIX/bin/$g" ] && guis=1; done
   [ "$guis" = 0 ] && $SUDO rm -rf "$PREFIX/lib/linux-scripts" && echo "removed shared helper"
 fi
 # bluetooth-setup moved to its own repository; a copy installed by an earlier version is not touched

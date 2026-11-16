@@ -35,7 +35,7 @@ def main(argv=None):
         print(f"error: cannot listen on {args.host}:{args.port}: {e}", file=sys.stderr)
         return 1
     app.start()
-    print(i18n.t(lang, "web_started", url=app.url))
+    print(i18n.t(lang, "web_started", url=app.url), flush=True)
     if not args.no_browser:
         import webbrowser
         try:
