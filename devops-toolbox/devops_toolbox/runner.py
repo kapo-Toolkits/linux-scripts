@@ -33,14 +33,14 @@ def _clip(text):
     return text if len(text) <= MAX_OUTPUT else text[:MAX_OUTPUT] + "\n[...]"
 
 
-def run(argv, timeout=30, runner=subprocess.run, now=time.monotonic):
+def run(argv, timeout=30, runner=subprocess.run, now=time.monotonic, extra_env=None):
     """Run `argv` (a list of strings, never a shell string). Never raises."""
     if not isinstance(argv, (list, tuple)) or not argv or not all(isinstance(a, str) and "\x00" not in a for a in argv):
         raise TypeError("argv must be a non-empty list of strings")             # a bug in the caller, not a user error
     start = now()
     try:
         p = runner(list(argv), capture_output=True, text=True, timeout=timeout, shell=False, stdin=subprocess.DEVNULL,
-                   env=dict(SAFE_ENV), errors="replace")
+                   env=dict(SAFE_ENV, **(extra_env or {})), errors="replace")
     except subprocess.TimeoutExpired as e:
         return RunResult(argv, stdout=_clip(_text(e.stdout)), stderr=_clip(_text(e.stderr)), error="err_timeout", timed_out=True,
                          duration=now() - start)

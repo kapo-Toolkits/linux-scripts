@@ -21,6 +21,7 @@ This toolkit runs commands on your computer, sometimes as administrator, and upd
 | **Privileges** | the windows never run as root; the one command that needs it goes through `pkexec`, after showing what will run |
 | **No shell from input** | argument lists for every subprocess, no `shell=True`; values from users or the network are validated before use (ports, names, paths) |
 | **DevOps Toolbox** | allowlisted operations only (no command field), backend validation, single-use preview token + explicit confirmation, no `ufw disable`; the web page listens on loopback only, needs a per-run key, checks Host/Origin, has a strict CSP |
+| **DevOps Toolbox on another computer (SSH)** | keys only (never a password), `StrictHostKeyChecking=yes` with the fingerprint shown and confirmed by you before it is trusted, a changed key refused, `-F /dev/null`, nothing forwarded, every remote word quoted, `sudo -n` only (no password prompt), previews bound to the computer, remote output cleaned of escape sequences; tested against a real sshd |
 
 ## What they do **not** protect against (so you can judge)
 
@@ -28,3 +29,4 @@ This toolkit runs commands on your computer, sometimes as administrator, and upd
 * A program's SHA-256 comes from GitHub's release page: if the publisher's release is malicious, the check passes. Review what you install.
 * Anything you start as root yourself (`sudo ./install.sh …`) has root's power, as always. Read a script before running it.
 * The real `pkexec` password dialog and live firewall changes are exercised by hand, not by the automated tests (which use fakes). Hardware-dependent tools are verified only on the hardware their README names.
+* Running operations on another computer is as trustworthy as the account you connect with: a user with passwordless `sudo` (or `root`) can do everything on that computer, and the fingerprint comparison is only as good as the channel you got the real fingerprint from.

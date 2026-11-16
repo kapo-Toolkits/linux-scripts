@@ -1,10 +1,9 @@
 """Monitoring and performance (MyDevOps tasks 12, 20, 23 and 25): uptime and load, memory, the busiest processes, disk I/O, limits, swappiness,
 the time zone and time synchronisation. (htop and glances are interactive full-screen programs: start those in a terminal.)"""
-import platform
 import re
 
 from . import _dsl
-from ._dsl import P, head, op
+from ._dsl import P, grep, head, op
 from .. import i18n
 
 C = "mon"
@@ -48,6 +47,5 @@ op("mon.timezone.set", C, ("Set the time zone", "დროის სარტყ
    argv=["@timedatectl", "set-timezone", "{zone}"], params=[P("zone", "text", default="Asia/Tbilisi")], check=_zone_check, root=True, risk="medium")
 op("mon.chrony", C, ("Time synchronisation", "დროის სინქრონიზაცია"), ("How far the clock is from the time servers (chronyc tracking).", "რამდენად შორსაა საათი დროის სერვერებისგან (chronyc tracking)."), argv=["@chronyc", "tracking"])
 op("mon.chrony.step", C, ("Correct the clock now", "საათის დაუყოვნებლივ გასწორება"), ("Steps the clock to the correct time at once (chronyc makestep).", "საათს მაშინვე სწორ დროზე სვამს (chronyc makestep)."), argv=["@chronyc", "makestep"], root=True, risk="medium")
-op("sys.info", C, ("System information", "სისტემის ინფორმაცია"), ("Distribution, kernel, architecture and Python version.", "დისტრიბუცია, ბირთვი, არქიტექტურა და Python-ის ვერსია."),
-   native=lambda ctx, p: "\n".join([(ctx.sysx.read_text("/etc/os-release") or "").split("PRETTY_NAME=")[-1].split("\n")[0].strip('"') if "PRETTY_NAME=" in (ctx.sysx.read_text("/etc/os-release") or "") else "-",
-                                     "kernel " + platform.release(), "arch " + platform.machine(), "python " + platform.python_version()]))
+op("sys.info", C, ("System information", "სისტემის ინფორმაცია"), ("Distribution, kernel and architecture of the computer the operation runs on (uname, os-release).", "კომპიუტერის დისტრიბუცია, ბირთვი და არქიტექტურა, რომელზეც ოპერაცია ეშვება (uname, os-release)."),
+   build=lambda ctx, p: [["uname", "-srm"], ["cat", "/etc/os-release"]], post=grep("PRETTY_NAME", "Linux", last=4))

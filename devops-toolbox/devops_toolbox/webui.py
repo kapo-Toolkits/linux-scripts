@@ -50,6 +50,8 @@ dialog h3{margin-top:0}
 dialog pre{max-height:180px}
 .dlgbtns{display:flex;gap:8px;justify-content:flex-end;margin-top:12px}
 .hidden{display:none}
+.banner{background:var(--bad);color:#fff;font-weight:700;padding:5px 10px;border-radius:6px;margin-top:6px}
+.radio{display:flex;align-items:center;gap:4px;font-size:14px}
 .opsgrid{display:grid;grid-template-columns:260px 1fr;gap:14px}
 #oplist{display:flex;flex-direction:column;gap:2px;max-height:430px;overflow:auto;border:1px solid var(--border);border-radius:8px;padding:4px;background:var(--field)}
 #oplist button{text-align:left;background:transparent;border:0;border-radius:6px;padding:6px 8px}
@@ -70,6 +72,20 @@ dialog pre{max-height:180px}
 <div class="layout">
   <aside><h2 id="lbl-cats"></h2><div id="cats"></div></aside>
   <main>
+    <section class="card" id="target">
+      <div class="row">
+        <strong id="tg-title"></strong>
+        <label class="radio"><input type="radio" name="tkind" value="local" id="tk-local" checked> <span id="tk-local-l"></span></label>
+        <label class="radio"><input type="radio" name="tkind" value="remote" id="tk-remote"> <span id="tk-remote-l"></span></label>
+        <label class="fld"><span id="tg-host-l"></span><input type="text" id="tg-host" autocomplete="off" size="18"></label>
+        <label class="fld"><span id="tg-port-l"></span><input type="text" id="tg-port" autocomplete="off" size="5" value="22"></label>
+        <label class="fld"><span id="tg-user-l"></span><input type="text" id="tg-user" autocomplete="off" size="12"></label>
+        <label class="fld"><span id="tg-key-l"></span><select id="tg-key"></select></label>
+        <button id="tg-hostkey" type="button"></button><button id="tg-connect" class="accent" type="button"></button><button id="tg-use" type="button"></button>
+      </div>
+      <div id="tbanner" class="banner hidden"></div>
+      <p class="muted" id="tg-note"></p>
+    </section>
     <section class="card" id="fw">
       <h2 id="fw-title"></h2>
       <div id="fw-state"></div>
@@ -107,7 +123,7 @@ dialog pre{max-height:180px}
 const TEXT = __TEXT_JSON__;
 const KEY = new URLSearchParams(location.search).get("key") || "";
 const $ = (id) => document.getElementById(id);
-let lang = "en", theme = "light", state = null, pending = null, selected = null, busy = false, current = "res", cat = null, opId = null, opPending = null, opValues = {};
+let lang = "en", theme = "light", state = null, tform = { kind: "local", host: "", port: "22", user: "", key: "" }, pending = null, selected = null, busy = false, current = "res", cat = null, opId = null, opPending = null, opValues = {};
 try { lang = localStorage.getItem("dt_lang") || "en"; theme = localStorage.getItem("dt_theme") || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"); } catch (e) {}
 if (!TEXT[lang]) lang = "en";
 const t = (key, vars) => { let s = (TEXT[lang] && TEXT[lang][key]) || TEXT.en[key] || key; for (const k in (vars || {})) s = s.split("{" + k + "}").join(String(vars[k])); return s; };
@@ -131,7 +147,8 @@ function texts() {
     ["l-port", "p_port"], ["l-proto", "p_proto"], ["l-action", "p_action"], ["l-comment", "p_comment"], ["preview", "btn_preview"],
     ["execute", "btn_execute"], ["tab-res", "res_title"], ["tab-hist", "hist_title"], ["h-time", "hist_time"], ["h-op", "hist_operation"],
     ["h-st", "hist_status"], ["h-ex", "hist_exit"], ["h-sum", "hist_summary"], ["clear", "btn_clear_history"], ["dlg-no", "btn_cancel"],
-    ["dlg-yes", "btn_confirm"]]) set(id, key);
+    ["dlg-yes", "btn_confirm"], ["tg-title", "tg_title"], ["tk-local-l", "tg_local"], ["tk-remote-l", "tg_remote"], ["tg-host-l", "tg_host"], ["tg-port-l", "tg_port"],
+    ["tg-user-l", "tg_user"], ["tg-key-l", "tg_key"], ["tg-hostkey", "tg_hostkey"], ["tg-connect", "tg_connect"], ["tg-use", "tg_use"], ["tg-note", "tg_note"]]) set(id, key);
   $("theme").textContent = t(theme === "light" ? "theme_dark" : "theme_light");
   $("lang").value = lang;
   const sel = $("action"), keep = sel.value || "allow"; sel.textContent = "";
@@ -139,8 +156,53 @@ function texts() {
   sel.value = keep;
 }
 
+function renderTarget() {
+  const info = state && state.target; if (!info) return;
+  const sel = $("tg-key"); const keep = tform.key; sel.textContent = "";
+  for (const k of [""].concat(info.keys)) { const o = el("option", k || t("tg_key_default")); o.value = k; sel.appendChild(o); }
+  sel.value = keep;
+  const remote = $("tk-remote").checked;
+  for (const id of ["tg-host", "tg-port", "tg-user", "tg-key", "tg-hostkey", "tg-connect"]) $(id).disabled = !remote || busy;
+  const b = $("tbanner");
+  if (info.kind === "remote") { b.textContent = t("tg_remote_banner", { label: info.label }); b.classList.remove("hidden"); } else { b.classList.add("hidden"); }
+}
+
+function readTarget() {
+  tform = { kind: $("tk-remote").checked ? "remote" : "local", host: $("tg-host").value.trim(), port: $("tg-port").value.trim() || "22", user: $("tg-user").value.trim(), key: $("tg-key").value };
+  return tform;
+}
+
+async function applyTarget() {
+  const f = readTarget();
+  const r = await api("/api/target", { kind: f.kind, host: f.host, port: f.port, user: f.user, identity: f.key });
+  if (!r.ok) { put($("res"), r.errors.map((e) => ["✖ " + e.message + "\n", "bad"])); showTab("res"); return false; }
+  state.target = r.target; state.info = r.info; state.history = r.history; opPending = null; pending = null; opId = null;
+  render(); await buildForm();
+  return true;
+}
+
+async function connectTarget() {
+  if (!(await applyTarget())) return;
+  await work(async () => { const r = await api("/api/target/test", {}); put($("res"), [[(r.ok ? "✔ " : "✖ ") + r.message + "\n", r.ok && r.sudo !== false ? "ok" : r.ok ? "warn" : "bad"]]); showTab("res"); });
+}
+
+async function checkHostKey() {
+  const f = readTarget();
+  if (!f.host) { put($("res"), [["✖ " + t("tg_unknown_host") + "\n", "bad"]]); showTab("res"); return; }
+  await work(async () => {
+    const r = await api("/api/target/hostkey", { host: f.host, port: f.port });
+    if (!r.ok) { put($("res"), [["✖ " + r.message + "\n", "bad"]]); showTab("res"); return; }
+    if (r.trusted) { put($("res"), [["✔ " + t("tg_trusted_already", { host: r.host }) + "\n", "ok"], [r.fingerprints.join("\n") + "\n", ""]]); showTab("res"); return; }
+    $("dlg-title").textContent = t("tg_trust_title");
+    $("dlg-body").textContent = t("tg_trust_text", { host: r.host, port: r.port, prints: r.fingerprints.join("\n") });
+    const yes = await new Promise((resolve) => { const d = $("dlg"); let a = false; $("dlg-yes").onclick = () => { a = true; d.close(); }; $("dlg-no").onclick = () => { a = false; d.close(); }; d.onclose = () => resolve(a); d.showModal(); });
+    if (yes) { const done = await api("/api/target/trust", { token: r.token, confirmed: true }); put($("res"), [[(done.ok ? "✔ " : "✖ ") + done.message + "\n", done.ok ? "ok" : "bad"]]); showTab("res"); }
+  });
+}
+
 function render() {
   texts();
+  renderTarget();
   const cats = $("cats"); cats.textContent = "";
   if (state && !cat) cat = state.catalog.categories[0].id;
   if (state) for (const c of state.catalog.categories) {
@@ -244,6 +306,7 @@ async function opPreview() {
   if (p.errors && p.errors.length) for (const e of p.errors) parts.push(["✖ " + e.message + "\n", "bad"]);
   else {
     parts.push([t("pv_title") + ": " + p.name + "\n", "cmd"]);
+    if (p.remote) parts.push([t("tg_running_on") + ": " + p.target + "\n", "warn"]);
     for (const c of p.commands) { parts.push(["$ " + c.display + "\n", "cmd"]); parts.push(["  " + t("pv_exact") + ": " + c.exact + "\n", ""]); }
     if (!p.commands.length && !p.blocked) parts.push([t("pv_nothing") + "\n", ""]);
     parts.push([t("pv_risk") + ": " + p.level_text + "\n", p.risk === "high" ? "bad" : ""]);
@@ -308,8 +371,9 @@ async function doPreview(op, params) {
 
 function confirmDialog(deleting, commands) {
   return new Promise((resolve) => {
+    const where = state && state.target && state.target.kind === "remote" ? "\n\n" + t("tg_running_on") + ": " + state.target.label : "";
     $("dlg-title").textContent = t(deleting ? "confirm_delete_title" : "confirm_title");
-    $("dlg-body").textContent = t(deleting ? "confirm_delete_text" : "confirm_text", { commands: commands.join("\n") });
+    $("dlg-body").textContent = t(deleting ? "confirm_delete_text" : "confirm_text", { commands: commands.join("\n") + where });
     const dlg = $("dlg"); let answer = false;
     const done = (v) => { answer = v; dlg.close(); };
     $("dlg-yes").onclick = () => done(true); $("dlg-no").onclick = () => done(false);
@@ -350,6 +414,9 @@ async function deleteSelected() {
   if (pending) await execute();
 }
 
+for (const id of ["tk-local", "tk-remote"]) $(id).addEventListener("change", async () => { readTarget(); if (!$("tk-remote").checked && state.target.kind === "remote") await applyTarget(); else renderTarget(); });
+for (const id of ["tg-host", "tg-port", "tg-user", "tg-key"]) $(id).addEventListener("input", readTarget);
+$("tg-use").addEventListener("click", applyTarget); $("tg-connect").addEventListener("click", connectTarget); $("tg-hostkey").addEventListener("click", checkHostKey);
 $("op-preview").addEventListener("click", opPreview);
 $("op-run").addEventListener("click", opRun);
 $("preview").addEventListener("click", () => { const [op, params] = formOp(); doPreview(op, params); });
@@ -359,7 +426,7 @@ $("refresh").addEventListener("click", refreshRules);
 $("clear").addEventListener("click", async () => { const r = await api("/api/history/clear", {}); state.history = r.history; render(); });
 $("tab-res").addEventListener("click", () => showTab("res")); $("tab-hist").addEventListener("click", () => showTab("hist"));
 for (const id of ["port", "proto", "action", "comment"]) { $(id).addEventListener("input", () => { pending = null; render(); }); }
-$("lang").addEventListener("change", async () => { lang = $("lang").value; try { localStorage.setItem("dt_lang", lang); } catch (e) {} await load(); put($("pv"), []); opPending = null; buildForm(); });
+$("lang").addEventListener("change", async () => { readTarget(); lang = $("lang").value; try { localStorage.setItem("dt_lang", lang); } catch (e) {} await load(); put($("pv"), []); opPending = null; buildForm(); });
 $("theme").addEventListener("click", () => { theme = theme === "light" ? "dark" : "light"; try { localStorage.setItem("dt_theme", theme); } catch (e) {} render(); });
 render(); showTab("res"); put($("res"), [[t("status_ready"), "cmd"]]);
 load().then(() => { render(); buildForm(); });

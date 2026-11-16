@@ -23,6 +23,7 @@ jobs:
       - run: python3 tests/test_qgis_installer.py
       - run: python3 tests/test_devops_toolbox.py
       - run: python3 tests/test_devops_commands.py
+      - run: python3 tests/test_devops_ssh.py
       - run: python3 tests/test_devops_web.py
 
   lint-and-unit:
@@ -44,6 +45,7 @@ jobs:
         run: |
           python3 tests/test_devops_toolbox.py
           python3 tests/test_devops_commands.py
+          python3 tests/test_devops_ssh.py
           python3 tests/test_devops_web.py
       - name: qgis-installer core and command line (offline)
         run: python3 tests/test_qgis_installer.py
@@ -103,6 +105,13 @@ jobs:
         run: |
           ./install.sh --prefix "$P" --uninstall printhub
           test ! -e "$P/lib/printhub" && test ! -e "$P/bin/printhub"
+
+  real-ssh:
+    # DevOps Toolbox against a real sshd (throw-away Ubuntu container): host-key trust, key login, sudo -n operations, files read over SSH
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 tests/real_ssh_test.py
 
   qr-decode:
     # the QR generator is checked with a real decoder (zbar) in a container

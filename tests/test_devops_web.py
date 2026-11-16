@@ -16,6 +16,7 @@ sys.path.insert(0, os.path.join(ROOT, "tests"))
 os.environ.update(XDG_CONFIG_HOME=tempfile.mkdtemp(), XDG_STATE_HOME=tempfile.mkdtemp())
 
 from test_devops_commands import Runner, box  # noqa: E402
+from test_devops_ssh import toolbox as ssh_toolbox  # noqa: E402
 from test_devops_toolbox import FakeUfw, toolbox  # noqa: E402
 
 from devops_toolbox import i18n, web, webui  # noqa: E402
@@ -279,6 +280,94 @@ class AllCategories(unittest.TestCase):
         self.assertTrue(r["result"]["ok"], r)
         self.assertEqual(self.runner.calls[-1][0], ["/usr/bin/systemctl", "restart", "nginx"])
         self.assertNotIn("refresh", r["result"])                                 # no firewall password prompt after a service change
+
+
+class Targets(unittest.TestCase):
+    """Running the operations on another computer, over the web page's routes (a fake ssh answers)."""
+
+    def setUp(self):
+        self.home = tempfile.mkdtemp()
+        self.tb, self.fake = ssh_toolbox(home=self.home)
+        self.app = web.WebApp(port=0, toolbox=self.tb, key=KEY).start()
+        self.addCleanup(self.app.stop)
+        self.web = WebCase("run")
+        self.web.port, self.web.origin = self.app.port, "http://127.0.0.1:%d" % self.app.port
+
+    def api(self, path, body):
+        status, _h, text = self.web.post(path, body)
+        self.assertEqual(status, 200, text)
+        return json.loads(text)
+
+    def test_state_tells_the_target_and_the_keys_you_can_choose(self):
+        _s, _h, text = self.web.request("GET", "/api/state?lang=en", headers={"X-Toolbox-Key": KEY})
+        target = json.loads(text)["target"]
+        self.assertEqual((target["kind"], target["label"]), ("local", "this computer"))
+        self.assertEqual(target["keys"], ["id_ed25519", "work_key"])
+
+    def test_choose_a_computer_then_run_an_operation_there(self):
+        r = self.api("/api/target", {"kind": "remote", "host": "10.0.0.5", "port": 22, "user": "alice", "identity": "id_ed25519"})
+        self.assertTrue(r["ok"], r)
+        self.assertEqual(r["target"]["label"], "alice@10.0.0.5:22")
+        res = self.api("/api/run", {"op": "net.addr", "params": {}})["result"]
+        self.assertTrue(res["ok"], res)
+        self.assertEqual(res["target"], "alice@10.0.0.5:22")
+        self.assertEqual(self.fake.remote[-1]["prog"], "/usr/bin/ip")
+        p = self.api("/api/preview", {"op": "svc.action", "params": {"service": "nginx", "svc_action": "restart"}})
+        self.assertTrue(p["remote"])
+        self.assertEqual(p["target"], "alice@10.0.0.5:22")
+        r = self.api("/api/execute", {"op": "svc.action", "params": {"service": "nginx", "svc_action": "restart"}, "token": p["token"], "confirmed": True})
+        self.assertTrue(r["result"]["ok"], r)
+        self.assertTrue(self.fake.remote[-1]["root"])
+        self.assertEqual(self.api("/api/target", {"kind": "local"})["target"]["kind"], "local")
+
+    def test_bad_target_values_are_refused_with_a_message_for_each_field(self):
+        for body, field in (({"kind": "remote", "host": "-oProxyCommand=id", "port": 22, "user": "alice"}, "host"),
+                            ({"kind": "remote", "host": "h.example", "port": 70000, "user": "alice"}, "port"),
+                            ({"kind": "remote", "host": "h.example", "port": 22, "user": "a;b"}, "user"),
+                            ({"kind": "remote", "host": "h.example", "port": 22, "user": "alice", "identity": "../../etc/passwd"}, "identity")):
+            r = self.api("/api/target", body)
+            self.assertFalse(r["ok"], body)
+            self.assertEqual(r["errors"][0]["param"], field)
+        self.assertFalse(self.api("/api/target", {"kind": "sideways"})["ok"])
+        self.assertFalse(self.api("/api/target", {})["ok"])
+        self.assertEqual(self.api("/api/state", {}) if False else self.tb.target_info()["kind"], "local")
+        self.assertEqual(self.fake.remote, [])
+
+    def test_the_host_key_is_shown_first_and_trusted_only_with_the_token_and_a_confirmation(self):
+        scan = self.api("/api/target/hostkey", {"host": "10.0.0.5", "port": 22})
+        self.assertTrue(scan["ok"], scan)
+        self.assertEqual(scan["fingerprints"], ["SHA256:AbCdEf1234567890 (ED25519)"])
+        kh = os.path.join(self.home, ".ssh", "known_hosts")
+        self.assertFalse(os.path.exists(kh))
+        self.assertFalse(self.api("/api/target/trust", {"token": scan["token"], "confirmed": False})["ok"])
+        self.assertFalse(self.api("/api/target/trust", {"token": scan["token"], "confirmed": "true"})["ok"])
+        self.assertFalse(self.api("/api/target/trust", {"token": "nope", "confirmed": True})["ok"])
+        self.assertFalse(os.path.exists(kh))
+        self.assertTrue(self.api("/api/target/trust", {"token": scan["token"], "confirmed": True})["ok"])
+        self.assertTrue(os.path.exists(kh))
+        self.assertFalse(self.api("/api/target/hostkey", {"host": "x; id", "port": 22})["ok"])
+
+    def test_the_connection_test(self):
+        self.api("/api/target", {"kind": "remote", "host": "10.0.0.5", "port": 22, "user": "alice"})
+        r = self.api("/api/target/test", {})
+        self.assertTrue(r["ok"])
+        self.assertTrue(r["sudo"])
+        self.assertIn("Connected to alice@10.0.0.5:22", r["message"])
+
+    def test_the_new_routes_need_the_key_and_the_origin_like_every_other(self):
+        for path in ("/api/target", "/api/target/test", "/api/target/hostkey", "/api/target/trust"):
+            self.assertEqual(self.web.post(path, {"kind": "local"}, key=None)[0], 403, path)
+            self.assertEqual(self.web.post(path, {"kind": "local"}, key="wrong")[0], 403, path)
+            self.assertEqual(self.web.post(path, {"kind": "local"}, origin="http://evil.example")[0], 403, path)
+        self.assertEqual(self.fake.remote, [])
+
+    def test_stopping_the_web_app_closes_the_connection(self):
+        self.api("/api/target", {"kind": "remote", "host": "10.0.0.5", "port": 22, "user": "alice"})
+        self.api("/api/run", {"op": "net.addr", "params": {}})
+        folder = self.tb.target.control_dir
+        self.assertTrue(os.path.isdir(folder))
+        self.app.stop()
+        self.assertFalse(os.path.exists(folder))
 
 
 class Lifecycle(unittest.TestCase):

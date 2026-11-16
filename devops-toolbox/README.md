@@ -41,6 +41,29 @@ operations, each operation is justified by a documented command (or declared as 
 are listed with the reason — editing config files with `nano`, creating SSH keys and `ssh-copy-id` (passphrases and passwords), `scp`, interactive tools (`htop`,
 `glances`), `git commit` / `push` / `reset --hard`, `curl | sh` installers, restoring databases from arbitrary files, passwords of any kind.
 
+### Run on another computer (SSH)
+
+The **Run on** bar at the top chooses where the operations act: *This computer*, or *Another computer (SSH)* with **Host or IP**, **Port**, **User** and an
+optional **Key** (one of your own `~/.ssh` private keys; default keys and the ssh agent also work). The same 146 operations then run on that computer — the
+plan is made against *its* programs, files and users (a Docker container list, the nginx sites, `~/.ssh` and the users are all read there), and a red
+banner, the preview and every confirmation dialog say **where** a command will run. There is still **no command field**: only the allowlisted operations.
+
+1. **Check host key…** shows the computer's host-key fingerprints (`ssh-keyscan`, then `ssh-keygen -lf`) — compare them with the real ones (from its administrator or console).
+   Only after you confirm are they added to `~/.ssh/known_hosts`. An unknown host is refused until then; a **changed** key is refused with a warning and never replaced.
+2. **Connect and test** tells who you are there and whether administrator operations are available.
+3. Pick any theme and run operations. A preview made for one computer can never be executed on another (the token is bound to host, port, user and key).
+
+How the connection is made (`devops_toolbox/target.py`): the system's `ssh` with **keys only** — `BatchMode`, passwords and keyboard prompts off, so this tool never types or
+stores a password; `StrictHostKeyChecking=yes`; `-F /dev/null` (your ssh config is not read); nothing forwarded (agent, X11, ports); connect and keep-alive timeouts; a shared
+connection (`ControlPersist`) in a private temporary folder that is removed when the window or the web app closes. The remote command is one string in which **every word is
+quoted**: `env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin LC_ALL=C <program> <arguments>`, and administrator operations are prefixed with `sudo -n` (`sudo -n -u postgres` for the database
+reads) — **no password prompt**: use a user with passwordless sudo, or connect as `root` (`PermitRootLogin prohibit-password` is enough). Programs are looked up on the remote
+side in the same fixed folders, and what the remote side answers is checked (an absolute path in a fixed folder, a plain home folder) before it is used. Everything a remote computer
+prints is cleaned of terminal escape sequences before it is shown. `ssh-copy-id`, `ssh-keygen` and passwords stay in the terminal.
+
+Tested against a **real sshd** (`tests/real_ssh_test.py`, a throw-away Ubuntu container: 27 checks — host-key trust and its fingerprint, key login, reading and `sudo -n`
+operations, native checks reading files over SSH, creating a user on the container, a refused key, a closed port, a changed host key) as well as with a fake `ssh` (`tests/test_devops_ssh.py`).
+
 ### Your own repositories and Compose projects
 
 The folder of a repository or Compose project is never typed into the tool: you list it once in `~/.config/linux-scripts/devops-toolbox.json`, and the
@@ -101,7 +124,7 @@ How UFW really behaves, and what the tool does about it:
 
 ## Dependencies
 
-Python 3.8+ (standard library only for the backend and the web app), `tkinter` for the window (offered automatically on first run, like the other
+Python 3.8+ (standard library only for the backend and the web app), `ssh` (package openssh-client) for the "another computer" mode, `tkinter` for the window (offered automatically on first run, like the other
 tools), `pkexec` (package *polkit*) for administrator operations, and the programs each operation uses (`ufw`, `ss`, `docker`, `git`, `nginx`, `fail2ban-client`, `psql` ...): an
 operation whose program is missing says so and names the Debian/Ubuntu package. The update and package operations are for **Debian / Ubuntu** (apt); the others use
 standard Linux tools. Nothing else, no services, no background processes: the web app runs only while you keep it open.
@@ -132,6 +155,8 @@ with no UI work, and `coverage.py` plus its test make you say which documented c
 ```bash
 python3 tests/test_devops_toolbox.py      # backend: validation, argument lists, injection attempts, duplicates, permission errors, timeouts, tokens, history, translations
 python3 tests/test_devops_commands.py     # all 146 operations as a family: safe plans, hostile input, fixed program folders, pkexec, filters, built-in checks, coverage of the notes
+python3 tests/test_devops_ssh.py          # running on another computer: ssh command line, quoting, validation, host keys, sudo -n, tokens bound to the computer (fake ssh)
+python3 tests/real_ssh_test.py            # the same against a REAL sshd in a docker container (27 checks; needs docker + ssh)
 python3 tests/test_devops_web.py          # the web app over real HTTP on a loopback port: key, Host/Origin/CSRF, CSP, routes, full cycle, start/stop
 xvfb-run -a python3 tests/test_devops_window.py   # the Tk window under a virtual display
 ```

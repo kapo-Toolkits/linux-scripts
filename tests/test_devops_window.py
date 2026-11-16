@@ -22,6 +22,8 @@ except Exception as e:  # noqa: BLE001
 
 if not SKIP:
     from test_devops_commands import Runner, box
+    from test_devops_ssh import FakeSsh
+    from test_devops_ssh import toolbox as ssh_toolbox
     from test_devops_toolbox import FakeUfw, toolbox
     spec = importlib.util.spec_from_file_location("devops_gui", os.path.join(ROOT, "devops-toolbox", "devops-toolbox-gui.py"))
     gui = importlib.util.module_from_spec(spec)
@@ -114,7 +116,7 @@ class Window(unittest.TestCase):
         with mock.patch.object(gui.messagebox, "askyesno", return_value=False) as ask:
             app.btn_execute.invoke()
             self.pump(app, 0.3)
-            self.assertIn("changes the system firewall configuration", ask.call_args[0][1])
+            self.assertIn("This changes the system", ask.call_args[0][1])
             self.assertIn("sudo ufw allow 19999/tcp", ask.call_args[0][1])
         self.assertEqual(fake.changes(), [])                       # declined: nothing ran
         app.btn_preview.invoke()
@@ -234,7 +236,7 @@ class Window(unittest.TestCase):
     def test_there_is_no_free_text_command_field(self):
         app, _ = self.make()
         entries = [w for w in walk(app) if w.winfo_class() == "TEntry"]
-        self.assertEqual(len(entries), 2)                              # port and description only
+        self.assertEqual(len(entries), 5)                              # the rule's port and description, and the "run on" host, port and user
         self.assertEqual(len([w for w in walk(app) if w.winfo_class() == "Text" and str(w.cget("state")) == "normal"]), 0)   # texts are read-only
 
 
@@ -388,6 +390,165 @@ class GenericPanel(unittest.TestCase):
         self.pick(app, "net.ping")
         self.assertRegex(app.g_op["name"], "[\u10a0-\u10ff]")
         gui.settings.save_lang("en")
+
+
+@unittest.skipIf(SKIP, SKIP)
+class TargetBar(unittest.TestCase):
+    """The "run on" bar: this computer, or another one over SSH (a fake ssh answers)."""
+
+    def make(self, **kw):
+        home = tempfile.mkdtemp()
+        tb, fake = ssh_toolbox(home=home, **kw)
+        app = gui.App(toolbox=tb, lang="en", theme="light")
+        self.addCleanup(self.destroy, app)
+        app.update()
+        return app, fake, home
+
+    def pump(self, app, seconds=0.4):
+        end = time.time() + seconds
+        while time.time() < end:
+            app.update()
+            time.sleep(0.02)
+
+    def wait_idle(self, app, seconds=5):
+        end = time.time() + seconds
+        while app.busy and time.time() < end:
+            app.update()
+            time.sleep(0.02)
+        app.update()
+
+    @staticmethod
+    def destroy(app):
+        try:
+            app.destroy()
+        except Exception:  # noqa: BLE001 - a window that closed itself (quit_app) is already gone
+            pass
+
+    def fill(self, app, host="10.0.0.5", port="22", user="alice", key=""):
+        app.t_kind.set("remote")
+        app.on_kind()
+        app.t_host.set(host)
+        app.t_port.set(port)
+        app.t_user.set(user)
+        app.t_key.set(key or app.tr("tg_key_default"))
+        app.update()
+
+    def test_it_starts_on_this_computer_with_the_fields_off(self):
+        app, fake, _ = self.make()
+        self.assertEqual(app.tb.target_info()["kind"], "local")
+        self.assertEqual(str(app.t_widgets[0].cget("state")), "disabled")
+        self.assertEqual(str(app.btn_connect.cget("state")), "disabled")
+        self.assertEqual(fake.remote, [])
+
+    def test_choosing_another_computer_runs_operations_there_and_says_so(self):
+        app, fake, _ = self.make()
+        self.fill(app)
+        app.btn_use.invoke()
+        self.assertEqual(app.tb.target_info()["label"], "alice@10.0.0.5:22")
+        self.assertIn("REMOTE: alice@10.0.0.5:22", app.lbl_target.cget("text"))
+        app.select_category("net")
+        app.select_op("net.addr")
+        app.g_btn_run.invoke()
+        self.wait_idle(app)
+        self.assertEqual(fake.remote[-1]["prog"], "/usr/bin/ip")
+        self.assertIn("Success", app.result.get("1.0", "end"))
+        app.select_category("svc")
+        app.select_op("svc.action")
+        app.g_vars["svc_action"].set("restart")
+        app.g_btn_preview.invoke()
+        self.assertIn("Runs on: alice@10.0.0.5:22", app.g_box.get("1.0", "end"))
+        with mock.patch.object(gui.messagebox, "askyesno", return_value=False) as ask:
+            app.g_btn_run.invoke()
+            self.assertIn("Runs on: alice@10.0.0.5:22", ask.call_args[0][1])               # the confirmation names the computer
+            self.assertIn("sudo systemctl restart nginx", ask.call_args[0][1])
+        with mock.patch.object(gui.messagebox, "askyesno", return_value=True):
+            app.g_btn_run.invoke()
+        self.wait_idle(app)
+        self.assertEqual((fake.remote[-1]["root"], fake.remote[-1]["args"]), (True, ["restart", "nginx"]))
+
+    def test_going_back_to_this_computer_takes_effect_at_once(self):
+        app, fake, _ = self.make()
+        self.fill(app)
+        app.btn_use.invoke()
+        app.t_kind.set("local")
+        app.on_kind()
+        self.assertEqual(app.tb.target_info()["kind"], "local")
+        self.assertEqual(app.lbl_target.cget("text"), "")
+
+    def test_bad_values_are_explained_and_the_target_does_not_change(self):
+        app, fake, _ = self.make()
+        for host, port, user in (("-oProxyCommand=id", "22", "alice"), ("h.example", "99999", "alice"), ("h.example", "22", "a b"), ("", "22", "alice"),
+                                 ("x;y", "22", "alice")):
+            self.fill(app, host, port, user)
+            app.btn_use.invoke()
+            self.assertIn("✖", app.result.get("1.0", "end"), (host, port, user))
+            self.assertEqual(app.tb.target_info()["kind"], "local")
+        self.assertEqual(fake.remote, [])
+
+    def test_check_host_key_shows_fingerprints_and_trusts_only_after_you_say_yes(self):
+        app, fake, home = self.make()
+        self.fill(app)
+        kh = os.path.join(home, ".ssh", "known_hosts")
+        with mock.patch.object(gui.messagebox, "askyesno", return_value=False) as ask:
+            app.btn_hostkey.invoke()
+            self.wait_idle(app)
+            self.assertIn("SHA256:AbCdEf1234567890", ask.call_args[0][1])
+            self.assertIn("10.0.0.5:22", ask.call_args[0][1])
+        self.assertFalse(os.path.exists(kh))                                                 # declined: nothing written
+        with mock.patch.object(gui.messagebox, "askyesno", return_value=True):
+            app.btn_hostkey.invoke()
+            self.wait_idle(app)
+        self.assertTrue(os.path.exists(kh))
+        self.assertIn("is now trusted", app.result.get("1.0", "end"))
+
+    def test_connect_tests_the_connection_and_reports(self):
+        app, fake, _ = self.make()
+        self.fill(app)
+        app.btn_connect.invoke()
+        self.wait_idle(app)
+        text = app.result.get("1.0", "end")
+        self.assertIn("Connected to alice@10.0.0.5:22", text)
+        self.assertIn("Administrator operations are available", text)
+        app2, _, _ = self.make(fake=FakeSsh(sudo_ok=False))
+        self.fill(app2)
+        app2.btn_connect.invoke()
+        self.wait_idle(app2)
+        self.assertIn("NOT available", app2.result.get("1.0", "end"))
+        app3, _, _ = self.make(fake=FakeSsh(fail="hostkey"))
+        self.fill(app3)
+        app3.btn_connect.invoke()
+        self.wait_idle(app3)
+        self.assertIn("not trusted yet", app3.result.get("1.0", "end"))
+
+    def test_the_bar_survives_a_language_and_theme_change_and_has_no_command_field(self):
+        app, _, _ = self.make()
+        self.fill(app, "10.0.0.9", "2222", "bob")
+        app.btn_use.invoke()
+        app.btn_theme.invoke()
+        self.pump(app)
+        self.assertEqual((app.t_host.get(), app.t_port.get(), app.t_user.get()), ("10.0.0.9", "2222", "bob"))
+        app.lang_var.set("ქართული")
+        app.lang_box.event_generate("<<ComboboxSelected>>")
+        self.pump(app)
+        self.assertEqual((app.t_host.get(), app.t_user.get()), ("10.0.0.9", "bob"))
+        self.assertIn("დაშორებული: bob@10.0.0.9:2222", app.lbl_target.cget("text"))
+        gui.settings.save_lang("en")
+        entries = [w for w in walk(app) if w.winfo_class() == "TEntry"]
+        self.assertEqual(len(entries), 3)                                                    # host, port, user - and nothing to type a command into
+
+    def test_closing_the_window_closes_the_connection(self):
+        app, fake, _ = self.make()
+        self.fill(app)
+        app.btn_use.invoke()
+        folder = app.tb.target.control_dir
+        app.select_category("net")
+        app.select_op("net.addr")
+        app.g_btn_run.invoke()
+        self.wait_idle(app)
+        folder = app.tb.target.control_dir
+        self.assertTrue(os.path.isdir(folder))
+        app.quit_app()
+        self.assertFalse(os.path.exists(folder))
 
 
 if __name__ == "__main__":

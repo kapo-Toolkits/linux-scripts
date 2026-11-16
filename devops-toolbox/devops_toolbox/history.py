@@ -30,11 +30,13 @@ class History:
         items = data if isinstance(data, list) else []
         return [e for e in reversed(items) if isinstance(e, dict)]
 
-    def add(self, op_id, status, exit_code, summary, params=None):
+    def add(self, op_id, status, exit_code, summary, params=None, target=""):
         """status: 'ok' | 'failed' | 'refused'. params: only values that are safe to keep (ports, protocols, actions)."""
         entry = {"time": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(self.now())), "op": op_id, "status": status,
                  "exit_code": exit_code, "summary": " ".join(str(summary or "").split())[:SUMMARY_MAX],
                  "params": {k: v for k, v in (params or {}).items() if isinstance(v, (int, str)) and k != "comment"}}
+        if target:
+            entry["target"] = str(target)[:120]                      # user@host:port of a remote computer (not a secret)
         items = list(reversed(self.entries()))
         items.append(entry)
         self._write(items[-MAX_ENTRIES:])
