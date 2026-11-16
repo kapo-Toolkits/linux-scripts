@@ -1,0 +1,38 @@
+name: Bug report · შეცდომა
+description: Something does not work as the tool's README says
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: "Security problem? Do **not** describe it here — see SECURITY.md. · უსაფრთხოების პრობლემა? აქ ნუ აღწერთ, იხ. SECURITY.md."
+  - type: dropdown
+    id: tool
+    attributes:
+      label: Which tool? · რომელი ხელსაწყო?
+      options: [installer window, install.sh, get.sh / updating, usb-eject, wifi-hotspot, printer-setup, printhub, qgis-installer, shortcuts, devops-toolbox, other]
+    validations: {required: true}
+  - type: input
+    id: system
+    attributes:
+      label: Distribution and version · დისტრიბუცია
+      placeholder: "Ubuntu 24.04, Fedora 41, Manjaro …"
+    validations: {required: true}
+  - type: input
+    id: python
+    attributes:
+      label: "Python version (python3 --version)"
+  - type: dropdown
+    id: how
+    attributes:
+      label: How was the toolkit installed? · როგორ დაყენდა?
+      options: [get.sh, git clone, ./install.sh, copied folder / USB stick]
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what did you expect? · რა მოხდა და რას ელოდით?
+      description: The exact steps, the message in the window, and anything the terminal printed. The installer's log is in ~/.cache/linux-scripts/logs (Settings → copy log).
+    validations: {required: true}
+  - type: textarea
+    id: hardware
+    attributes:
+      label: Hardware, if the tool is hardware-related (adapter, printer, USB drive) · აპარატურა
