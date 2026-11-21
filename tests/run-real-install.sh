@@ -20,6 +20,10 @@ done
 echo "=================== Filee on ubuntu:24.04"
 "$root/tests/retry-on-network.sh" docker run --rm -v "$root":/repo:ro ubuntu:24.04 sh -c \
   "apt-get update -qq >/dev/null && apt-get install -y -qq python3 curl ca-certificates >/dev/null && python3 /repo/tests/real_filee_container_test.py" || rc=1
+# Raven (Windows programs without Wine): the real 'nightly' release (~40 MB): SHA256SUMS gate, safe unpack, the raven command, a Windows console program, upgrade, removal keeps prefixes
+echo "=================== Raven on ubuntu:24.04"
+"$root/tests/retry-on-network.sh" docker run --rm -v "$root":/repo:ro ubuntu:24.04 sh -c \
+  "apt-get update -qq >/dev/null && apt-get install -y -qq python3 curl ca-certificates zlib1g libfreetype6 libvulkan1 libegl1 libglu1-mesa libgl1 libwayland-egl1 libpixman-1-0 libxcb1 libxcb-xkb1 libxcb-xfixes0 libxcb-xinput0 libxkbcommon-x11-0 libxkbcommon0 libwayland-client0 >/dev/null && python3 /repo/tests/real_raven_container_test.py" || rc=1
 # Codex CLI: the real GitHub release (~120 MB): SHA-256 gate, install as ~/.local/bin/codex, --version, upgrade, foreign codex untouched, removal
 echo "=================== Codex on ubuntu:24.04"
 "$root/tests/retry-on-network.sh" docker run --rm -v "$root":/repo:ro ubuntu:24.04 sh -c \

@@ -131,6 +131,9 @@ STR = {
  "vbox_ask": "Install VirtualBox 7.2?\n\nAdds Oracle's apt repository for your release. The signing key is downloaded over HTTPS and its fingerprint must be\n{fpr}\notherwise nothing is installed. Then apt installs virtualbox-7.2 with dkms and the kernel headers (a few hundred MB), and you are added to the vboxusers group (administrator password).\n\n{notes}",
  "filee_ask": "Install Filee {version}?\n\nDownload: {file} ({mb} MB)\nFrom: {source}\nChecked with SHA-256 before anything runs:\n{sha}\n\nThen Filee's own install.sh runs as YOU (no administrator password): the app goes to ~/.local/share/filee, the filee command to ~/.local/bin, a launcher to your applications menu; on GNOME it also adds Filee's Shell extension.\n\n{notes}",
  "ventoy_ask": "Install Ventoy {version}?\n\nDownload: {file} ({mb} MB)\nFrom: {source}\nChecked with SHA-256 before anything is unpacked:\n{sha}\n\nInstalled for you only, no administrator password: the program goes to ~/.local/share/ventoy, the ventoy command to ~/.local/bin and a launcher to your applications menu.\n\n{notes}",
+ "raven_ask": "Install Raven {version} (EXPERIMENTAL)?\n\nRaven runs Windows programs on Linux without Wine. It is a nightly pre-release: the project itself says complete Windows process initialisation is not implemented yet.\n\nDownload: {file} ({mb} MB)\nFrom: {source}\nSHA-256 (from the SHA256SUMS file of the same release; GitHub shows none, so this catches a damaged file, not a compromised release):\n{sha}\n\nInstalled for you only, no administrator password: ~/.local/share/raven-runtime and the command raven. Your Windows prefixes in ~/.local/share/raven are never touched.\n{libs}\n{notes}",
+ "raven_libs_missing": "Shared libraries missing on this system: {libs}\n(Debian/Ubuntu packages: {deb})",
+ "raven_libs_ok": "The shared libraries it needs are present.",
  "codex_ask": "Install Codex CLI {version} (OpenAI)?\n\nDownload: {file} ({mb} MB; the program itself is about 3x larger)\nFrom: {source}\nChecked with SHA-256 before anything is unpacked:\n{sha}\n\nInstalled for you only, no administrator password, as:\n{target}\n\n{notes}",
  "flutter_ask": "Install the Flutter SDK {version} (with Dart {dart})?\n\nDownload: {file} ({gb} GB)\nFrom: {source} (Google's release manifest)\nChecked with SHA-256 before anything is unpacked:\n{sha}\n\nSDK folder (yours, no administrator rights): {sdk}\nThe commands flutter and dart are linked into ~/.local/bin; no shell file is edited.\nDisk space: about {free} GB must be free.\n\n{pre}\n\n{notes}",
  "flutter_pre_yes": "Prerequisites from the Flutter docs are installed first from your distribution (administrator password, once): {pkgs}",
@@ -224,6 +227,9 @@ STR = {
  "vbox_ask": "დავაყენო VirtualBox 7.2?\n\nემატება Oracle-ის apt რეპოზიტორია თქვენი გამოშვებისთვის. ხელმოწერის გასაღები ჩამოიტვირთება HTTPS-ით და მისი თითის ანაბეჭდი უნდა იყოს\n{fpr}\nსაწინააღმდეგო შემთხვევაში არაფერი დაყენდება. მერე apt დააყენებს virtualbox-7.2-ს dkms-თან და ბირთვის ჰედერებთან ერთად (რამდენიმე ასეული MB) და თქვენ დაგამატებთ vboxusers ჯგუფში (ადმინისტრატორის პაროლი).\n\n{notes}",
  "filee_ask": "დავაყენო Filee {version}?\n\nჩამოტვირთვა: {file} ({mb} MB)\nსაიდან: {source}\nსანამ რამე გაეშვება, შემოწმდება SHA-256-ით:\n{sha}\n\nმერე Filee-ს საკუთარი install.sh გაეშვება თქვენი სახელით (ადმინისტრატორის პაროლის გარეშე): აპლიკაცია ~/.local/share/filee-ში მოხვდება, ბრძანება filee — ~/.local/bin-ში, გამშვები — თქვენს აპლიკაციების მენიუში; GNOME-ზე დაემატება Filee-ს Shell გაფართოებაც.\n\n{notes}",
  "ventoy_ask": "დავაყენო Ventoy {version}?\n\nჩამოტვირთვა: {file} ({mb} MB)\nსაიდან: {source}\nსანამ რამეს გახსნის, მოწმდება SHA-256:\n{sha}\n\nდაყენდება მხოლოდ თქვენთვის, ადმინისტრატორის პაროლის გარეშე: პროგრამა ~/.local/share/ventoy-ში, ბრძანება ventoy ~/.local/bin-ში, გამშვები კი აპლიკაციების მენიუში.\n\n{notes}",
+ "raven_ask": "დავაყენო Raven {version} (ექსპერიმენტული)?\n\nRaven Windows-ის პროგრამებს Linux-ზე უშვებს Wine-ის გარეშე. ეს nightly pre-release-ია: თავად პროექტი ამბობს, რომ Windows პროცესის სრული ინიციალიზაცია ჯერ არ არის იმპლემენტირებული.\n\nჩამოტვირთვა: {file} ({mb} MB)\nსაიდან: {source}\nSHA-256 (იმავე რელიზის SHA256SUMS ფაილიდან; GitHub-ზე არ ჩანს, ამიტომ ეს აფიქსირებს დაზიანებულ ფაილს და არა გატეხილ რელიზს):\n{sha}\n\nდაყენდება მხოლოდ თქვენთვის, ადმინისტრატორის პაროლის გარეშე: ~/.local/share/raven-runtime და ბრძანება raven. თქვენს Windows prefix-ებს ~/.local/share/raven-ში არასდროს ეხება.\n{libs}\n{notes}",
+ "raven_libs_missing": "ამ სისტემაზე აკლია ბიბლიოთეკები: {libs}\n(Debian/Ubuntu-ს პაკეტები: {deb})",
+ "raven_libs_ok": "საჭირო ბიბლიოთეკები არსებობს.",
  "codex_ask": "დავაყენო Codex CLI {version} (OpenAI)?\n\nჩამოტვირთვა: {file} ({mb} MB; თვით პროგრამა დაახლოებით 3-ჯერ დიდია)\nსაიდან: {source}\nსანამ რამე გაიხსნება, შემოწმდება SHA-256-ით:\n{sha}\n\nდაყენდება მხოლოდ თქვენთვის, ადმინისტრატორის პაროლის გარეშე, აქ:\n{target}\n\n{notes}",
  "flutter_ask": "დავაყენო Flutter SDK {version} (Dart {dart}-ით)?\n\nჩამოტვირთვა: {file} ({gb} GB)\nსაიდან: {source} (Google-ის გამოშვებების მანიფესტი)\nსანამ რამე გაიხსნება, შემოწმდება SHA-256-ით:\n{sha}\n\nSDK-ს საქაღალდე (თქვენია, ადმინისტრატორის უფლებების გარეშე): {sdk}\nბრძანებები flutter და dart ~/.local/bin-ში დაიკავშირება; shell-ის ფაილები არ იცვლება.\nადგილი დისკზე: დაახლოებით {free} GB უნდა იყოს თავისუფალი.\n\n{pre}\n\n{notes}",
  "flutter_pre_yes": "ჯერ დაყენდება Flutter-ის დოკუმენტაციის წინაპირობები თქვენი დისტრიბუციიდან (ადმინისტრატორის პაროლი, ერთხელ): {pkgs}",
@@ -679,6 +685,8 @@ class App(tk.Tk):
             return t("yes") if extras.filee_installed() else None
         if ex_id == "ventoy":
             return extras.ventoy_version() or (t("yes") if extras.ventoy_installed() else None)
+        if ex_id == "raven":
+            return extras.raven_version() or (t("yes") if extras.raven_installed() else None)
         if ex_id == "flutter":
             return extras.flutter_version() or (t("yes") if extras.flutter_installed() else None)
         if ex_id == "flutter-linux":
@@ -792,6 +800,7 @@ class App(tk.Tk):
                     else "Dart SDK: Google's apt repository, key fingerprint checked, apt install dart" if ex_id == "dart"
                     else "Codex: GitHub release (SHA-256 checked) → ~/.local/bin/codex, no password" if ex_id == "codex"
                     else "Ventoy: GitHub release (SHA-256 checked) → ~/.local/share/ventoy + ~/.local/bin/ventoy, no password" if ex_id == "ventoy"
+                    else "Raven: GitHub nightly release (SHA256SUMS checked) → ~/.local/share/raven-runtime + ~/.local/bin/raven, no password" if ex_id == "raven"
                     else "Filee: GitHub release (SHA-256 checked) → its own install.sh as you, no password" if ex_id == "filee"
                     else "VirtualBox: Oracle's apt repository, key fingerprint checked, apt install virtualbox-7.2 + dkms" if ex_id == "virtualbox"
                     else "Discord: the publisher's .deb over HTTPS (no checksum published), apt install" if ex_id == "discord"
@@ -876,6 +885,7 @@ class App(tk.Tk):
                         self.virtualbox_jobs(action) if ex_id == "virtualbox" else
                         self.filee_jobs(action) if ex_id == "filee" else
                         self.ventoy_jobs(action) if ex_id == "ventoy" else
+                        self.raven_jobs(action) if ex_id == "raven" else
                         self.codex_jobs(action) if ex_id == "codex" else
                         self.flutter_jobs(action) if ex_id == "flutter" else
                         self.flutter_linux_jobs(action) if ex_id == "flutter-linux" else
@@ -1704,6 +1714,30 @@ class App(tk.Tk):
             return None
         if not messagebox.askyesno(t("title"), t("ventoy_ask", version=info["version"], file=info["file"], mb=info["mb"],
                                                   source=info["source"], sha=info["sha256"], notes=info["notes"])):
+            return None
+        return self.steps_to_jobs(steps)
+
+    def raven_jobs(self, action):
+        """Raven (Windows programs without Wine): the project's nightly archive, SHA-256 from SHA256SUMS, unpacked for the user."""
+        import platform
+        if action == "uninstall":
+            return self.steps_to_jobs(extras.raven_remove_steps())
+        self.lbl_status.config(text=t("looking"))
+        self.update_idletasks()
+        try:
+            release = extras.raven_release()
+        except Exception as e:  # noqa: BLE001
+            self.lbl_status.config(text=t("note"))
+            messagebox.showwarning(t("title"), t("lookup_fail", e=e))
+            return None
+        self.lbl_status.config(text=t("note"))
+        steps, info = extras.raven_steps(release, platform.machine())
+        if not steps:
+            messagebox.showinfo(t("title"), t("gh_manual", name="Raven", url=info["manual"]))
+            return None
+        libs = t("raven_libs_missing", libs=", ".join(info["missing"]), deb=info["deb"]) if info["missing"] else t("raven_libs_ok")
+        if not messagebox.askyesno(t("title"), t("raven_ask", version=info["version"], file=info["file"], mb=info["mb"], source=info["source"],
+                                                  sha=info["sha256"], libs=libs, notes=info["notes"])):
             return None
         return self.steps_to_jobs(steps)
 

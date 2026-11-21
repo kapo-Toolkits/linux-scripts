@@ -2492,6 +2492,170 @@ class ReleaseParser(unittest.TestCase):
         self.assertEqual(self.ex.codex_release(fetch=lambda u: dict(data, tag_name="0.5.0"))["version"], "0.5.0")
 
 
+class Raven(unittest.TestCase):
+    """Raven (Windows programs without Wine): its nightly release, the SHA256SUMS check, the safe unpack and the marker-guarded install."""
+    ex = Installer.m.extras
+    SHA = "ab" * 32
+    URL = "https://github.com/mirkobrombin/raven/releases/download/nightly/"
+
+    def data(self, digest=None, sums=True):
+        assets = [{"name": "raven-nightly-linux-x86_64.tar.gz", "browser_download_url": self.URL + "raven-nightly-linux-x86_64.tar.gz", "size": 40 << 20,
+                   "digest": digest},
+                  {"name": "raven-nightly-source.tar.gz", "browser_download_url": self.URL + "raven-nightly-source.tar.gz", "size": 94 << 20},
+                  {"name": "SHA256SUMS", "browser_download_url": self.URL + "SHA256SUMS", "size": 198}]
+        return {"tag_name": "nightly", "name": "Nightly e9e45f2", "prerelease": True, "assets": assets if sums else assets[:2]}
+
+    def release(self, digest=None, sums_text=None, **kw):
+        text = sums_text if sums_text is not None else f"{self.SHA}  ./raven-nightly-linux-x86_64.tar.gz\n{'cd' * 32}  ./raven-nightly-source.tar.gz\n"
+        return self.ex.raven_release(fetch=lambda u: self.data(digest, **kw), fetch_text=lambda u: text)
+
+    def test_release_asset_and_the_checksum_sources(self):
+        rel = self.release()
+        self.assertEqual((rel["tag"], rel["revision"], rel["version"]), ("nightly", "e9e45f2", "e9e45f2"))
+        a = self.ex.raven_asset(rel, "x86_64")
+        self.assertEqual((a["name"], a["sha256"]), ("raven-nightly-linux-x86_64.tar.gz", self.SHA))
+        self.assertIsNone(self.ex.raven_asset(rel, "aarch64"))                       # x86_64 only
+        self.assertEqual(self.ex.raven_asset(self.release(digest="sha256:" + self.SHA), "amd64")["sha256"], self.SHA)
+        self.assertIsNone(self.ex.raven_asset(self.release(digest="sha256:" + "ee" * 32), "x86_64"))     # two sources that disagree
+        self.assertIsNone(self.ex.raven_asset(self.release(sums=False, sums_text=""), "x86_64"))          # no SHA256SUMS: no install
+        self.assertIsNone(self.ex.raven_asset(self.release(sums_text="not a checksum line\n" + "zz" * 32 + "  ./raven-nightly-linux-x86_64.tar.gz\n"), "x86_64"))
+        self.assertEqual(self.release(sums_text=f"{self.SHA} *raven-nightly-linux-x86_64.tar.gz\n")["sums"]["raven-nightly-linux-x86_64.tar.gz"], self.SHA)
+        evil = self.data()
+        evil["assets"][0]["browser_download_url"] = "https://evil.example/raven.tar.gz"
+        rel = self.ex.raven_release(fetch=lambda u: evil, fetch_text=lambda u: f"{self.SHA}  ./raven-nightly-linux-x86_64.tar.gz\n")
+        self.assertIsNone(self.ex.raven_asset(rel, "x86_64"))                          # only the project's own release downloads
+
+    def test_the_sums_file_is_fetched_only_from_the_projects_downloads(self):
+        with self.assertRaises(ValueError):
+            self.ex.fetch_small_text("https://evil.example/SHA256SUMS")
+        with self.assertRaises(ValueError):
+            self.ex.fetch_small_text("http://github.com/mirkobrombin/raven/releases/download/nightly/SHA256SUMS")
+
+    def pack(self, d, members, name="raven-nightly-linux-x86_64.tar.gz"):
+        import io
+        import tarfile
+        cache = os.path.join(d, "cache")
+        os.makedirs(cache, exist_ok=True)
+        with tarfile.open(os.path.join(cache, name), "w:gz") as tar:
+            for member, kind, data in members:
+                ti = tarfile.TarInfo(member)
+                if kind == "file":
+                    ti.size, ti.mode = len(data), 0o755
+                    tar.addfile(ti, io.BytesIO(data))
+                else:
+                    ti.type = tarfile.SYMTYPE if kind == "symlink" else tarfile.LNKTYPE
+                    ti.linkname = data
+                    tar.addfile(ti)
+        return cache
+
+    GOOD = [("runtime/raven", "file", b"#!/bin/sh\necho raven $*\n"), ("runtime/raven-runtime", "file", b"x"), ("LICENSE", "file", b"GPL")]
+
+    def run_install(self, d, members, foreign=False):
+        cache = self.pack(d, members)
+        data, home = os.path.join(d, "data"), os.path.join(d, "home")
+        if foreign:
+            os.makedirs(os.path.join(data, "raven-runtime"))
+            open(os.path.join(data, "raven-runtime", "mine"), "w").write("x")
+        steps, info = self.ex.raven_steps(self.release(), "x86_64", cache_dir=cache)
+        env = dict(os.environ, XDG_DATA_HOME=data, HOME=home)
+        return subprocess.run(["sh", "-c", steps[1]["sh"]], capture_output=True, text=True, env=env), data, home, cache, steps, info
+
+    def test_steps_gate_and_ask(self):
+        steps, info = self.ex.raven_steps(self.release(), "x86_64")
+        self.assertEqual([x["root"] for x in steps], [False, False])
+        self.assertLess(steps[0]["sh"].index("sha256sum -c"), steps[0]["sh"].index("mv "))
+        for st in steps:
+            self.assertEqual(subprocess.run(["sh", "-n", "-c", st["sh"]], capture_output=True).returncode, 0)
+        self.assertEqual((info["sha256"], info["source"], info["version"]), (self.SHA, "github.com/mirkobrombin/raven", "e9e45f2"))
+        self.assertIn("Experimental", info["notes"])
+        self.assertEqual(self.ex.raven_steps(self.release(), "armv7l")[0], [])
+
+    def test_install_detect_wrapper_and_removal_keep_your_prefixes(self):
+        with tempfile.TemporaryDirectory() as d:
+            r, data, home, cache, _s, _i = self.run_install(d, self.GOOD)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertTrue(self.ex.raven_installed(data))
+            self.assertEqual(self.ex.raven_version(data), "e9e45f2")
+            self.assertEqual(os.listdir(cache), [])                                  # the download is gone
+            wrapper = os.path.join(home, ".local", "bin", "raven")
+            self.assertTrue(os.access(wrapper, os.X_OK))
+            out = subprocess.run([wrapper, "--help"], capture_output=True, text=True)
+            self.assertEqual(out.stdout.strip(), "raven --help")                      # the wrapper hands every argument to runtime/raven
+            prefix = os.path.join(data, "raven", "my-app")
+            os.makedirs(prefix)
+            open(os.path.join(prefix, "system.reg"), "w").write("WINDOWS REGISTRY")
+            rm = subprocess.run(["sh", "-c", self.ex.raven_remove_steps()[0]["sh"]], capture_output=True, text=True,
+                                env=dict(os.environ, XDG_DATA_HOME=data, HOME=home))
+            self.assertEqual(rm.returncode, 0, rm.stderr)
+            self.assertFalse(self.ex.raven_installed(data))
+            self.assertFalse(os.path.exists(os.path.join(data, "raven-runtime")))
+            self.assertFalse(os.path.exists(wrapper))
+            self.assertTrue(os.path.isfile(os.path.join(prefix, "system.reg")))      # the user's Windows prefix survives removal
+            r2, *_ = self.run_install(tempfile.mkdtemp(), self.GOOD)                  # and an upgrade replaces only the runtime folder
+            self.assertEqual(r2.returncode, 0)
+
+    def test_upgrade_over_a_previous_install_leaves_prefixes_alone(self):
+        with tempfile.TemporaryDirectory() as d:
+            r, data, home, *_ = self.run_install(d, self.GOOD)
+            prefix = os.path.join(data, "raven", "app")
+            os.makedirs(prefix)
+            open(os.path.join(prefix, "keep"), "w").write("x")
+            cache = self.pack(d, self.GOOD + [("runtime/new.dll", "file", b"n")])
+            steps, _ = self.ex.raven_steps(self.release(), "x86_64", cache_dir=cache)
+            r = subprocess.run(["sh", "-c", steps[1]["sh"]], capture_output=True, text=True, env=dict(os.environ, XDG_DATA_HOME=data, HOME=home))
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertTrue(os.path.exists(os.path.join(data, "raven-runtime", "runtime", "new.dll")))
+            self.assertTrue(os.path.exists(os.path.join(prefix, "keep")))
+
+    def test_links_escapes_something_else_and_a_foreign_folder_are_refused(self):
+        for bad, word in (([("runtime/link", "symlink", "/etc/passwd")] + self.GOOD, "links"), ([("runtime/hard", "hardlink", "LICENSE")] + self.GOOD, "links"),
+                          ([("../../up.txt", "file", b"x")] + self.GOOD, "unsafe"), ([("/abs.txt", "file", b"x")] + self.GOOD, "unsafe")):
+            with tempfile.TemporaryDirectory() as d:
+                r, data, home, *_ = self.run_install(d, bad)
+                self.assertNotEqual(r.returncode, 0, bad[0])
+                self.assertIn(word, r.stderr)
+                self.assertFalse(os.path.exists(os.path.join(data, "raven-runtime")))
+                self.assertFalse(os.path.exists(os.path.join(d, "up.txt")))
+        with tempfile.TemporaryDirectory() as d:
+            r, data, home, *_ = self.run_install(d, [("readme", "file", b"x")])
+            self.assertNotEqual(r.returncode, 0)
+            self.assertIn("does not look like Raven", r.stderr)
+        with tempfile.TemporaryDirectory() as d:
+            r, data, home, *_ = self.run_install(d, self.GOOD, foreign=True)
+            self.assertNotEqual(r.returncode, 0)
+            self.assertTrue(os.path.exists(os.path.join(data, "raven-runtime", "mine")))
+            rm = subprocess.run(["sh", "-c", self.ex.raven_remove_steps()[0]["sh"]], capture_output=True, text=True, env=dict(os.environ, XDG_DATA_HOME=data, HOME=home))
+            self.assertEqual(rm.returncode, 0)
+            self.assertTrue(os.path.exists(os.path.join(data, "raven-runtime", "mine")))          # not ours: untouched
+
+    def test_missing_libraries_are_read_from_the_loader_cache(self):
+        cache = "123 libs found in cache `/etc/ld.so.cache'\n\tlibz.so.1 (libc6,x86-64) => /lib/libz.so.1\n\tlibGL.so.1 (libc6,x86-64) => /lib/libGL.so.1\n"
+        got = self.ex.raven_missing_libs(run=lambda *a, **k: types.SimpleNamespace(stdout=cache), which=lambda c: "/sbin/ldconfig")
+        self.assertIn("libvulkan.so.1", got)
+        self.assertNotIn("libz.so.1", got)
+        self.assertNotIn("libGL.so.1", got)
+        self.assertEqual(self.ex.raven_missing_libs(run=lambda *a, **k: types.SimpleNamespace(stdout=""), which=lambda c: "/sbin/ldconfig"), [])    # cannot tell
+        self.assertEqual(self.ex.raven_missing_libs(which=lambda c: None, libs=()), [])
+
+    def test_update_check_compares_revisions(self):
+        found, failed = self.ex.outdated(installed=lambda p: None, codex_have=lambda: None, ventoy_have=lambda: None,
+                                         raven_have=lambda: "1111111", raven=lambda: {"revision": "e9e45f2db"})
+        self.assertEqual(found, [{"id": "raven", "name": "Raven", "installed": "1111111", "latest": "e9e45f2"}])
+        found, _ = self.ex.outdated(installed=lambda p: None, codex_have=lambda: None, ventoy_have=lambda: None,
+                                    raven_have=lambda: "e9e45f2", raven=lambda: {"revision": "e9e45f2db"})
+        self.assertEqual(found, [])
+        found, failed = self.ex.outdated(installed=lambda p: None, codex_have=lambda: None, ventoy_have=lambda: None, raven_have=lambda: "e9e45f2",
+                                         raven=lambda: (_ for _ in ()).throw(OSError("offline")))
+        self.assertEqual((found, failed), ([], ["raven"]))
+
+    def test_it_is_a_command_line_program_for_x86_64_only(self):
+        entry = next(p for p in self.ex.PROGRAMS if p["id"] == "raven")
+        self.assertTrue(entry["cli"])
+        self.assertEqual(entry["kind"], "raven")
+        self.assertTrue(self.ex.native_route(entry, "dnf", "x86_64"))
+        self.assertFalse(self.ex.native_route(entry, "dnf", "aarch64"))
+
+
 class Filee(unittest.TestCase):
     ex = Installer.m.extras
     TAG = {"tag_name": "v9.9.9", "assets": [
@@ -3293,7 +3457,7 @@ class PackagePrograms(unittest.TestCase):
                 self.assertEqual(subprocess.run(["sh", "-n", "-c", steps[0]["sh"]], capture_output=True).returncode, 0)
                 self.assertEqual(self.ex.package_name(app, pm), app)
         self.assertEqual(set(self.ex.PACKAGE_APPS), {"brasero", "xfburn", "k3b", "unrar", "git", "curl", "vim", "htop", "net-tools"})
-        self.assertEqual({x["id"] for x in Installer.m.EXTRAS}, set(self.ex.PACKAGE_APPS) | {"etcher", "brave", "claude", "vscode", "virtualbox", "filee", "ventoy", "codex", "flutter", "flutter-linux", "dart", "discord"} | set(self.ex.GITHUB_APPS))   # window and logic agree
+        self.assertEqual({x["id"] for x in Installer.m.EXTRAS}, set(self.ex.PACKAGE_APPS) | {"etcher", "brave", "claude", "vscode", "virtualbox", "filee", "ventoy", "raven", "codex", "flutter", "flutter-linux", "dart", "discord"} | set(self.ex.GITHUB_APPS))   # window and logic agree
         self.assertEqual({x["id"] for x in Shortcuts.m.TOOLS} >= {i for i in self.ex.PACKAGE_APPS if not PackagePrograms.cli(i)}, True)       # and shortcuts know them
         self.assertIn("apt-get purge -y brasero", self.ex.package_steps("brasero", "apt-get", remove=True)[0]["sh"])
         self.assertIn("pacman -R --noconfirm brasero", self.ex.package_steps("brasero", "pacman", remove=True)[0]["sh"])

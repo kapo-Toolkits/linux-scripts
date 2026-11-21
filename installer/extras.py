@@ -30,7 +30,7 @@ X86 = ("amd64", "x86_64")
 
 # ---- the list of "other programs" lives in programs.json next to this file ----
 PROGRAMS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "programs.json")
-KINDS = {"claude", "vscode", "virtualbox", "filee", "ventoy", "codex", "flutter", "flutterlinux", "dart", "discord", "brave", "etcher", "github", "package"}      # the recipe that installs it
+KINDS = {"claude", "vscode", "virtualbox", "filee", "ventoy", "raven", "codex", "flutter", "flutterlinux", "dart", "discord", "brave", "etcher", "github", "package"}      # the recipe that installs it
 NEEDED = {"github": ("display", "repo", "package", "cmd", "asset"), "package": ("display", "cmd")}
 
 
@@ -358,7 +358,7 @@ def version_key(v):
     return tuple(int(x) for x in v.split(".") if x.isdigit())
 
 
-def outdated(installed=installed_version, github=None, etcher=None, codex=None, codex_have=None, ventoy=None, ventoy_have=None):
+def outdated(installed=installed_version, github=None, etcher=None, codex=None, codex_have=None, ventoy=None, ventoy_have=None, raven=None, raven_have=None):
     """Programs installed from a publisher's GitHub release whose newest release is newer than what is installed.
     -> ([{'id', 'name', 'installed', 'latest'}], [ids that could not be looked up]).  Nothing is downloaded or installed."""
     github = github or github_release
@@ -393,6 +393,14 @@ def outdated(installed=installed_version, github=None, etcher=None, codex=None, 
                 found.append({"id": "ventoy", "name": "Ventoy", "installed": have, "latest": latest})
         except Exception:  # noqa: BLE001
             failed.append("ventoy")
+    have = (raven_have or raven_version)()                       # Raven's "nightly" has no version number: the revision is compared
+    if have:
+        try:
+            latest = (raven or raven_release)()["revision"][:7]
+            if latest and latest != have:
+                found.append({"id": "raven", "name": "Raven", "installed": have, "latest": latest})
+        except Exception:  # noqa: BLE001
+            failed.append("raven")
     return found, failed
 
 
@@ -762,6 +770,160 @@ def ventoy_version(data_home=None):
             return f.read().strip() or None
     except OSError:
         return None
+
+
+# ---- Raven (https://github.com/mirkobrombin/raven, GPL-3.0-or-later): runs Windows programs on Linux, without Wine ----
+# Experimental software. The project publishes a binary archive (x86_64) as the pre-release tagged "nightly"; GitHub shows no digest for it, so the
+# SHA-256 comes from the SHA256SUMS file of the SAME release (it catches a damaged or swapped file, not a compromised release: said so in the window).
+# Installed for the user in ~/.local/share/raven-runtime (NOT ~/.local/share/raven: the project's examples keep Windows prefixes there, and
+# an upgrade or removal must never touch them), with a `raven` command in ~/.local/bin.
+RAVEN_REPO = "mirkobrombin/raven"
+RAVEN_API = f"https://api.github.com/repos/{RAVEN_REPO}/releases/tags/nightly"
+RAVEN_PAGE = "https://useraven.org"
+RAVEN_ASSET, RAVEN_SUMS = "raven-nightly-linux-x86_64.tar.gz", "SHA256SUMS"
+RAVEN_URL_PREFIX = f"https://github.com/{RAVEN_REPO}/releases/download/"
+RAVEN_MARKER = ".linux-scripts-raven"
+RAVEN_LIBS = ("libz.so.1", "libfreetype.so.6", "libvulkan.so.1", "libEGL.so.1", "libGLU.so.1", "libGL.so.1", "libwayland-egl.so.1", "libpixman-1.so.0",
+              "libxcb.so.1", "libxcb-xkb.so.1", "libxcb-xfixes.so.0", "libxcb-xinput.so.0", "libxkbcommon-x11.so.0", "libxkbcommon.so.0", "libwayland-client.so.0")
+RAVEN_DEB = ("zlib1g libfreetype6 libvulkan1 libegl1 libglu1-mesa libgl1 libwayland-egl1 libpixman-1-0 libxcb1 libxcb-xkb1 libxcb-xfixes0 "
+             "libxcb-xinput0 libxkbcommon-x11-0 libxkbcommon0 libwayland-client0")
+RAVEN_NOTES = ("Experimental: the project's own words are that complete Windows process initialisation is not finished yet. Use it like this: "
+               "RAVEN_PREFIX=~/.local/share/raven/my-app raven --run-process --execution=native --desktop=wayland setup.exe  (see useraven.org). "
+               "Keep your Windows prefixes in ~/.local/share/raven/<name>: the installer never touches that folder.")
+
+
+def fetch_small_text(url, limit=65536, timeout=20, opener=urllib.request.urlopen):
+    """A small text file over HTTPS from the project's own release downloads (anything else is refused)."""
+    if not url.startswith(RAVEN_URL_PREFIX):
+        raise ValueError("unexpected download address")
+    req = urllib.request.Request(url, headers={"User-Agent": "linux-scripts-installer"})
+    with opener(req, timeout=timeout) as r:
+        return r.read(limit + 1)[:limit].decode("utf-8", "replace")
+
+
+def raven_release(fetch=fetch_json, fetch_text=fetch_small_text):
+    """-> {'tag', 'name', 'revision', 'version', 'assets', 'sums': {file name: sha256}} for the project's 'nightly' release."""
+    data = fetch(RAVEN_API)
+    rel = parse_release(data)
+    sums = {}
+    a = rel["assets"].get(RAVEN_SUMS)
+    if a:
+        for line in fetch_text(a["url"]).splitlines():
+            parts = line.split()
+            if len(parts) == 2 and re.fullmatch(r"[0-9a-f]{64}", parts[0]):
+                sums[parts[1].lstrip("./").lstrip("*")] = parts[0]
+    m = re.search(r"\b([0-9a-f]{7,40})\b", data.get("name") or "")
+    rel.update(sums=sums, name=data.get("name") or "", revision=m.group(1) if m else "")
+    rel["version"] = rel["revision"][:7] or rel["tag"]
+    return rel
+
+
+def raven_asset(release, arch):
+    """The x86_64 archive with a SHA-256 from SHA256SUMS (and, if GitHub ever shows one, equal to it), or None."""
+    if arch not in X86:
+        return None
+    a = release["assets"].get(RAVEN_ASSET)
+    want = release.get("sums", {}).get(RAVEN_ASSET)
+    if not a or not want or not a["url"].startswith(RAVEN_URL_PREFIX):
+        return None
+    if a["sha256"] and a["sha256"] != want:
+        return None                                              # two sources that disagree: install nothing
+    return dict(a, name=RAVEN_ASSET, sha256=want)
+
+
+def raven_dir(data_home=None):
+    return os.path.join(data_home or os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share"), "raven-runtime")
+
+
+def raven_steps(release, arch, cache_dir=None):
+    """-> (steps, info); both run as the user. 1: download + SHA-256 gate. 2: list the archive and refuse links / absolute / '..' names, unpack,
+    check it is Raven, replace the old copy (only one this installer made), write the marker and the `raven` command; the download and the
+    unpacked copy are always removed."""
+    asset = raven_asset(release, arch)
+    if not asset:
+        return [], {"manual": RAVEN_PAGE, "version": release.get("version", "")}
+    d = os.path.expanduser(cache_dir or CACHE)
+    q = shlex.quote
+    tar, work = os.path.join(d, asset["name"]), os.path.join(d, "raven-unpacked")
+    install = f"""set -eu
+trap 'rm -rf {q(work)} {q(tar)}' EXIT
+tar -tzf {q(tar)} > {q(work)}.names 2>/dev/null || {{ echo "the download is not a valid archive" >&2; exit 1; }}
+trap 'rm -rf {q(work)} {q(tar)} {q(work)}.names' EXIT
+if grep -Eq '^/|(^|/)\\.\\.(/|$)' {q(work)}.names; then echo "the archive has unsafe file names - nothing was installed" >&2; exit 1; fi
+if tar -tvzf {q(tar)} 2>/dev/null | grep -Eq '^[lh]| -> | link to '; then echo "the archive contains links - nothing was installed" >&2; exit 1; fi
+rm -rf {q(work)}
+mkdir -p {q(work)}
+tar -xzf {q(tar)} -C {q(work)}
+[ -x {q(work)}/runtime/raven ] && [ -x {q(work)}/runtime/raven-runtime ] || {{ echo "the download does not look like Raven - nothing was installed" >&2; exit 1; }}
+DATA="${{XDG_DATA_HOME:-$HOME/.local/share}}"
+APP="$DATA/raven-runtime"
+mkdir -p "$DATA"
+if [ -e "$APP" ] && [ ! -f "$APP/{RAVEN_MARKER}" ]; then echo "$APP exists and was not installed by this installer - left alone" >&2; exit 1; fi
+printf 'raven\n%s\n%s\n' {q(asset['sha256'])} {q(release.get('revision', ''))} > {q(work)}/{RAVEN_MARKER}
+rm -rf "$APP.new"
+mv {q(work)} "$APP.new"
+rm -rf "$APP"
+mv "$APP.new" "$APP"
+mkdir -p "$HOME/.local/bin"
+BIN="$HOME/.local/bin/raven"
+if [ -e "$BIN" ] && ! grep -q '^# linux-scripts raven launcher$' "$BIN" 2>/dev/null; then echo "$BIN exists and is not ours - left alone" >&2; else
+cat > "$BIN" <<EOF
+#!/bin/sh
+# linux-scripts raven launcher
+exec "$APP/runtime/raven" "\\$@"
+EOF
+chmod 755 "$BIN"
+fi
+echo "Raven installed: $APP"
+"""
+    steps = [{"root": False, "sh": download_script(asset, cache_dir)}, {"root": False, "sh": install}]
+    return steps, {"version": release.get("version", ""), "file": asset["name"], "mb": round(asset["size"] / 1048576), "url": asset["url"],
+                   "sha256": asset["sha256"], "source": "github.com/" + RAVEN_REPO, "notes": RAVEN_NOTES, "deb": RAVEN_DEB,
+                   "missing": raven_missing_libs()}
+
+
+def raven_remove_steps():
+    """Remove the runtime folder, the command - each only when it carries this installer's marker. Your Windows prefixes
+    (~/.local/share/raven/...) are never touched."""
+    sh = f"""set -u
+DATA="${{XDG_DATA_HOME:-$HOME/.local/share}}"
+APP="$DATA/raven-runtime"
+if [ -f "$APP/{RAVEN_MARKER}" ]; then rm -rf -- "$APP"; else echo "Raven was not installed by this installer - folder left alone" >&2; fi
+BIN="$HOME/.local/bin/raven"
+[ -f "$BIN" ] && grep -q '^# linux-scripts raven launcher$' "$BIN" && rm -- "$BIN"
+echo "Raven was removed (your Windows prefixes were kept)."
+exit 0
+"""
+    return [{"root": False, "sh": sh}]
+
+
+def raven_installed(data_home=None):
+    return os.path.isfile(os.path.join(raven_dir(data_home), RAVEN_MARKER))
+
+
+def raven_version(data_home=None):
+    """The revision this installer put in place (7 characters), or None."""
+    if not raven_installed(data_home):
+        return None
+    try:
+        with open(os.path.join(raven_dir(data_home), RAVEN_MARKER), encoding="utf-8") as f:
+            lines = f.read().splitlines()
+    except OSError:
+        return None
+    return (lines[2][:7] if len(lines) > 2 and lines[2] else None) or "installed"
+
+
+def raven_missing_libs(run=subprocess.run, which=shutil.which, libs=RAVEN_LIBS):
+    """The shared libraries Raven needs that this system's loader cache does not list ([] when it cannot tell)."""
+    ldconfig = which("ldconfig") or next((p for p in ("/sbin/ldconfig", "/usr/sbin/ldconfig") if os.access(p, os.X_OK)), None)
+    if not ldconfig:
+        return []
+    try:
+        out = run([ldconfig, "-p"], capture_output=True, text=True, timeout=20).stdout or ""
+    except (OSError, subprocess.SubprocessError):
+        return []
+    have = {ln.split()[0] for ln in out.splitlines() if ln.strip() and "=>" in ln}
+    return [lib for lib in libs if lib not in have] if have else []
 
 
 # ---- Codex CLI (https://github.com/openai/codex, Apache-2.0): OpenAI's coding agent for the terminal ----
@@ -1406,7 +1568,7 @@ ARM = ("arm64", "aarch64")
 NATIVE = {
     "claude": ({"apt-get"}, (*X86, *ARM)), "vscode": ({"apt-get"}, (*X86, *ARM)), "virtualbox": ({"apt-get"}, X86),
     "dart": ({"apt-get"}, (*X86, *ARM)), "discord": ({"apt-get"}, X86), "etcher": ({"apt-get", "dnf", "zypper"}, X86),
-    "brave": ({"apt-get", "dnf", "yum", "zypper", "pacman"}, None), "filee": (None, (*X86, *ARM)), "ventoy": (None, (*X86, *ARM)),
+    "brave": ({"apt-get", "dnf", "yum", "zypper", "pacman"}, None), "filee": (None, (*X86, *ARM)), "ventoy": (None, (*X86, *ARM)), "raven": (None, X86),
     "codex": (None, (*X86, *ARM)), "flutter": (None, X86), "flutterlinux": ({"apt-get", "dnf", "pacman", "zypper"}, None), "github": ({"apt-get", "dnf", "zypper"}, None), "package": (None, None)}
 
 
