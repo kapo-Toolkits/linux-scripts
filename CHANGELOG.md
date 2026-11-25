@@ -4,6 +4,7 @@ What changed in this toolkit, newest first. The project has no version numbers: 
 request (`#n`) that passed CI. Dates are merge dates. · ცვლილებების ისტორია, ახალი ზემოდან.
 
 ## Unreleased
+- **Added** Android Studio in the installer (*Development*): Google's Linux tarball, the SHA-256 printed on developer.android.com checked before unpacking, installed for the user in `~/.local/share/android-studio` with a command and a menu launcher, no administrator password; update check, marker-guarded removal, SDK/emulator data offered separately. Tested with the real 1.6 GB download in a container.
 - **Added** DevOps Toolbox can run its operations on **another computer over SSH**: a *Run on* bar (host or IP, port, user, key), keys only, host-key fingerprint shown and confirmed before it is trusted, `sudo -n` for administrator operations, previews bound to the computer, and the plan made against the remote system. Tested against a real sshd in a container.
 - **Added** DevOps Toolbox now covers the whole MyDevOps command set: 146 operations in 14 themes (network, firewall, SSH, services, nginx and certificates, Docker and Compose, Git, users, updates, disk and logs, monitoring, security audit, PostgreSQL, backups and cron), a generic operation panel in the window and the web page, your own repositories and Compose projects from a configuration file, and a coverage map that says where every documented command went (or why it stays in the terminal).
 

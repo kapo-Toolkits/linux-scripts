@@ -29,6 +29,11 @@ echo "=================== Codex on ubuntu:24.04"
 echo "=================== Flutter prerequisites + Dart on ubuntu:24.04"
 "$root/tests/retry-on-network.sh" docker run --rm ${FLUTTER_FULL:+-e FLUTTER_FULL=1} -v "$root":/repo:ro ubuntu:24.04 sh -c \
   "apt-get update -qq >/dev/null && apt-get install -y -qq python3 >/dev/null && python3 /repo/tests/real_flutter_container_test.py" || rc=1
+# Android Studio: Google's real download page (one Linux tarball, its SHA-256) and the download URL. The 1.6 GB install itself is
+# run locally with ASTUDIO_FULL=1 (SHA-256 gate incl. a wrong checksum, unpack, launcher, menu entry, version, removal).
+echo "=================== Android Studio on ubuntu:24.04"
+"$root/tests/retry-on-network.sh" docker run --rm ${ASTUDIO_FULL:+-e ASTUDIO_FULL=1} -v "$root":/repo:ro ubuntu:24.04 sh -c \
+  "apt-get update -qq >/dev/null && apt-get install -y -qq python3 curl ca-certificates >/dev/null && python3 /repo/tests/real_android_studio_container_test.py" || rc=1
 # AUR (Arch, Manjaro ...): the real AUR - our package names exist, and a package is fetched, built by makepkg as a normal user
 # (dependencies through PACMAN_AUTH), installed with pacman -U and removed again
 echo "=================== AUR on archlinux:latest"
