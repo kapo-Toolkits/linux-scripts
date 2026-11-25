@@ -106,6 +106,13 @@ jobs:
           ./install.sh --prefix "$P" --uninstall printhub
           test ! -e "$P/lib/printhub" && test ! -e "$P/bin/printhub"
 
+  printer-share:
+    # printer-setup "Phones" tab against a real cupsd (throw-away Ubuntu container): sharing on/off, IPP requests from outside like a phone
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 tests/real_printer_share_test.py
+
   real-ssh:
     # DevOps Toolbox against a real sshd (throw-away Ubuntu container): host-key trust, key login, sudo -n operations, files read over SSH
     runs-on: ubuntu-latest

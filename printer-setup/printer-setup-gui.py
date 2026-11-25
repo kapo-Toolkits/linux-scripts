@@ -2,6 +2,8 @@
 """Printer Setup — find, check, install a driver and add a printer (CUPS). English / ქართული.
 
 Flow:  1 Detect  ->  2 Find driver  ->  3 (if missing) get & check a driver .deb  ->  4 Add printer  ->  5 Test page
+Phones tab: share a queue on the local network so Android (Default Print Service / Mopria) and iPhone (AirPrint)
+print to it — CUPS sharing + avahi (mDNS), no paid app needed.
 It does NOT bundle vendor drivers (licences differ); it finds them, shows what a .deb will do
 before installing it, and installs only after you confirm.
 Requires: python3-tk, CUPS (lpinfo/lpadmin/lp). apt/dpkg for installing .deb files.
@@ -10,6 +12,7 @@ import hashlib
 import os
 import re
 import shutil
+import socket
 import subprocess
 import sys
 import tempfile
@@ -65,6 +68,35 @@ STR = {
  "install": "Install", "cancel": "Cancel", "deb_installed": "Driver installed. Run Find driver again.",
  "no_queue": "No printer queues yet.", "sent": "Test page sent to “{q}”.", "test_fail": "Could not print:\n{e}",
  "need_model": "Select a detected printer first.",
+ "tab_phone": "Phones", "ph_s1": "Share a printer with phones (Android / iPhone)",
+ "ph_check": "Check", "ph_on": "Share with phones", "ph_off": "Stop sharing",
+ "ph_q_shared": "Printer shared: {v}", "ph_srv_shared": "Sharing on this computer (CUPS): {v}",
+ "ph_avahi": "Network discovery (avahi-daemon): {v}", "yes": "yes", "no": "no",
+ "ph_addr": "Addresses (if the phone does not find it by itself)",
+ "ph_bad_q": "This queue name cannot be used: “{q}”.",
+ "ph_confirm": ("Share “{q}” with phones and other computers on your local network?\n\n"
+               "This will (administrator password needed):\n"
+               "• turn on printer sharing in CUPS (only the local network may connect)\n"
+               "• mark “{q}” as shared\n"
+               "• start avahi-daemon, so phones find the printer by themselves\n"
+               "• if a firewall (ufw / firewalld) is on: open 631/tcp (printing) and 5353/udp (discovery)"),
+ "ph_done_on": "“{q}” is shared. Print from the phone now (see the steps below).",
+ "ph_done_off": "“{q}” is no longer shared.", "ph_fail": "Could not change sharing:\n{e}",
+ "ph_how": (
+  "PRINTING FROM A PHONE (free, no extra app on the computer)\n\n"
+  "Both devices must be on the same Wi-Fi / network, and this computer must be on with the printer connected.\n\n"
+  "ANDROID\n"
+  "1. Open the photo / PDF / page → Share or ⋮ menu → Print.\n"
+  "2. At the top choose Select printer → All printers → pick this printer.\n"
+  "3. Not listed? Settings → Connected devices → Connection preferences → Printing →\n"
+  "   turn on “Default Print Service”. On older phones install the free “Mopria Print Service” from Google Play.\n"
+  "4. Still not found? In the print service menu choose Add printer → by IP address and type the IP shown above.\n\n"
+  "IPHONE / IPAD\n"
+  "Share → Print → Select Printer — shared printers appear by themselves (AirPrint).\n\n"
+  "NOT WORKING?\n"
+  "• Press Check: all three lines should say “yes”.\n"
+  "• Guest / “isolated” Wi-Fi networks block devices from seeing each other — use your home network.\n"
+  "• A test page from the Setup tab must print first; the phone uses the same queue."),
  "guide": (
   "HOW TO SET UP A PRINTER ON LINUX\n\n"
   "1. Connect the printer (USB, or the same Wi-Fi/LAN), power it on, press Detect printers.\n"
@@ -107,6 +139,35 @@ STR = {
  "install": "დაყენება", "cancel": "გაუქმება", "deb_installed": "დრაივერი დაყენდა. დრაივერის პოვნა თავიდან გაუშვით.",
  "no_queue": "პრინტერის რიგები ჯერ არ არის.", "sent": "სატესტო გვერდი გაიგზავნა „{q}“-ზე.", "test_fail": "ბეჭდვა ვერ მოხერხდა:\n{e}",
  "need_model": "ჯერ აირჩიეთ აღმოჩენილი პრინტერი.",
+ "tab_phone": "ტელეფონები", "ph_s1": "პრინტერის გაზიარება ტელეფონებისთვის (Android / iPhone)",
+ "ph_check": "შემოწმება", "ph_on": "ტელეფონებისთვის გაზიარება", "ph_off": "გაზიარების გამორთვა",
+ "ph_q_shared": "პრინტერი გაზიარებულია: {v}", "ph_srv_shared": "გაზიარება ამ კომპიუტერზე (CUPS): {v}",
+ "ph_avahi": "ქსელში აღმოჩენა (avahi-daemon): {v}", "yes": "კი", "no": "არა",
+ "ph_addr": "მისამართები (თუ ტელეფონმა თავად ვერ იპოვა)",
+ "ph_bad_q": "ამ რიგის სახელს ვერ გამოვიყენებ: „{q}“.",
+ "ph_confirm": ("გავუზიარო „{q}“ ტელეფონებს და სხვა კომპიუტერებს თქვენს ლოკალურ ქსელში?\n\n"
+               "გაკეთდება (საჭიროა ადმინისტრატორის პაროლი):\n"
+               "• CUPS-ში ჩაირთვება პრინტერების გაზიარება (დაკავშირება მხოლოდ ლოკალური ქსელიდან შეიძლება)\n"
+               "• „{q}“ მოინიშნება გაზიარებულად\n"
+               "• ჩაირთვება avahi-daemon, რომ ტელეფონებმა პრინტერი თავად იპოვონ\n"
+               "• თუ ფაიერვოლი (ufw / firewalld) ჩართულია: გაიხსნება 631/tcp (ბეჭდვა) და 5353/udp (აღმოჩენა)"),
+ "ph_done_on": "„{q}“ გაზიარებულია. ახლა დაბეჭდეთ ტელეფონიდან (ნაბიჯები ქვემოთაა).",
+ "ph_done_off": "„{q}“ აღარ არის გაზიარებული.", "ph_fail": "გაზიარება ვერ შეიცვალა:\n{e}",
+ "ph_how": (
+  "ტელეფონიდან ბეჭდვა (უფასოდ, კომპიუტერზე დამატებითი პროგრამის გარეშე)\n\n"
+  "ორივე მოწყობილობა ერთ Wi-Fi-ზე / ქსელში უნდა იყოს, კომპიუტერი ჩართული და პრინტერი მიერთებული.\n\n"
+  "ANDROID\n"
+  "1. გახსენით ფოტო / PDF / გვერდი → გაზიარება ან ⋮ მენიუ → ბეჭდვა (Print).\n"
+  "2. ზემოთ აირჩიეთ „პრინტერის არჩევა“ → „ყველა პრინტერი“ → აირჩიეთ ეს პრინტერი.\n"
+  "3. არ ჩანს? პარამეტრები → დაკავშირებული მოწყობილობები → კავშირის პარამეტრები → ბეჭდვა →\n"
+  "   ჩართეთ „Default Print Service“. ძველ ტელეფონებზე დააყენეთ უფასო „Mopria Print Service“ Google Play-დან.\n"
+  "4. მაინც ვერ პოულობს? ბეჭდვის სერვისის მენიუში: „პრინტერის დამატება“ → IP მისამართით და ჩაწერეთ ზემოთ ნაჩვენები IP.\n\n"
+  "IPHONE / IPAD\n"
+  "გაზიარება → ბეჭდვა → პრინტერის არჩევა — გაზიარებული პრინტერები თავად ჩნდება (AirPrint).\n\n"
+  "არ მუშაობს?\n"
+  "• დააჭირეთ „შემოწმებას“: სამივე ხაზზე უნდა ეწეროს „კი“.\n"
+  "• სტუმრის / „იზოლირებული“ Wi-Fi ქსელები მოწყობილობებს ერთმანეთის დანახვას უკრძალავს — გამოიყენეთ სახლის ქსელი.\n"
+  "• ჯერ „დაყენების“ ჩანართიდან სატესტო გვერდი უნდა დაიბეჭდოს; ტელეფონი იმავე რიგს იყენებს."),
  "guide": (
   "როგორ დავაყენოთ პრინტერი Linux-ზე\n\n"
   "1. შეაერთეთ პრინტერი (USB ან იმავე Wi-Fi/LAN), ჩართეთ და დააჭირეთ „პრინტერების ძებნა“.\n"
@@ -198,6 +259,87 @@ def queue_name(model):
     return re.sub(r"[^A-Za-z0-9_-]+", "_", model.strip()).strip("_") or "Printer"
 
 
+# ---- sharing a queue with phones (Android Default Print Service / Mopria, iPhone AirPrint) over IPP + mDNS
+QUEUE_RE = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_.-]{0,126}")
+
+# One fixed script run through pkexec; the queue name and on/off arrive as positional arguments ("$1", "$2"),
+# never pasted into the script text.
+SHARE_SH = r"""set -eu
+Q="$1"; MODE="$2"
+# lpadmin -p would CREATE a missing queue: only touch one that exists
+lpstat -p "$Q" >/dev/null 2>&1 || { echo "no such printer queue: $Q" >&2; exit 1; }
+if [ "$MODE" = off ]; then
+  lpadmin -p "$Q" -o printer-is-shared=false
+  echo "queue $Q: not shared"
+  exit 0
+fi
+lpadmin -p "$Q" -o printer-is-shared=true
+echo "queue $Q: shared"
+cupsctl --share-printers          # restarts cupsd: wait until it answers again
+n=0
+until lpstat -r >/dev/null 2>&1 || [ "$n" -ge 50 ]; do n=$((n + 1)); sleep 0.2; done
+echo "CUPS: printer sharing on (local network only)"
+if command -v systemctl >/dev/null 2>&1; then
+  if systemctl enable --now avahi-daemon >/dev/null 2>&1; then echo "avahi-daemon: running"
+  else echo "avahi-daemon: could not be started (install the avahi-daemon package)"; fi
+fi
+if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q '^Status: active'; then
+  ufw allow 631/tcp >/dev/null && ufw allow 5353/udp >/dev/null && echo "ufw: 631/tcp and 5353/udp allowed"
+fi
+if command -v firewall-cmd >/dev/null 2>&1 && firewall-cmd --state >/dev/null 2>&1; then
+  firewall-cmd --permanent --add-service=ipp --add-service=mdns >/dev/null && firewall-cmd --reload >/dev/null \
+    && echo "firewalld: ipp and mdns allowed"
+fi
+"""
+
+
+def valid_queue(q):
+    return bool(q) and QUEUE_RE.fullmatch(q) is not None
+
+
+def share_command(q, on):
+    """argv for pkexec; raises ValueError for a queue name CUPS would not accept (or that looks like an option)."""
+    if not valid_queue(q):
+        raise ValueError(q)
+    return ["pkexec", "sh", "-c", SHARE_SH, "sh", q, "on" if on else "off"]
+
+
+def parse_queue_shared(lpoptions_out):
+    return re.search(r"(?:^|\s)printer-is-shared=(?:true|1)(?:\s|$)", lpoptions_out) is not None
+
+
+def parse_server_shared(cupsctl_out):
+    return re.search(r"^_share_printers=1\s*$", cupsctl_out, re.M) is not None
+
+
+def lan_ipv4(hostname_i_out):
+    """IPv4 addresses from `hostname -I` a phone on the same network could reach (no loopback/docker/link-local)."""
+    ips = []
+    for a in hostname_i_out.split():
+        m = re.fullmatch(r"(\d{1,3})\.(\d{1,3})\.\d{1,3}\.\d{1,3}", a)
+        if not m:
+            continue
+        o1, o2 = int(m.group(1)), int(m.group(2))
+        if o1 == 127 or (o1 == 169 and o2 == 254) or (o1 == 172 and o2 == 17):   # 172.17.x = docker0
+            continue
+        ips.append(a)
+    return ips
+
+
+def phone_urls(q, hostname, ips):
+    quoted = urllib.parse.quote(q)
+    hosts = ([f"{hostname}.local"] if hostname and re.fullmatch(r"[A-Za-z0-9-]{1,63}", hostname) else []) + list(ips)
+    return [f"ipp://{h}:631/printers/{quoted}" for h in hosts]
+
+
+def share_status(q, run=run):
+    """Read-only, no password: is the queue shared, is CUPS sharing on, is avahi (mDNS discovery) running."""
+    _, opts = run(["lpoptions", "-p", q])
+    _, srv = run(["cupsctl"])
+    rc, _ = run(["systemctl", "is-active", "--quiet", "avahi-daemon"])
+    return {"queue": parse_queue_shared(opts), "server": parse_server_shared(srv), "avahi": rc == 0}
+
+
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
@@ -212,8 +354,9 @@ class App(tk.Tk):
 
         self.nb = ttk.Notebook(self)
         self.nb.pack(fill="both", expand=True, padx=12, pady=8)
-        self.tab_setup, self.tab_guide = ttk.Frame(self.nb), ttk.Frame(self.nb)
+        self.tab_setup, self.tab_phone, self.tab_guide = ttk.Frame(self.nb), ttk.Frame(self.nb), ttk.Frame(self.nb)
         self.nb.add(self.tab_setup, text="")
+        self.nb.add(self.tab_phone, text="")
         self.nb.add(self.tab_guide, text="")
 
         s = self.tab_setup
@@ -281,8 +424,40 @@ class App(tk.Tk):
         self.txt_guide = scrolledtext.ScrolledText(self.tab_guide, wrap="word")
         self.txt_guide.pack(fill="both", expand=True, padx=8, pady=8)
 
+        ph = self.tab_phone
+        self.fp = ttk.LabelFrame(ph)
+        self.fp.pack(fill="x", padx=8, pady=6)
+        row = ttk.Frame(self.fp)
+        row.pack(fill="x", padx=8, pady=6)
+        self.lbl_pq = ttk.Label(row)
+        self.lbl_pq.pack(side="left")
+        self.pq_var = tk.StringVar()
+        self.cmb_pq = ttk.Combobox(row, textvariable=self.pq_var, state="readonly", width=28,
+                                   postcommand=self.load_queues)
+        self.cmb_pq.pack(side="left", padx=6)
+        self.cmb_pq.bind("<<ComboboxSelected>>", lambda e: self.on_phone_check())
+        row = ttk.Frame(self.fp)
+        row.pack(fill="x", padx=8, pady=(0, 6))
+        self.btn_pcheck = ttk.Button(row, command=self.on_phone_check)
+        self.btn_pcheck.pack(side="left")
+        self.btn_pon = ttk.Button(row, command=lambda: self.on_phone_share(True))
+        self.btn_pon.pack(side="left", padx=8)
+        self.btn_poff = ttk.Button(row, command=lambda: self.on_phone_share(False))
+        self.btn_poff.pack(side="left")
+        self.lbl_pstatus = ttk.Label(self.fp, justify="left")
+        self.lbl_pstatus.pack(anchor="w", padx=10, pady=(0, 4))
+        self.lbl_paddr = ttk.Label(self.fp)
+        self.lbl_paddr.pack(anchor="w", padx=10)
+        self.txt_paddr = tk.Text(self.fp, height=3, wrap="none")
+        self.txt_paddr.pack(fill="x", padx=8, pady=(0, 8))
+        self.txt_paddr.config(state="disabled")
+        self.txt_phow = scrolledtext.ScrolledText(ph, wrap="word")
+        self.txt_phow.pack(fill="both", expand=True, padx=8, pady=(0, 8))
+        self.pstate = None
+
         self.buttons = [self.btn_detect, self.btn_find, self.btn_apt, self.btn_web, self.btn_deb,
-                        self.btn_add, self.btn_dl, self.btn_test, self.btn_hub]
+                        self.btn_add, self.btn_dl, self.btn_test, self.btn_hub,
+                        self.btn_pcheck, self.btn_pon, self.btn_poff]
         self.apply_lang()
         self.on_detect()
 
@@ -291,7 +466,8 @@ class App(tk.Tk):
         self.title(t("title"))
         self.btn_lang.config(text=t("lang_btn"))
         self.nb.tab(0, text=t("tab_setup"))
-        self.nb.tab(1, text=t("tab_guide"))
+        self.nb.tab(1, text=t("tab_phone"))
+        self.nb.tab(2, text=t("tab_guide"))
         for f, k in ((self.f1, "s1"), (self.f2, "s2"), (self.f3, "s3"), (self.f4, "s4"), (self.f5, "s5")):
             f.config(text=t(k))
         self.btn_detect.config(text=t("detect")); self.btn_find.config(text=t("find"))
@@ -304,6 +480,15 @@ class App(tk.Tk):
         self.txt_guide.delete("1.0", "end")
         self.txt_guide.insert("end", t("guide"))
         self.txt_guide.config(state="disabled")
+        self.fp.config(text=t("ph_s1"))
+        self.lbl_pq.config(text=t("queue")); self.btn_pcheck.config(text=t("ph_check"))
+        self.btn_pon.config(text=t("ph_on")); self.btn_poff.config(text=t("ph_off"))
+        self.lbl_paddr.config(text=t("ph_addr"))
+        self.show_phone_state()
+        self.txt_phow.config(state="normal")
+        self.txt_phow.delete("1.0", "end")
+        self.txt_phow.insert("end", t("ph_how"))
+        self.txt_phow.config(state="disabled")
         self.fill_list()
 
     def toggle_lang(self):
@@ -501,8 +686,10 @@ class App(tk.Tk):
         rc, out = run(["lpstat", "-e"])
         qs = [x for x in out.splitlines() if x.strip()] if rc == 0 else []
         self.cmb_q["values"] = qs
-        if qs and not self.q_var.get():
-            self.q_var.set(qs[0])
+        self.cmb_pq["values"] = qs
+        for var in (self.q_var, self.pq_var):
+            if qs and not var.get():
+                var.set(qs[0])
 
     def installer_script(self):
         """The toolkit installer window (installer/installer-gui.py) of this checkout, found next to this program or
@@ -551,6 +738,71 @@ class App(tk.Tk):
                 messagebox.showerror(t("err"), t("test_fail", e=out))
         self.bg(work, done)
 
+
+    # ---- phones tab
+    def phone_queue(self):
+        self.load_queues()
+        q = self.pq_var.get()
+        if not q:
+            messagebox.showinfo(t("info"), t("no_queue"))
+            return None
+        if not valid_queue(q):
+            messagebox.showerror(t("err"), t("ph_bad_q", q=q))
+            return None
+        return q
+
+    def show_phone_state(self):
+        st = self.pstate
+        if not st:
+            self.lbl_pstatus.config(text="")
+            urls = []
+        else:
+            yn = lambda b: ("✔ " + t("yes")) if b else ("✘ " + t("no"))   # noqa: E731
+            self.lbl_pstatus.config(text="\n".join((t("ph_q_shared", v=yn(st["queue"])),
+                                                    t("ph_srv_shared", v=yn(st["server"])),
+                                                    t("ph_avahi", v=yn(st["avahi"])))))
+            urls = st["urls"]
+        self.txt_paddr.config(state="normal")
+        self.txt_paddr.delete("1.0", "end")
+        self.txt_paddr.insert("end", "\n".join(urls))
+        self.txt_paddr.config(state="disabled")
+
+    def phone_state(self, q):
+        st = share_status(q)
+        _, ips = run(["hostname", "-I"])
+        st["urls"] = phone_urls(q, socket.gethostname(), lan_ipv4(ips))
+        return st
+
+    def on_phone_check(self):
+        q = self.phone_queue()
+        if q:
+            self.bg(lambda: self.phone_state(q), self.after_phone_state)
+
+    def after_phone_state(self, st):
+        self.pstate = st
+        self.show_phone_state()
+
+    def on_phone_share(self, on):
+        q = self.phone_queue()
+        if not q:
+            return
+        if on and not messagebox.askyesno(t("info"), t("ph_confirm", q=q)):
+            return
+
+        def work():
+            res = run(share_command(q, on), timeout=180)
+            return res, self.phone_state(q)
+
+        def done(r):
+            (rc, out), st = r
+            if out:
+                self.say(out)
+            if rc == 0:
+                self.say(t("ph_done_on" if on else "ph_done_off", q=q))
+            else:
+                messagebox.showerror(t("err"), t("ph_fail", e=out[-400:]))
+            self.after_phone_state(st)
+        self.bg(work, done)
 
 
 def main():

@@ -124,6 +124,60 @@ class Printer(unittest.TestCase):
         self.assertEqual(self.m.queue_name("L1250 Series"), "L1250_Series")
         self.assertEqual(self.m.queue_name("///"), "Printer")
 
+    def test_phone_share_command_keeps_queue_out_of_the_script(self):
+        cmd = self.m.share_command("L1250_Series", True)
+        self.assertEqual(cmd[:3], ["pkexec", "sh", "-c"])
+        self.assertEqual(cmd[3], self.m.SHARE_SH)
+        self.assertEqual(cmd[4:], ["sh", "L1250_Series", "on"])
+        self.assertEqual(self.m.share_command("Q", False)[-1], "off")
+        self.assertNotIn("L1250", self.m.SHARE_SH)
+        for bad in ("", "-o", "--help", "a b", "a;rm", "a/b", "a#b", "$(id)", "ა", "x" * 128):
+            self.assertFalse(self.m.valid_queue(bad), bad)
+            with self.assertRaises(ValueError):
+                self.m.share_command(bad, True)
+        for good in ("Printer", "EPSON_L1250", "hp-laser.2", "_x"):
+            self.assertTrue(self.m.valid_queue(good), good)
+
+    def test_phone_share_script_is_valid_sh_and_only_opens_print_ports(self):
+        r = subprocess.run(["sh", "-n", "-c", self.m.SHARE_SH], capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn('lpadmin -p "$Q" -o printer-is-shared=true', self.m.SHARE_SH)
+        self.assertIn('lpadmin -p "$Q" -o printer-is-shared=false', self.m.SHARE_SH)
+        self.assertIn("cupsctl --share-printers", self.m.SHARE_SH)
+        self.assertNotIn("--remote-any", self.m.SHARE_SH)        # LAN only: CUPS' own @LOCAL rule stays
+        self.assertNotIn("--remote-admin", self.m.SHARE_SH)
+        import re
+        self.assertEqual(sorted(set(re.findall(r"ufw allow (\S+)", self.m.SHARE_SH))), ["5353/udp", "631/tcp"])
+
+    def test_phone_status_parsing(self):
+        m = self.m
+        self.assertTrue(m.parse_queue_shared("copies=1 device-uri=usb://EPSON/L1250 printer-is-shared=true printer-make-and-model='x'"))
+        self.assertFalse(m.parse_queue_shared("copies=1 printer-is-shared=false"))
+        self.assertFalse(m.parse_queue_shared("my-printer-is-shared=true"))
+        self.assertTrue(m.parse_server_shared("_debug_logging=0\n_remote_admin=0\n_share_printers=1\n_user_cancel_any=0"))
+        self.assertFalse(m.parse_server_shared("_share_printers=0\n"))
+        self.assertFalse(m.parse_server_shared(""))
+        calls = []
+
+        def fake(cmd, timeout=None):
+            calls.append(cmd)
+            return {"lpoptions": (0, "printer-is-shared=true"), "cupsctl": (0, "_share_printers=1"),
+                    "systemctl": (3, "")}[cmd[0]]
+        self.assertEqual(m.share_status("Q", run=fake), {"queue": True, "server": True, "avahi": False})
+        self.assertFalse(any(c[0] in ("pkexec", "sudo") for c in calls))   # checking needs no password
+
+    def test_phone_urls(self):
+        m = self.m
+        self.assertEqual(m.lan_ipv4("192.168.0.2 172.17.0.1 10.0.0.5 127.0.0.1 169.254.3.4 fe80::1 2a00::5"),
+                         ["192.168.0.2", "10.0.0.5"])
+        self.assertEqual(m.phone_urls("L1250_Series", "mint", ["192.168.0.2"]),
+                         ["ipp://mint.local:631/printers/L1250_Series", "ipp://192.168.0.2:631/printers/L1250_Series"])
+        self.assertEqual(m.phone_urls("Q", "bad host!", []), [])
+
+    def test_phone_strings_in_both_languages(self):
+        self.assertEqual({k for k in self.m.STR["en"] if k.startswith("ph_")},
+                         {k for k in self.m.STR["ka"] if k.startswith("ph_")})
+
 
 class Hotspot(unittest.TestCase):
     m = load("wifi-hotspot/hotspot-gui.py")
