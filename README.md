@@ -13,6 +13,7 @@ Most have a small window (English / ქართული) **and** a command lin
 | [usb-eject](usb-eject/) | Safely unmount and power off USB drives | USB დისკის უსაფრთხო გამორთვა | `usb-eject`, `usb-eject-gui` | `udisks2`, `lsblk` |
 | [wifi-hotspot](wifi-hotspot/) | WPA2 Wi-Fi hotspot step by step, QR code, connected devices, choose which network to share | WPA2 Wi-Fi hotspot ნაბიჯ-ნაბიჯ, QR კოდი, მოწყობილობების სია | `hotspot`, `hotspot-gui` | NetworkManager (`nmcli`), `iw` |
 | [printer-setup](printer-setup/) | From "plugged in a printer" to "test page printed": find and install the driver, add the printer | პრინტერის შეერთებიდან სატესტო გვერდამდე: დრაივერის პოვნა და დაყენება | `printer-setup` | CUPS |
+| [autostart](autostart/) | Programs that start when you log in: turn on / off, add, remove, start or stop now | პროგრამების ავტოგაშვება: ჩართვა / გამორთვა, დამატება, წაშლა, ახლავე გაშვება ან გათიშვა | `autostart-manager` | — |
 | [printhub](printhub/) | Print front-end (Qt): PDF, images, Office files; preview, full print settings, photo mode. *Not in `all`* (Qt download) | ბეჭდვის ფანჯარა: PDF, სურათები, Office; წინასწარი ნახვა, ფოტო-რეჟიმი | `printhub` | PySide6 (system or private venv ~200 MB), CUPS |
 | [qgis-installer](qgis-installer/) | Install QGIS the way you choose (official repo latest/LTR/nightly, Flatpak, distro package, AUR…), plus doctor, plugin dependencies, offline copy, full removal | QGIS-ის დაყენება თქვენი არჩევანით, დიაგნოსტიკა, პლაგინების დამოკიდებულებები, სრული წაშლა | `qgis-installer`, `qgis-installer-cli` | python3 |
 | [installer](installer/) | One window to install many programs and update the toolkit itself (picks the right way for your distribution and says why a program is not offered) | ერთი ფანჯარა მრავალი პროგრამის დასაყენებლად და ხელსაწყოების განახლებისთვის | `sh installer/start.sh` | `sh`; Python is offered if missing |
@@ -50,7 +51,7 @@ written through). It never uses root and opens the installer window.
 ```bash
 git clone https://github.com/kapo-Toolkits/linux-scripts.git && cd linux-scripts
 sh installer/start.sh                    # the installer window: tick programs, click Install
-./install.sh all                         # or pick: usb-eject wifi-hotspot printer-setup qgis-installer shortcuts devops-toolbox printhub
+./install.sh all                         # or pick: usb-eject wifi-hotspot printer-setup qgis-installer shortcuts devops-toolbox autostart printhub
 ./install.sh --prefix ~/.local all       # no sudo; menu entries land in ~/.local/share/applications
 ./install.sh --dry-run all               # only print what would be done
 ```

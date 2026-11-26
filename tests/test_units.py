@@ -125,6 +125,149 @@ class Printer(unittest.TestCase):
         self.assertEqual(self.m.queue_name("///"), "Printer")
 
 
+class Autostart(unittest.TestCase):
+    """autostart-manager: XDG autostart entries turned on/off for the user only; system files are never written."""
+    m = load("autostart/autostart-gui.py")
+
+    def setUp(self):
+        self.d = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.d)
+        self.sysdir = os.path.join(self.d, "etc", "xdg", "autostart")
+        os.makedirs(self.sysdir)
+        self.env = {"HOME": os.path.join(self.d, "home"), "XDG_CONFIG_DIRS": os.path.join(self.d, "etc", "xdg"),
+                    "XDG_CURRENT_DESKTOP": "X-Cinnamon", "PATH": "/usr/bin:/bin"}
+        self.user = os.path.join(self.d, "home", ".config", "autostart")
+        self.sysfile("nm-applet.desktop", "Name=Network\nName[ka]=ქსელი\nExec=nm-applet\n")
+        self.sysfile("polkit-agent.desktop", "Name=PolicyKit Agent\nExec=/usr/lib/polkit-gnome-authentication-agent-1\n")
+        self.sysfile("kde-only.desktop", "Name=KDE thing\nExec=kthing\nOnlyShowIn=KDE;\n")
+        self.sysfile("off-by-default.desktop", "Name=Quiet\nExec=quiet\nX-GNOME-Autostart-enabled=false\n")
+        self.sysfile("gone.desktop", "Name=Gone\nExec=gone\nTryExec=/no/such/program\n")
+
+    def sysfile(self, name, body):
+        path = os.path.join(self.sysdir, name)
+        with open(path, "w") as f:
+            f.write("# vendor comment\n[Desktop Entry]\nType=Application\n" + body + "\n[Desktop Action Extra]\nName=Extra\nExec=x\n")
+        return path
+
+    def scan(self, lang="en"):
+        return {e["id"]: e for e in self.m.scan(self.env, which=lambda c: c in ("nm-applet",), lang=lang)}
+
+    def sys_snapshot(self):
+        return {n: open(os.path.join(self.sysdir, n)).read() for n in os.listdir(self.sysdir)}
+
+    def test_states_and_desktop_rules(self):
+        e = self.scan()
+        self.assertTrue(e["nm-applet.desktop"]["enabled"])
+        self.assertEqual(e["nm-applet.desktop"]["scope"], "system")
+        self.assertEqual(self.scan("ka")["nm-applet.desktop"]["name"], "ქსელი")
+        self.assertEqual(e["kde-only.desktop"]["why"], "desktop")
+        self.assertEqual(e["off-by-default.desktop"]["why"], "off")
+        self.assertEqual(e["gone.desktop"]["why"], "missing")
+        self.assertTrue(e["polkit-agent.desktop"]["critical"])
+        self.assertFalse(e["nm-applet.desktop"]["critical"])
+
+    def test_turning_a_system_entry_off_and_on_never_writes_the_system_file(self):
+        before = self.sys_snapshot()
+        self.m.set_enabled(self.scan()["nm-applet.desktop"], False, self.env)
+        e = self.scan()["nm-applet.desktop"]
+        self.assertEqual((e["enabled"], e["scope"]), (False, "changed"))
+        mine = open(os.path.join(self.user, "nm-applet.desktop")).read()
+        self.assertIn("Hidden=true", mine)
+        self.assertIn("X-GNOME-Autostart-enabled=false", mine)
+        self.assertIn("[Desktop Action Extra]", mine)                 # the rest of the file is kept
+        self.assertEqual(mine.count("Hidden="), 1)
+        self.m.set_enabled(e, True, self.env)
+        self.assertFalse(os.path.exists(os.path.join(self.user, "nm-applet.desktop")))   # our copy is gone again
+        self.assertTrue(self.scan()["nm-applet.desktop"]["enabled"])
+        # a system entry that is off by default: turning it on needs (and keeps) a copy
+        self.m.set_enabled(self.scan()["off-by-default.desktop"], True, self.env)
+        self.assertTrue(self.scan()["off-by-default.desktop"]["enabled"])
+        self.assertEqual(self.sys_snapshot(), before)
+
+    def test_a_bare_hidden_stub_from_another_tool_counts_as_off(self):
+        os.makedirs(self.user)
+        with open(os.path.join(self.user, "nm-applet.desktop"), "w") as f:
+            f.write("[Desktop Entry]\nHidden=true\n")
+        e = self.scan()["nm-applet.desktop"]
+        self.assertEqual((e["enabled"], e["scope"], e["exec"]), (False, "changed", "nm-applet"))
+        self.m.set_enabled(e, True, self.env)
+        self.assertTrue(self.scan()["nm-applet.desktop"]["enabled"])
+
+    def test_add_app_add_command_remove(self):
+        app = os.path.join(self.d, "apps", "editor.desktop")
+        os.makedirs(os.path.dirname(app))
+        with open(app, "w") as f:
+            f.write("[Desktop Entry]\nType=Application\nName=Editor\nExec=editor %F\nNoDisplay=true\n")
+        n = self.m.add_app(app, self.env)
+        e = self.scan()[n]
+        self.assertEqual((e["scope"], e["enabled"], e["ours"]), ("user", True, True))
+        self.assertNotIn("NoDisplay", open(os.path.join(self.user, n)).read())
+        self.assertNotEqual(self.m.add_app(app, self.env), n)           # a second copy gets its own name
+        c = self.m.add_command("My Sync!", "rclone mount remote: /mnt/x", self.env, delay=15)
+        self.assertEqual(c, "my-sync.desktop")
+        text = open(os.path.join(self.user, c)).read()
+        self.assertIn("Exec=rclone mount remote: /mnt/x", text)
+        self.assertIn("X-GNOME-Autostart-Delay=15", text)
+        for bad in (("", "x"), ("n", ""), ("n", "a\nExec=evil"), ("n\nExec=evil", "a"), ("n", "'unclosed")):
+            with self.assertRaises(ValueError):
+                self.m.add_command(*bad, env=self.env)
+        self.m.remove(self.scan()[c], self.env)
+        self.assertNotIn(c, self.scan())
+        with self.assertRaises(PermissionError):                        # the system's own entry cannot be removed
+            self.m.remove(self.scan()["nm-applet.desktop"], self.env)
+        self.m.set_enabled(self.scan()["nm-applet.desktop"], False, self.env)
+        self.m.remove(self.scan()["nm-applet.desktop"], self.env)        # "reset": back to the system setting
+        self.assertTrue(self.scan()["nm-applet.desktop"]["enabled"])
+
+    def test_program_names_never_target_an_interpreter_or_a_helper(self):
+        pn = self.m.program_names
+        self.assertEqual(pn("nm-applet --indicator"), ["nm-applet"])
+        self.assertEqual(pn("/usr/libexec/geoclue-2.0/demos/agent"), ["/usr/libexec/geoclue-2.0/demos/agent"])
+        self.assertEqual(pn("env GTK_THEME=x LANG=C foo %U"), ["foo"])
+        self.assertEqual(pn("python3 -u /opt/x/app.py --tray"), ["/opt/x/app.py"])
+        self.assertEqual(pn("sh -c 'IM_CONFIG_CHECK_ENV=1 im-launch true'"), ["im-launch"])
+        self.assertEqual(pn('sh -c "systemctl --user start x.service || exec x"'), [])
+        self.assertEqual(pn("bash"), [])
+        self.assertEqual(pn("flatpak run org.x.App"), [])
+        self.assertEqual(pn("'broken"), [])
+
+    def test_running_and_stop_only_touch_own_matching_processes(self):
+        proc = os.path.join(self.d, "proc")
+        for pid, argv in ((101, ["nm-applet", "--x"]), (102, ["/usr/bin/python3", "/opt/x/app.py"]), (103, ["/bin/sh", "-c", "y"]),
+                          (104, ["/other/agent"]), (105, ["/usr/libexec/geoclue-2.0/demos/agent"])):
+            os.makedirs(os.path.join(proc, str(pid)))
+            with open(os.path.join(proc, str(pid), "cmdline"), "wb") as f:
+                f.write(b"\0".join(a.encode() for a in argv) + b"\0")
+        rp = self.m.running_pids
+        self.assertEqual(rp(["nm-applet"], proc=proc), [101])
+        self.assertEqual(rp(["/opt/x/app.py"], proc=proc), [102])
+        self.assertEqual(rp(["/usr/libexec/geoclue-2.0/demos/agent"], proc=proc), [105])     # not the other "agent"
+        self.assertEqual(rp([], proc=proc), [])
+        self.assertEqual(rp(["nm-applet"], proc=proc, uid=os.getuid() + 1), [])               # someone else's: never
+        sent = []
+        self.assertEqual(self.m.stop([101, 999], kill=lambda p, s: sent.append((p, s)), proc=proc), 1)
+        self.assertEqual(sent, [(101, 15)])
+        self.assertEqual(self.m.stop([101], uid=os.getuid() + 1, kill=lambda p, s: sent.append(p), proc=proc), 0)
+
+    def test_start_runs_without_a_shell(self):
+        calls = []
+        self.m.start({"exec": "foo --a 'b c' %U"}, popen=lambda argv, **kw: calls.append((argv, kw)))
+        self.assertEqual(calls[0][0], ["foo", "--a", "b c"])
+        self.assertNotIn("shell", calls[0][1])
+
+    def test_installed_apps_skip_hidden_ones(self):
+        share = os.path.join(self.d, "share", "applications")
+        os.makedirs(share)
+        for n, body in (("a.desktop", "Name=Alpha\nExec=a"), ("b.desktop", "Name=Beta\nExec=b\nNoDisplay=true"), ("c.desktop", "Name=C\nType=Link")):
+            with open(os.path.join(share, n), "w") as f:
+                f.write("[Desktop Entry]\n" + body + "\n")
+        env = dict(self.env, XDG_DATA_DIRS=os.path.join(self.d, "share"))
+        self.assertEqual([x[0] for x in self.m.installed_apps(env) if x[1].startswith(self.d)], ["Alpha"])
+
+    def test_strings_in_both_languages(self):
+        self.assertEqual(set(self.m.STR["en"]), set(self.m.STR["ka"]))
+
+
 class Hotspot(unittest.TestCase):
     m = load("wifi-hotspot/hotspot-gui.py")
 
