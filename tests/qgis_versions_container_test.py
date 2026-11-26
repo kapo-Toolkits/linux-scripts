@@ -85,7 +85,14 @@ if pm == "apt-get":
 
     # Flatpak: the real QGIS build list and the mask, without installing the (large) app
     rc, out = sh("apt-get install -y -qq flatpak")
+    check("flatpak installed for the test", rc == 0, out.strip()[-300:])
+    if rc != 0:
+        # the apt lines (Err:/Failed to fetch ...) tell a mirror problem apart; tests/retry-on-network.sh retries on them
+        print("\n".join(x for x in out.splitlines() if x.startswith(("E:", "W:", "Err:"))))
+        print("RESULT: FAILED - flatpak could not be installed, the Flatpak part was not run")
+        sys.exit(1)
     rc, out = sh("flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo")
+    check("the flathub remote is added", rc == 0, out.strip()[-300:])
     fp = {"kind": "flatpak", "i": "user", "v": "?", "br": "stable", "root": False}
     av = versions.available(fp)
     check("Flatpak: the real build list of org.qgis.qgis//stable is read", len(av["versions"]) >= 2
