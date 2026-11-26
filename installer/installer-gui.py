@@ -130,6 +130,7 @@ STR = {
  "og_readme": "README ↗", "og_all": "All categories", "og_nodesc": "(no description)", "og_count": "{n} projects",
  "vbox_ask": "Install VirtualBox 7.2?\n\nAdds Oracle's apt repository for your release. The signing key is downloaded over HTTPS and its fingerprint must be\n{fpr}\notherwise nothing is installed. Then apt installs virtualbox-7.2 with dkms and the kernel headers (a few hundred MB), and you are added to the vboxusers group (administrator password).\n\n{notes}",
  "filee_ask": "Install Filee {version}?\n\nDownload: {file} ({mb} MB)\nFrom: {source}\nChecked with SHA-256 before anything runs:\n{sha}\n\nThen Filee's own install.sh runs as YOU (no administrator password): the app goes to ~/.local/share/filee, the filee command to ~/.local/bin, a launcher to your applications menu; on GNOME it also adds Filee's Shell extension.\n\n{notes}",
+ "astudio_ask": "Install {title}?\n\nDownload: {file} ({mb} MB)\nFrom: {source}\nChecked with the SHA-256 that Google prints on its download page, before anything is unpacked:\n{sha}\n\nInstalled for you only, no administrator password: the program goes to ~/.local/share/android-studio, the android-studio command to ~/.local/bin and a launcher to your applications menu. Disk space: about {free} GB must be free.\n\nAndroid Studio is Google's software: by choosing Yes you accept its terms and conditions ({terms}).\n\n{notes}",
  "ventoy_ask": "Install Ventoy {version}?\n\nDownload: {file} ({mb} MB)\nFrom: {source}\nChecked with SHA-256 before anything is unpacked:\n{sha}\n\nInstalled for you only, no administrator password: the program goes to ~/.local/share/ventoy, the ventoy command to ~/.local/bin and a launcher to your applications menu.\n\n{notes}",
  "codex_ask": "Install Codex CLI {version} (OpenAI)?\n\nDownload: {file} ({mb} MB; the program itself is about 3x larger)\nFrom: {source}\nChecked with SHA-256 before anything is unpacked:\n{sha}\n\nInstalled for you only, no administrator password, as:\n{target}\n\n{notes}",
  "flutter_ask": "Install the Flutter SDK {version} (with Dart {dart})?\n\nDownload: {file} ({gb} GB)\nFrom: {source} (Google's release manifest)\nChecked with SHA-256 before anything is unpacked:\n{sha}\n\nSDK folder (yours, no administrator rights): {sdk}\nThe commands flutter and dart are linked into ~/.local/bin; no shell file is edited.\nDisk space: about {free} GB must be free.\n\n{pre}\n\n{notes}",
@@ -223,6 +224,7 @@ STR = {
  "og_readme": "README ↗", "og_all": "ყველა კატეგორია", "og_nodesc": "(აღწერა არ არის)", "og_count": "{n} პროექტი",
  "vbox_ask": "დავაყენო VirtualBox 7.2?\n\nემატება Oracle-ის apt რეპოზიტორია თქვენი გამოშვებისთვის. ხელმოწერის გასაღები ჩამოიტვირთება HTTPS-ით და მისი თითის ანაბეჭდი უნდა იყოს\n{fpr}\nსაწინააღმდეგო შემთხვევაში არაფერი დაყენდება. მერე apt დააყენებს virtualbox-7.2-ს dkms-თან და ბირთვის ჰედერებთან ერთად (რამდენიმე ასეული MB) და თქვენ დაგამატებთ vboxusers ჯგუფში (ადმინისტრატორის პაროლი).\n\n{notes}",
  "filee_ask": "დავაყენო Filee {version}?\n\nჩამოტვირთვა: {file} ({mb} MB)\nსაიდან: {source}\nსანამ რამე გაეშვება, შემოწმდება SHA-256-ით:\n{sha}\n\nმერე Filee-ს საკუთარი install.sh გაეშვება თქვენი სახელით (ადმინისტრატორის პაროლის გარეშე): აპლიკაცია ~/.local/share/filee-ში მოხვდება, ბრძანება filee — ~/.local/bin-ში, გამშვები — თქვენს აპლიკაციების მენიუში; GNOME-ზე დაემატება Filee-ს Shell გაფართოებაც.\n\n{notes}",
+ "astudio_ask": "დავაყენო {title}?\n\nჩამოტვირთვა: {file} ({mb} MB)\nსაიდან: {source}\nსანამ რამე გაიხსნება, მოწმდება SHA-256, რომელსაც Google თავის ჩამოტვირთვის გვერდზე აქვეყნებს:\n{sha}\n\nდაყენდება მხოლოდ თქვენთვის, ადმინისტრატორის პაროლის გარეშე: პროგრამა ~/.local/share/android-studio-ში, ბრძანება android-studio ~/.local/bin-ში, გამშვები კი აპლიკაციების მენიუში. ადგილი დისკზე: დაახლოებით {free} GB უნდა იყოს თავისუფალი.\n\nAndroid Studio Google-ის პროგრამაა: „კი“-ს არჩევით ეთანხმებით მის პირობებს ({terms}).\n\n{notes}",
  "ventoy_ask": "დავაყენო Ventoy {version}?\n\nჩამოტვირთვა: {file} ({mb} MB)\nსაიდან: {source}\nსანამ რამეს გახსნის, მოწმდება SHA-256:\n{sha}\n\nდაყენდება მხოლოდ თქვენთვის, ადმინისტრატორის პაროლის გარეშე: პროგრამა ~/.local/share/ventoy-ში, ბრძანება ventoy ~/.local/bin-ში, გამშვები კი აპლიკაციების მენიუში.\n\n{notes}",
  "codex_ask": "დავაყენო Codex CLI {version} (OpenAI)?\n\nჩამოტვირთვა: {file} ({mb} MB; თვით პროგრამა დაახლოებით 3-ჯერ დიდია)\nსაიდან: {source}\nსანამ რამე გაიხსნება, შემოწმდება SHA-256-ით:\n{sha}\n\nდაყენდება მხოლოდ თქვენთვის, ადმინისტრატორის პაროლის გარეშე, აქ:\n{target}\n\n{notes}",
  "flutter_ask": "დავაყენო Flutter SDK {version} (Dart {dart}-ით)?\n\nჩამოტვირთვა: {file} ({gb} GB)\nსაიდან: {source} (Google-ის გამოშვებების მანიფესტი)\nსანამ რამე გაიხსნება, შემოწმდება SHA-256-ით:\n{sha}\n\nSDK-ს საქაღალდე (თქვენია, ადმინისტრატორის უფლებების გარეშე): {sdk}\nბრძანებები flutter და dart ~/.local/bin-ში დაიკავშირება; shell-ის ფაილები არ იცვლება.\nადგილი დისკზე: დაახლოებით {free} GB უნდა იყოს თავისუფალი.\n\n{pre}\n\n{notes}",
@@ -679,6 +681,8 @@ class App(tk.Tk):
             return t("yes") if extras.filee_installed() else None
         if ex_id == "ventoy":
             return extras.ventoy_version() or (t("yes") if extras.ventoy_installed() else None)
+        if ex_id == "android-studio":
+            return extras.astudio_version() or (t("yes") if extras.astudio_installed() else None)
         if ex_id == "flutter":
             return extras.flutter_version() or (t("yes") if extras.flutter_installed() else None)
         if ex_id == "flutter-linux":
@@ -792,6 +796,7 @@ class App(tk.Tk):
                     else "Dart SDK: Google's apt repository, key fingerprint checked, apt install dart" if ex_id == "dart"
                     else "Codex: GitHub release (SHA-256 checked) → ~/.local/bin/codex, no password" if ex_id == "codex"
                     else "Ventoy: GitHub release (SHA-256 checked) → ~/.local/share/ventoy + ~/.local/bin/ventoy, no password" if ex_id == "ventoy"
+                    else "Android Studio: Google's tarball (SHA-256 from developer.android.com checked) → ~/.local/share/android-studio, no password" if ex_id == "android-studio"
                     else "Filee: GitHub release (SHA-256 checked) → its own install.sh as you, no password" if ex_id == "filee"
                     else "VirtualBox: Oracle's apt repository, key fingerprint checked, apt install virtualbox-7.2 + dkms" if ex_id == "virtualbox"
                     else "Discord: the publisher's .deb over HTTPS (no checksum published), apt install" if ex_id == "discord"
@@ -876,6 +881,7 @@ class App(tk.Tk):
                         self.virtualbox_jobs(action) if ex_id == "virtualbox" else
                         self.filee_jobs(action) if ex_id == "filee" else
                         self.ventoy_jobs(action) if ex_id == "ventoy" else
+                        self.astudio_jobs(action) if ex_id == "android-studio" else
                         self.codex_jobs(action) if ex_id == "codex" else
                         self.flutter_jobs(action) if ex_id == "flutter" else
                         self.flutter_linux_jobs(action) if ex_id == "flutter-linux" else
@@ -1704,6 +1710,29 @@ class App(tk.Tk):
             return None
         if not messagebox.askyesno(t("title"), t("ventoy_ask", version=info["version"], file=info["file"], mb=info["mb"],
                                                   source=info["source"], sha=info["sha256"], notes=info["notes"])):
+            return None
+        return self.steps_to_jobs(steps)
+
+    def astudio_jobs(self, action):
+        """Android Studio: Google's Linux tarball, SHA-256 from Google's download page checked, unpacked for the user."""
+        import platform
+        if action == "uninstall":
+            return self.steps_to_jobs(extras.astudio_remove_steps())
+        self.lbl_status.config(text=t("looking"))
+        self.update_idletasks()
+        try:
+            release = extras.astudio_release()
+        except Exception as e:  # noqa: BLE001
+            self.lbl_status.config(text=t("note"))
+            messagebox.showwarning(t("title"), t("lookup_fail", e=e))
+            return None
+        self.lbl_status.config(text=t("note"))
+        steps, info = extras.astudio_steps(release, platform.machine())
+        if not steps:
+            messagebox.showinfo(t("title"), t("gh_manual", name="Android Studio", url=info["manual"]))
+            return None
+        if not messagebox.askyesno(t("title"), t("astudio_ask", title=info["title"], file=info["file"], mb=info["mb"], source=info["source"],
+                                                  sha=info["sha256"], free=info["min_gb"], terms=info["terms"], notes=info["notes"])):
             return None
         return self.steps_to_jobs(steps)
 

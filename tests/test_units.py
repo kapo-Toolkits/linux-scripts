@@ -2456,6 +2456,118 @@ class Ventoy(unittest.TestCase):
             self.assertTrue(os.path.exists(os.path.join(data, "ventoy", "mine")))
 
 
+class AndroidStudio(unittest.TestCase):
+    """Android Studio: version, link and SHA-256 read from Google's download page; installed for the user, marker-guarded."""
+    ex = Installer.m.extras
+    SHA = "1c" * 32
+    URL = "https://edgedl.me.gvt1.com/android/studio/ide-zips/2026.2.2.11/android-studio-rabbit2-patch3-linux.tar.gz"
+
+    def page(self, url=None, sha=None, extra=""):
+        url = url or self.URL
+        name = url.rsplit("/", 1)[1]
+        return f"""<table><tr><td>Linux (64-bit)</td><td><button>{name}</button></td><td>1.6 GB</td>
+<td><code>{sha or self.SHA}</code></td></tr>
+<tr><td>ChromeOS</td><td>android-studio-rabbit2-patch3-cros.deb</td><td>1.3 GB</td><td>{"33" * 32}</td></tr></table>{extra}
+<a class="button" data-category="studio_linux_bundle_download" data-action="download" href="{url}" id="agree">Download Android Studio Rabbit 2 | 2026.2.2 Patch 3 for Linux <span>{name}</span></a>"""
+
+    def release(self, **kw):
+        return self.ex.astudio_release(fetch=lambda url: self.page(**kw))
+
+    def test_page_is_parsed_strictly(self):
+        r = self.release()
+        self.assertEqual((r["version"], r["name"], r["url"], r["sha256"], r["title"]),
+                         ("2026.2.2.11", "android-studio-rabbit2-patch3-linux.tar.gz", self.URL, self.SHA, "Android Studio Rabbit 2 | 2026.2.2 Patch 3"))
+        self.assertEqual(r["size"], 1_600_000_000)
+        with self.assertRaises(ValueError):                                       # a link on some other host is never used
+            self.release(url="https://evil.example/android/studio/ide-zips/2026.2.2.11/android-studio-x-linux.tar.gz")
+        with self.assertRaises(ValueError):                                       # http, not https
+            self.release(url=self.URL.replace("https:", "http:"))
+        with self.assertRaises(ValueError):                                       # no checksum printed for that file
+            self.ex.astudio_parse(self.page().replace(self.SHA, "not-a-sha"))
+        with self.assertRaises(ValueError):                                       # two different checksums for the same file
+            self.ex.astudio_parse(self.page(extra=f"<p>android-studio-rabbit2-patch3-linux.tar.gz 1.6 GB {'ee' * 32}</p>"))
+        with self.assertRaises(ValueError):
+            self.ex.astudio_parse("<html>nothing here</html>")
+
+    def test_no_password_space_and_the_gate_come_first(self):
+        steps, info = self.ex.astudio_steps(self.release(), "x86_64", kvm=True)
+        self.assertEqual([x["root"] for x in steps], [False, False, False])
+        self.assertIn("df -Pk", steps[0]["sh"])
+        self.assertIn(f'echo "{self.SHA}  android-studio-rabbit2-patch3-linux.tar.gz.part" | sha256sum -c -', steps[1]["sh"])
+        self.assertIn("--proto '=https'", steps[1]["sh"])
+        for st in steps:
+            self.assertEqual(subprocess.run(["sh", "-n", "-c", st["sh"]], capture_output=True).returncode, 0)
+        self.assertEqual((info["sha256"], info["terms"]), (self.SHA, "https://developer.android.com/studio/terms"))
+        self.assertNotIn("/dev/kvm", info["notes"])
+        self.assertIn("/dev/kvm", self.ex.astudio_steps(self.release(), "x86_64", kvm=False)[1]["notes"])
+        self.assertEqual(self.ex.astudio_steps(self.release(), "aarch64")[0], [])           # Google: no ARM build for Linux
+
+    def run_install(self, d, good=True, foreign=False):
+        top = os.path.join(d, "src", "android-studio")
+        os.makedirs(os.path.join(top, "bin"))
+        if good:
+            open(os.path.join(top, "product-info.json"), "w").write('{"name": "Android Studio"}')
+            open(os.path.join(top, "bin", "studio.svg"), "w").write("<svg/>")
+            with open(os.path.join(top, "bin", "studio"), "w") as f:
+                f.write("#!/bin/sh\necho studio-ran \"$@\"\n")
+            os.chmod(os.path.join(top, "bin", "studio"), 0o755)
+        cache = os.path.join(d, "cache")
+        os.makedirs(cache)
+        rel = self.release()
+        subprocess.run(["tar", "-czf", os.path.join(cache, rel["name"]), "-C", os.path.join(d, "src"), "android-studio"], check=True)
+        data, home = os.path.join(d, "data"), os.path.join(d, "home")
+        if foreign:
+            os.makedirs(os.path.join(data, "android-studio"))
+            open(os.path.join(data, "android-studio", "mine"), "w").write("x")
+        steps, _ = self.ex.astudio_steps(rel, "x86_64", cache_dir=cache, kvm=True)
+        env = dict(os.environ, XDG_DATA_HOME=data, HOME=home)
+        return subprocess.run(["sh", "-c", steps[2]["sh"]], capture_output=True, text=True, env=env), data, home, cache
+
+    def test_install_launch_detect_update_check_and_remove(self):
+        with tempfile.TemporaryDirectory() as d:
+            r, data, home, cache = self.run_install(d)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertTrue(self.ex.astudio_installed(data))
+            self.assertEqual(self.ex.astudio_version(data), "2026.2.2.11")
+            launcher = os.path.join(home, ".local", "bin", "android-studio")
+            out = subprocess.run([launcher, "proj"], capture_output=True, text=True)
+            self.assertEqual(out.stdout.strip(), "studio-ran proj")
+            desk = open(os.path.join(data, "applications", "android-studio.desktop")).read()
+            self.assertIn("Icon=" + os.path.join(data, "android-studio", "bin", "studio.svg"), desk)
+            self.assertIn("X-Linux-Scripts-Managed=true", desk)
+            self.assertEqual(os.listdir(cache), [])                                  # download and unpacked copy are gone
+            none = dict(installed=lambda p: None, github=lambda i: None, codex_have=lambda: None, ventoy_have=lambda: None)
+            self.assertEqual(self.ex.outdated(**none, astudio_have=lambda: "2026.2.2.11", astudio=lambda: {"version": "2026.2.2.11"}), ([], []))
+            self.assertEqual(self.ex.outdated(**none, astudio_have=lambda: "2025.1.4.8", astudio=lambda: {"version": "2026.2.2.11"})[0],
+                             [{"id": "android-studio", "name": "Android Studio", "installed": "2025.1.4.8", "latest": "2026.2.2.11"}])
+            rm = subprocess.run(["sh", "-c", self.ex.astudio_remove_steps()[0]["sh"]], capture_output=True, text=True,
+                                env=dict(os.environ, XDG_DATA_HOME=data, HOME=home))
+            self.assertEqual(rm.returncode, 0, rm.stderr)
+            self.assertFalse(os.path.exists(os.path.join(data, "android-studio")))
+            self.assertFalse(os.path.exists(launcher))
+            self.assertFalse(os.path.exists(os.path.join(data, "applications", "android-studio.desktop")))
+
+    def test_wrong_archive_refused_and_foreign_install_left_alone(self):
+        with tempfile.TemporaryDirectory() as d:
+            r, data, home, cache = self.run_install(d, good=False)
+            self.assertNotEqual(r.returncode, 0)
+            self.assertIn("does not look like Android Studio", r.stderr)
+            self.assertFalse(os.path.exists(os.path.join(data, "android-studio")))
+        with tempfile.TemporaryDirectory() as d:
+            r, data, home, cache = self.run_install(d, foreign=True)
+            self.assertNotEqual(r.returncode, 0)
+            self.assertTrue(os.path.exists(os.path.join(data, "android-studio", "mine")))
+            rm = subprocess.run(["sh", "-c", self.ex.astudio_remove_steps()[0]["sh"]], capture_output=True, text=True,
+                                env=dict(os.environ, XDG_DATA_HOME=data, HOME=home))
+            self.assertEqual(rm.returncode, 0)
+            self.assertTrue(os.path.exists(os.path.join(data, "android-studio", "mine")))
+
+    def test_personal_data_is_listed_not_removed_with_the_program(self):
+        self.assertIn("~/Android", self.ex.DATA_DIRS["android-studio"])
+        self.assertNotIn("~/.gradle", self.ex.DATA_DIRS["android-studio"])            # shared with other Gradle projects
+        self.assertNotIn("Android", self.ex.astudio_remove_steps()[0]["sh"].replace("Android Studio", "").replace("Android SDK (~/Android)", ""))
+
+
 class ReleaseParser(unittest.TestCase):
     """One parser for GitHub's releases/latest JSON, used by balenaEtcher, the .deb programs, Filee, Ventoy and Codex."""
     ex = Installer.m.extras
@@ -3293,7 +3405,7 @@ class PackagePrograms(unittest.TestCase):
                 self.assertEqual(subprocess.run(["sh", "-n", "-c", steps[0]["sh"]], capture_output=True).returncode, 0)
                 self.assertEqual(self.ex.package_name(app, pm), app)
         self.assertEqual(set(self.ex.PACKAGE_APPS), {"brasero", "xfburn", "k3b", "unrar", "git", "curl", "vim", "htop", "net-tools"})
-        self.assertEqual({x["id"] for x in Installer.m.EXTRAS}, set(self.ex.PACKAGE_APPS) | {"etcher", "brave", "claude", "vscode", "virtualbox", "filee", "ventoy", "codex", "flutter", "flutter-linux", "dart", "discord"} | set(self.ex.GITHUB_APPS))   # window and logic agree
+        self.assertEqual({x["id"] for x in Installer.m.EXTRAS}, set(self.ex.PACKAGE_APPS) | {"etcher", "brave", "claude", "vscode", "virtualbox", "filee", "ventoy", "android-studio", "codex", "flutter", "flutter-linux", "dart", "discord"} | set(self.ex.GITHUB_APPS))   # window and logic agree
         self.assertEqual({x["id"] for x in Shortcuts.m.TOOLS} >= {i for i in self.ex.PACKAGE_APPS if not PackagePrograms.cli(i)}, True)       # and shortcuts know them
         self.assertIn("apt-get purge -y brasero", self.ex.package_steps("brasero", "apt-get", remove=True)[0]["sh"])
         self.assertIn("pacman -R --noconfirm brasero", self.ex.package_steps("brasero", "pacman", remove=True)[0]["sh"])

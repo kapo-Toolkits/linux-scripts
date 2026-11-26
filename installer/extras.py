@@ -30,7 +30,7 @@ X86 = ("amd64", "x86_64")
 
 # ---- the list of "other programs" lives in programs.json next to this file ----
 PROGRAMS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "programs.json")
-KINDS = {"claude", "vscode", "virtualbox", "filee", "ventoy", "codex", "flutter", "flutterlinux", "dart", "discord", "brave", "etcher", "github", "package"}      # the recipe that installs it
+KINDS = {"claude", "vscode", "virtualbox", "filee", "ventoy", "androidstudio", "codex", "flutter", "flutterlinux", "dart", "discord", "brave", "etcher", "github", "package"}      # the recipe that installs it
 NEEDED = {"github": ("display", "repo", "package", "cmd", "asset"), "package": ("display", "cmd")}
 
 
@@ -358,7 +358,8 @@ def version_key(v):
     return tuple(int(x) for x in v.split(".") if x.isdigit())
 
 
-def outdated(installed=installed_version, github=None, etcher=None, codex=None, codex_have=None, ventoy=None, ventoy_have=None):
+def outdated(installed=installed_version, github=None, etcher=None, codex=None, codex_have=None, ventoy=None, ventoy_have=None,
+             astudio=None, astudio_have=None):
     """Programs installed from a publisher's GitHub release whose newest release is newer than what is installed.
     -> ([{'id', 'name', 'installed', 'latest'}], [ids that could not be looked up]).  Nothing is downloaded or installed."""
     github = github or github_release
@@ -393,6 +394,14 @@ def outdated(installed=installed_version, github=None, etcher=None, codex=None, 
                 found.append({"id": "ventoy", "name": "Ventoy", "installed": have, "latest": latest})
         except Exception:  # noqa: BLE001
             failed.append("ventoy")
+    have = (astudio_have or astudio_version)()                   # Android Studio: the version this installer wrote into its marker
+    if have:
+        try:
+            latest = (astudio or astudio_release)()["version"]
+            if version_key(latest) > version_key(have):
+                found.append({"id": "android-studio", "name": "Android Studio", "installed": have, "latest": latest})
+        except Exception:  # noqa: BLE001
+            failed.append("android-studio")
     return found, failed
 
 
@@ -760,6 +769,168 @@ def ventoy_version(data_home=None):
     try:
         with open(os.path.join(ventoy_dir(data_home), "ventoy", "version"), encoding="utf-8") as f:
             return f.read().strip() or None
+    except OSError:
+        return None
+
+
+# ---- Android Studio (https://developer.android.com/studio): Google's IDE for Android apps ----
+# Google publishes ONE Linux tarball (x86-64 only) on its download page, with the SHA-256 printed next to it. The page is read
+# (only the Linux row: link on Google's download host, version, size, SHA-256), the tarball is downloaded and checked, then
+# unpacked for the user into ~/.local/share/android-studio (no administrator password; Studio updates itself there). A marker
+# file records that THIS installer put it there, so removal and upgrade never touch an Android Studio installed another way.
+ASTUDIO_PAGE = "https://developer.android.com/studio"
+ASTUDIO_INSTALL_PAGE = "https://developer.android.com/studio/install#linux"
+ASTUDIO_TERMS = "https://developer.android.com/studio/terms"
+ASTUDIO_MARKER = ".linux-scripts-android-studio"
+ASTUDIO_MIN_FREE_GB = 8                       # the docs' minimum for Studio (download + unpacked IDE + the first SDK)
+ASTUDIO_PAGE_MAX = 4 << 20
+ASTUDIO_LINK_RE = re.compile(r'https://(?:edgedl\.me\.gvt1\.com|dl\.google\.com|redirector\.gvt1\.com)(?:/edgedl)?'
+                             r'/android/studio/ide-zips/(\d+(?:\.\d+){2,4})/(android-studio-[a-z0-9.-]+-linux\.tar\.gz)')
+ASTUDIO_NOTES = ("Start it from the applications menu (Android Studio) or with the command: android-studio. The first start runs Google's "
+                 "Setup Wizard, which downloads the Android SDK (several GB) into ~/Android/Sdk. Studio updates itself (Help > Check for Updates). "
+                 "The emulator needs CPU virtualization (VT-x / AMD-V) switched on in the BIOS.")
+ASTUDIO_KVM_NOTE = ("This computer's /dev/kvm is not usable by you, so the emulator would be very slow or not start. Switch on "
+                    "virtualization in the BIOS; then, if it still is not usable: sudo usermod -aG kvm $USER and log out and in.")
+
+
+def fetch_page(url, limit, timeout=30, opener=urllib.request.urlopen):
+    """A web page as text, refusing anything bigger than limit bytes."""
+    req = urllib.request.Request(url, headers={"User-Agent": "linux-scripts-installer"})
+    with opener(req, timeout=timeout) as r:
+        data = r.read(limit + 1)
+    if len(data) > limit:
+        raise ValueError(f"{url}: page larger than {limit} bytes")
+    return data.decode("utf-8", "replace")
+
+
+def astudio_parse(page):
+    """Google's download page -> {'title', 'version', 'name', 'url', 'sha256', 'size'} for the Linux tarball. Raises ValueError when
+    the Linux row is not there exactly as expected (no link on Google's host, or no SHA-256 printed for that file): nothing to install."""
+    tag = re.search(r'<a\b[^>]*data-category="studio_linux_bundle_download"[^>]*>', page)
+    links = {m.group(0) for m in ASTUDIO_LINK_RE.finditer(tag.group(0) if tag else page)}
+    if len(links) != 1:
+        raise ValueError("the Linux download link was not found on the Android Studio page" if not links else
+                         "the Android Studio page offers more than one Linux download: " + ", ".join(sorted(links)))
+    url = links.pop()
+    m = ASTUDIO_LINK_RE.fullmatch(url)
+    version, name = m.group(1), m.group(2)
+    text = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", page))
+    rows = set(re.findall(re.escape(name) + r" (\d+(?:\.\d+)?) ?(GB|MB) ([0-9a-f]{64})\b", text))
+    if len(rows) != 1:
+        raise ValueError(f"no single SHA-256 is printed for {name} on the Android Studio page")
+    num, unit, sha = rows.pop()
+    t = re.search(r"Download (Android Studio [^<>]{2,80}?) for Linux", text)
+    return {"title": t.group(1).strip() if t else "Android Studio " + version, "version": version, "name": name, "url": url,
+            "sha256": sha, "size": int(float(num) * (10 ** 9 if unit == "GB" else 10 ** 6))}   # the page uses decimal units
+
+
+def astudio_release(fetch=None):
+    return astudio_parse((fetch or (lambda url: fetch_page(url, ASTUDIO_PAGE_MAX)))(ASTUDIO_PAGE))
+
+
+def astudio_dir(data_home=None):
+    return os.path.join(data_home or os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share"), "android-studio")
+
+
+def astudio_kvm(path="/dev/kvm"):
+    return os.path.exists(path) and os.access(path, os.R_OK | os.W_OK)
+
+
+def astudio_steps(release, arch, cache_dir=None, kvm=None):
+    """-> (steps, info); every step runs as the user. 1: free-space check. 2: download + SHA-256 gate. 3: unpack, check it is
+    Android Studio, replace an older copy of OURS, write the marker, the `android-studio` command and the menu launcher."""
+    if arch not in X86:
+        return [], {"manual": ASTUDIO_INSTALL_PAGE, "version": release["version"]}
+    d = os.path.expanduser(cache_dir or CACHE)
+    q = shlex.quote
+    tar, work = os.path.join(d, release["name"]), os.path.join(d, "android-studio-unpacked")
+    space = f"""set -eu
+DATA="${{XDG_DATA_HOME:-$HOME/.local/share}}"
+mkdir -p {q(d)} "$DATA"
+need={ASTUDIO_MIN_FREE_GB}
+for dir in {q(d)} "$DATA"; do
+  set -- $(df -Pk "$dir" | tail -n 1)
+  free=$(( $4 / 1048576 ))
+  [ "$free" -ge "$need" ] || {{ echo "only ${{free}} GB free where $dir is - Android Studio needs about $need GB (download, the program, the first SDK). Free some space and try again." >&2; exit 1; }}
+done
+echo "free space OK"
+"""
+    install = f"""set -eu
+trap 'rm -rf {q(work)} {q(tar)}' EXIT
+rm -rf {q(work)}
+mkdir -p {q(work)}
+tar -xzf {q(tar)} --no-same-owner -C {q(work)}
+PKG={q(work)}/android-studio
+[ -f "$PKG/product-info.json" ] && {{ [ -x "$PKG/bin/studio" ] || [ -x "$PKG/bin/studio.sh" ]; }} || {{ echo "the download does not look like Android Studio - nothing was installed" >&2; exit 1; }}
+DATA="${{XDG_DATA_HOME:-$HOME/.local/share}}"
+APP="$DATA/android-studio"
+if [ -e "$APP" ] && [ ! -f "$APP/{ASTUDIO_MARKER}" ]; then echo "$APP exists and was not installed by this installer - left alone" >&2; exit 1; fi
+mkdir -p "$DATA"
+rm -rf "$APP.new"
+mv "$PKG" "$APP.new"
+printf '%s\\n%s\\n' {q(release['version'])} {q(release.get('title', ''))} > "$APP.new/{ASTUDIO_MARKER}"
+rm -rf "$APP"
+mv "$APP.new" "$APP"
+mkdir -p "$HOME/.local/bin" "$DATA/applications"
+BIN="$HOME/.local/bin/android-studio"
+if [ -e "$BIN" ] && ! grep -q '^# linux-scripts android-studio launcher$' "$BIN" 2>/dev/null; then echo "$BIN exists and is not ours - left alone" >&2; else
+cat > "$BIN" <<EOF
+#!/bin/sh
+# linux-scripts android-studio launcher
+if [ -x "$APP/bin/studio" ]; then exec "$APP/bin/studio" "\\$@"; fi
+exec "$APP/bin/studio.sh" "\\$@"
+EOF
+chmod 755 "$BIN"
+fi
+ICON="$APP/bin/studio.svg"
+[ -f "$ICON" ] || ICON="$APP/bin/studio.png"
+cat > "$DATA/applications/android-studio.desktop" <<EOF
+[Desktop Entry]
+Type=Application
+Name=Android Studio
+Comment=Build apps for Android
+Exec=$HOME/.local/bin/android-studio %f
+Icon=$ICON
+Terminal=false
+Categories=Development;IDE;
+StartupWMClass=jetbrains-studio
+X-Linux-Scripts-Managed=true
+EOF
+echo "Android Studio installed: $APP"
+"""
+    steps = [{"root": False, "sh": space}, {"root": False, "sh": download_script(release, cache_dir)}, {"root": False, "sh": install}]
+    kvm = astudio_kvm() if kvm is None else kvm
+    return steps, {"version": release["version"], "title": release.get("title", ""), "file": release["name"],
+                   "mb": round(release["size"] / 1048576), "url": release["url"], "sha256": release["sha256"],
+                   "source": "developer.android.com/studio (" + release["url"].split("/")[2] + ")", "min_gb": ASTUDIO_MIN_FREE_GB,
+                   "terms": ASTUDIO_TERMS, "kvm": kvm, "notes": ASTUDIO_NOTES + ("" if kvm else "\n\n" + ASTUDIO_KVM_NOTE)}
+
+
+def astudio_remove_steps():
+    """Remove the program folder, the command and the launcher - each only when it carries this installer's marker. The SDK
+    (~/Android), emulators (~/.android) and settings are personal data: the window asks about them separately."""
+    sh = f"""set -u
+DATA="${{XDG_DATA_HOME:-$HOME/.local/share}}"
+APP="$DATA/android-studio"
+if [ -f "$APP/{ASTUDIO_MARKER}" ]; then rm -rf -- "$APP"; else echo "Android Studio was not installed by this installer - folder left alone" >&2; fi
+BIN="$HOME/.local/bin/android-studio"
+[ -f "$BIN" ] && grep -q '^# linux-scripts android-studio launcher$' "$BIN" && rm -- "$BIN"
+DESK="$DATA/applications/android-studio.desktop"
+[ -f "$DESK" ] && grep -q '^X-Linux-Scripts-Managed=true$' "$DESK" && rm -- "$DESK"
+echo "Android Studio was removed. The Android SDK (~/Android) and your projects were kept."
+exit 0
+"""
+    return [{"root": False, "sh": sh}]
+
+
+def astudio_installed(data_home=None):
+    return os.path.isfile(os.path.join(astudio_dir(data_home), ASTUDIO_MARKER))
+
+
+def astudio_version(data_home=None):
+    try:
+        with open(os.path.join(astudio_dir(data_home), ASTUDIO_MARKER), encoding="utf-8") as f:
+            return f.readline().strip() or None
     except OSError:
         return None
 
@@ -1406,7 +1577,7 @@ ARM = ("arm64", "aarch64")
 NATIVE = {
     "claude": ({"apt-get"}, (*X86, *ARM)), "vscode": ({"apt-get"}, (*X86, *ARM)), "virtualbox": ({"apt-get"}, X86),
     "dart": ({"apt-get"}, (*X86, *ARM)), "discord": ({"apt-get"}, X86), "etcher": ({"apt-get", "dnf", "zypper"}, X86),
-    "brave": ({"apt-get", "dnf", "yum", "zypper", "pacman"}, None), "filee": (None, (*X86, *ARM)), "ventoy": (None, (*X86, *ARM)),
+    "brave": ({"apt-get", "dnf", "yum", "zypper", "pacman"}, None), "filee": (None, (*X86, *ARM)), "ventoy": (None, (*X86, *ARM)), "androidstudio": (None, X86),
     "codex": (None, (*X86, *ARM)), "flutter": (None, X86), "flutterlinux": ({"apt-get", "dnf", "pacman", "zypper"}, None), "github": ({"apt-get", "dnf", "zypper"}, None), "package": (None, None)}
 
 

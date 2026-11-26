@@ -131,6 +131,26 @@
    ]
   },
   {
+   "id": "android-studio",
+   "group": "dev",
+   "kind": "androidstudio",
+   "name": {
+    "en": "Android Studio",
+    "ka": "Android Studio"
+   },
+   "info": {
+    "en": "Google's IDE for Android apps (emulator, SDK manager); the tarball from developer.android.com (~1.6 GB, SHA-256 from Google's page checked) in ~/.local/share/android-studio, no administrator password; x86-64",
+    "ka": "Google-ის IDE Android აპლიკაციებისთვის (ემულატორი, SDK მენეჯერი); არქივი developer.android.com-იდან (~1.6 GB, Google-ის გვერდზე გამოქვეყნებული SHA-256 მოწმდება) ~/.local/share/android-studio-ში, ადმინისტრატორის პაროლის გარეშე; x86-64"
+   },
+   "data": [
+    "~/Android",
+    "~/.android",
+    "~/.config/Google",
+    "~/.cache/Google",
+    "~/.local/share/Google"
+   ]
+  },
+  {
    "id": "tabby",
    "group": "dev",
    "kind": "github",
