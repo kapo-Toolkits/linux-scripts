@@ -16,6 +16,10 @@ FAILED = []
 
 def check(name, ok, detail=""):
     print(("PASS " if ok else "FAIL ") + name + (f"  [{detail[:200]}]" if detail and not ok else ""))
+    if detail and not ok and len(detail) > 200:
+        # the cause (apt's E:/Err: lines, curl's error) is at the END of a long output: show it, so a reader - and
+        # tests/retry-on-network.sh, which retries on mirror problems - can see it
+        print("   ..." + detail[-800:].replace("\n", "\n   "))
     if not ok:
         FAILED.append(name)
 
