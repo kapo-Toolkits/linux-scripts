@@ -72,15 +72,19 @@ exec /usr/sbin/sshd -D -e
 try:
     r = sh("docker", "run", "-d", "--rm", "--name", name, "ubuntu:24.04", "bash", "-c", script)
     check("container started", r.returncode == 0, r.stderr)
-    ip = ""
-    for _ in range(90):
+    ip, listening = "", False
+    for _ in range(150):                    # up to 5 minutes: the container first installs openssh-server from the mirror
         ip = sh("docker", "inspect", "-f", "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}", name).stdout.strip()
         if ip and sh("bash", "-c", "exec 3<>/dev/tcp/%s/22" % ip).returncode == 0:
+            listening = True
             break
         time.sleep(2)
-    check("sshd is listening", bool(ip), "no ip")
-    if not ip:
-        print("RESULT: ABORTED - the container is not reachable; NOTHING was run (this test never falls back to this computer)")
+    check("sshd is listening", listening, "ip=%r, port 22 never answered" % ip)
+    if not listening:
+        # still installing packages = a slow / broken package mirror (tests/retry-on-network.sh retries on this line)
+        if sh("docker", "exec", name, "pgrep", "-x", "apt-get").returncode == 0:
+            print("INFO sshd did not start in time - package mirror problem (apt-get is still running)")
+        print("RESULT: ABORTED - sshd in the container is not reachable; NOTHING was run (this test never falls back to this computer)")
         sys.exit(1)
     tb = Guard(api.Toolbox(history=history.History(os.path.join(HOME, "h.json"))))
     check("set the remote target", tb.set_target("remote", ip, 22, "alice", "id_ed25519")["ok"])

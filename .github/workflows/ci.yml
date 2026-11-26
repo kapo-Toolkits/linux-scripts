@@ -111,7 +111,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: python3 tests/real_ssh_test.py
+      - run: tests/retry-on-network.sh python3 tests/real_ssh_test.py
 
   qr-decode:
     # the QR generator is checked with a real decoder (zbar) in a container
