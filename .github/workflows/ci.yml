@@ -126,6 +126,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: tests/run-qgis-containers.sh
+        env:
+          RETRY_DELAY: "60"     # qgis.org outages last minutes: retries after 1, 2 and 3 minutes
 
   qgis-recipes:
     # every other install recipe of the installation guide, resolved (dry run) on its own distribution:

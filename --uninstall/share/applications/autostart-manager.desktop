@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=ავტოგაშვების მართვა
+Name[en]=Autostart Manager
+Comment=პროგრამები, რომლებიც სისტემაში შესვლისას ეშვება: ჩართვა, გამორთვა, დამატება
+Comment[en]=Programs that start when you log in: turn on, turn off, add
+Exec=/home/k/Projects/linux-scripts/--uninstall/bin/autostart-manager
+Icon=preferences-system-session
+Terminal=false
+Categories=Settings;System;

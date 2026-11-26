@@ -13,6 +13,7 @@ elif command -v pacman  >/dev/null; then pacman -Syu --noconfirm python >/dev/nu
 elif command -v zypper  >/dev/null; then zypper -q --non-interactive refresh >/dev/null 2>&1; zypper -q --non-interactive install python3 >/dev/null 2>&1
 elif command -v urpmi   >/dev/null; then urpmi.update -a >/dev/null 2>&1; urpmi --auto python3 >/dev/null 2>&1
 fi
+command -v python3 >/dev/null || { echo "PREP: python3 could not be installed - package mirror problem"; exit 1; }
 . /etc/os-release; echo "### $PRETTY_NAME"'
 
 run() {   # image recipe [extra args]
