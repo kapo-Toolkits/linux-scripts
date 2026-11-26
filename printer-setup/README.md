@@ -27,6 +27,25 @@ Requires `python3-tk` and CUPS (`lpinfo`, `lpadmin`, `lp`) — present on Mint/U
 | 3 Missing? | opens the vendor download page; **Install downloaded .deb…** shows name, sha256, control info, whether any file mentions your model, the full file list **and the install scripts** — installs only after you confirm |
 | 4 Add | `lpadmin` with the chosen PPD, or **driverless** (`-m everywhere`) for network printers |
 | 5 Test | prints CUPS' test page |
+| Phones | shares a queue for Android / iPhone printing — see below |
+
+## Phones tab — print from Android / iPhone (free)
+
+Shares a printer that is already set up here (USB or network) with phones on the **same Wi-Fi / network**, without a paid app
+(e.g. instead of “Hammer Print”). · ტელეფონიდან ბეჭდვა უფასოდ: კომპიუტერზე მიერთებული პრინტერის გაზიარება იმავე ქსელში.
+
+| Button | What happens |
+|---|---|
+| **Check** | read-only, no password: `lpoptions -p Q` (`printer-is-shared`), `cupsctl` (`_share_printers`), `systemctl is-active avahi-daemon`; lists `ipp://<host>.local:631/printers/Q` and `ipp://<ip>:631/printers/Q` |
+| **Share with phones** | after a confirmation, one `pkexec` run of a fixed script (queue name passed as an argument, checked to be an existing queue): `lpadmin -p Q -o printer-is-shared=true`, `cupsctl --share-printers` (CUPS' own *local network only* rule stays; no remote admin), `systemctl enable --now avahi-daemon`, and if ufw / firewalld is on: 631/tcp + 5353/udp |
+| **Stop sharing** | `lpadmin -p Q -o printer-is-shared=false` |
+
+On the phone:
+- **Android** — Share / ⋮ → *Print* → *Select printer* → *All printers*. If nothing shows: Settings → Connected devices → Connection preferences → Printing → *Default Print Service* on, or install the free **Mopria Print Service**; last resort, *Add printer → by IP* with the address from the tab.
+- **iPhone / iPad** — Share → *Print*; shared CUPS printers appear via AirPrint.
+
+The computer must be on. Guest / “client isolation” Wi-Fi networks stop phones from seeing the computer.
+Tested by `tests/real_printer_share_test.py` (real cupsd in a container: IPP *Get-Printer-Attributes* and *Create-Job* from outside succeed when shared and are refused when not).
 
 ## Why drivers are not bundled
 
