@@ -483,6 +483,23 @@
    ]
   },
   {
+   "id": "raven",
+   "group": "more",
+   "kind": "raven",
+   "cli": true,
+   "name": {
+    "en": "Raven (experimental)",
+    "ka": "Raven (ექსპერიმენტული)"
+   },
+   "info": {
+    "en": "run Windows programs on Linux without Wine (nightly pre-release, x86_64); the project's archive, SHA-256 from its SHA256SUMS (~40 MB)",
+    "ka": "Windows-ის პროგრამების გაშვება Linux-ზე Wine-ის გარეშე (nightly pre-release, x86_64); პროექტის არქივი, SHA-256 მისი SHA256SUMS-იდან (~40 MB)"
+   },
+   "data": [
+    "~/.local/share/raven"
+   ]
+  },
+  {
    "id": "artcraft",
    "group": "more",
    "kind": "github",
