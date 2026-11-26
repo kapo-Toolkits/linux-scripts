@@ -1,9 +1,0 @@
-[Desktop Entry]
-Type=Application
-Name=USB უსაფრთხო გამორთვა
-Name[en]=USB Safe Eject
-Comment=USB დისკის უსაფრთხო გამორთვა
-Exec=/home/k/Projects/linux-scripts/--uninstall/bin/usb-eject-gui
-Icon=media-eject
-Terminal=false
-Categories=Utility;System;

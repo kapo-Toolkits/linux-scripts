@@ -1,9 +1,0 @@
-[Desktop Entry]
-Type=Application
-Name=Printer Setup
-Name[ka]=პრინტერის დაყენება
-Comment=Find a driver and add a printer · იპოვეთ დრაივერი და დაამატეთ პრინტერი
-Exec=/home/k/Projects/linux-scripts/--uninstall/bin/printer-setup
-Icon=printer
-Terminal=false
-Categories=Settings;HardwareSettings;Utility;

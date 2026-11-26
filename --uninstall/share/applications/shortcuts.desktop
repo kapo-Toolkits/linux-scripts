@@ -1,9 +1,0 @@
-[Desktop Entry]
-Type=Application
-Name=Desktop Shortcuts
-Name[ka]=იარლიყები სამუშაო მაგიდაზე
-Comment=Pick toolkit programs and put their shortcuts on the Desktop · აირჩიეთ პროგრამები და დააგდეთ იარლიყები
-Exec=/home/k/Projects/linux-scripts/--uninstall/bin/toolkit-shortcuts
-Icon=preferences-desktop
-Terminal=false
-Categories=Settings;Utility;
