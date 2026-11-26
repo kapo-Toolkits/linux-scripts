@@ -4,6 +4,7 @@ What changed in this toolkit, newest first. The project has no version numbers: 
 request (`#n`) that passed CI. Dates are merge dates. · ცვლილებების ისტორია, ახალი ზემოდან.
 
 ## Unreleased
+- **Added** [`autostart`](autostart/) — *Autostart Manager*: the programs that start at login (yours and the system's), turn them on / off (system entries through your own copy, never edited), add an application or a command, remove / reset, start or stop one now; warns before turning off parts of the desktop; EN/KA; `./install.sh autostart` (also in `all`).
 - **Added** DevOps Toolbox can run its operations on **another computer over SSH**: a *Run on* bar (host or IP, port, user, key), keys only, host-key fingerprint shown and confirmed before it is trusted, `sudo -n` for administrator operations, previews bound to the computer, and the plan made against the remote system. Tested against a real sshd in a container.
 - **Added** DevOps Toolbox now covers the whole MyDevOps command set: 146 operations in 14 themes (network, firewall, SSH, services, nginx and certificates, Docker and Compose, Git, users, updates, disk and logs, monitoring, security audit, PostgreSQL, backups and cron), a generic operation panel in the window and the web page, your own repositories and Compose projects from a configuration file, and a coverage map that says where every documented command went (or why it stays in the terminal).
 

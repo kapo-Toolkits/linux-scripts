@@ -20,6 +20,7 @@ declare -A FILES=(
   [qgis-installer]="qgis-installer/qgis-installer-gui.py|qgis-installer qgis-installer/qgis-installer-cli.py|qgis-installer-cli"
   [shortcuts]="shortcuts/shortcuts-gui.py|toolkit-shortcuts"
   [devops-toolbox]="devops-toolbox/devops-toolbox-gui.py|devops-toolbox devops-toolbox/devops-toolbox-web.py|devops-toolbox-web"
+  [autostart]="autostart/autostart-gui.py|autostart-manager"
   [printhub]="printhub/printhub-launcher.sh|printhub"   # not part of "all": the app + PySide6 are installed too
 )
 declare -A GUISCRIPT=(
@@ -29,6 +30,7 @@ declare -A GUISCRIPT=(
   [qgis-installer]=qgis-installer/qgis-installer-gui.py
   [shortcuts]=shortcuts/shortcuts-gui.py
   [devops-toolbox]=devops-toolbox/devops-toolbox-gui.py
+  [autostart]=autostart/autostart-gui.py
   [printhub]=printhub/run.py
 )
 declare -A DESKTOP=(
@@ -38,9 +40,10 @@ declare -A DESKTOP=(
   [qgis-installer]=qgis-installer/qgis-installer.desktop
   [shortcuts]=shortcuts/shortcuts.desktop
   [devops-toolbox]=devops-toolbox/devops-toolbox.desktop
+  [autostart]=autostart/autostart-manager.desktop
   [printhub]=printhub/packaging/linux/printhub.desktop
 )
-ALL=(usb-eject wifi-hotspot printer-setup qgis-installer shortcuts devops-toolbox)
+ALL=(usb-eject wifi-hotspot printer-setup qgis-installer shortcuts devops-toolbox autostart)
 
 usage() {
   cat <<U
@@ -268,7 +271,7 @@ if [ "$ACTION" = uninstall ]; then
   case " ${TOOLS[*]} " in *" devops-toolbox "*) act $SUDO rm -rf "$PREFIX/lib/linux-scripts/devops_toolbox";; esac
   # the shared helper goes only when no command of the toolkit is left (in a preview: none left after the ones listed above)
   guis=0
-  for g in usb-eject-gui hotspot-gui printer-setup qgis-installer qgis-installer-cli bluetooth-setup toolkit-shortcuts devops-toolbox devops-toolbox-web; do
+  for g in usb-eject-gui hotspot-gui printer-setup qgis-installer qgis-installer-cli bluetooth-setup toolkit-shortcuts devops-toolbox devops-toolbox-web autostart-manager; do
     gone=0; for x in "${GONEPATHS[@]+"${GONEPATHS[@]}"}"; do [ "$x" = "$PREFIX/bin/$g" ] && gone=1; done
     [ -e "$PREFIX/bin/$g" ] && [ "$gone" = 0 ] && guis=1
   done

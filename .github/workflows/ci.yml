@@ -38,7 +38,7 @@ jobs:
           "$RUNNER_TEMP/ruff/bin/pip" install --quiet ruff==0.14.0
           "$RUNNER_TEMP/ruff/bin/ruff" check .
       - name: compile all python (syntax of every tool)
-        run: python3 -m compileall -q common devops-toolbox installer shortcuts usb-eject wifi-hotspot printer-setup qgis-installer printhub tests
+        run: python3 -m compileall -q autostart common devops-toolbox installer shortcuts usb-eject wifi-hotspot printer-setup qgis-installer printhub tests
       - name: unit tests (offline)
         run: python3 tests/test_units.py
       - name: DevOps Toolbox backend and local web app (offline, fake ufw)
