@@ -111,7 +111,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: python3 tests/real_ssh_test.py
+      - run: tests/retry-on-network.sh python3 tests/real_ssh_test.py
 
   qr-decode:
     # the QR generator is checked with a real decoder (zbar) in a container
@@ -126,6 +126,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: tests/run-qgis-containers.sh
+        env:
+          RETRY_DELAY: "60"     # qgis.org outages last minutes: retries after 1, 2 and 3 minutes
 
   qgis-recipes:
     # every other install recipe of the installation guide, resolved (dry run) on its own distribution:

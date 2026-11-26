@@ -12,6 +12,7 @@ elif command -v pacman  >/dev/null; then pacman -Syu --noconfirm python >/dev/nu
 elif command -v zypper  >/dev/null; then zypper -q --non-interactive refresh >/dev/null 2>&1; zypper -q --non-interactive install python3 >/dev/null 2>&1
 elif command -v apk     >/dev/null; then apk add -q python3 bash >/dev/null 2>&1
 fi
+command -v python3 >/dev/null || { echo "PREP: python3 could not be installed - package mirror problem"; exit 1; }
 python3 --version
 cp -r /repo /work && cd /work
 python3 tests/test_units.py 2>&1 | tail -1 | grep -q "^OK" && echo "PASS unit tests" || { echo "FAIL unit tests"; python3 tests/test_units.py 2>&1 | grep -E "^(FAIL|ERROR)|Error|Ran" | head -20; exit 1; }

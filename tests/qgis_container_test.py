@@ -8,6 +8,7 @@ for real so the uninstall path has something to remove.
 """
 import importlib.util
 import os
+import re
 import subprocess
 import sys
 import types
@@ -39,6 +40,22 @@ def sh(script):
     return p.returncode, p.stdout + p.stderr
 
 
+def why(out, n=3):
+    """The lines of apt / curl / gpg output that say what went wrong (not just the last line, which is often debconf noise)."""
+    rx = re.compile(r"^(E:|W:|Err:|curl:|gpg:)|error|failed|unable|mismatch|not found", re.I)
+    bad = [ln.strip() for ln in out.splitlines() if rx.search(ln)]
+    return " | ".join(bad[-n:])[:300] if bad else (out.strip().splitlines()[-1][:120] if out.strip() else "")
+
+
+def reachable(url):
+    import urllib.request
+    try:
+        with urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": "linux-scripts-test"}), timeout=30) as r:
+            return True, str(r.status)
+    except Exception as e:  # noqa: BLE001 - the reason is printed
+        return False, str(e)[:200]
+
+
 def simulate(script):
     # keep everything real except the big install
     return script.replace("apt-get install -y qgis", "apt-get install -s qgis")
@@ -56,7 +73,11 @@ pk = {"grass": True, "python": True, "server": False}
 # 1. real install steps (simulated big install)
 step = m.build_install("A", s, channel, pk)[0]
 rc, out = sh(simulate(step["sh"]))
-check("method A script runs", rc == 0, out.strip().splitlines()[-1][:120] if out.strip() else "")
+check("method A script runs", rc == 0, why(out))
+if rc != 0:     # tell a qgis.org outage apart from a bug here (retry-on-network.sh retries the former)
+    repo = f"https://qgis.org/{s['family']}{m.SUFFIX[channel]}/dists/{s['code']}/InRelease"
+    ok, detail = reachable(repo)
+    print(f"INFO {repo} reachable" if ok else f"INFO qgis.org could not be reached: {repo}  [{detail}]")
 check("key fingerprint verified", "Key fingerprint OK" in out)
 src = open(m.SOURCES).read() if os.path.exists(m.SOURCES) else ""
 check("sources file written", f"Suites: {s['code']}" in src and f"qgis.org/{s['family']}{m.SUFFIX[channel]}" in src)
